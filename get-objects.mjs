@@ -14,4 +14,6 @@ async function fetchFile(from, to, repo) {
     });
 }
 
-await fetchFile('src/types/enums.ts', './server/src/types/enums.ts', 'thaliak');
+await fetchFile('src/types/enum-schema.ts', './server/src/types/enum-schema.ts', 'thaliak');
+await fetchFile('src/types/raids.ts', './server/src/types/raids.ts', 'thaliak');
+await fetchFile('src/types/graphing.ts', './server/src/types/graphing.ts', 'thaliak');

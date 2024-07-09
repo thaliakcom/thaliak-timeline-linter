@@ -24,7 +24,9 @@ import {
 } from 'vscode-languageserver-textdocument';
 import { getParserCache } from './parser-cache';
 import { lintDocument } from './linter';
-import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './enums';
+import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
+import { UnprocessedRaidData } from './types/raids';
+import completionProvider from './completion-provider';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -47,7 +49,8 @@ connection.onInitialize((params: InitializeParams) => {
             textDocumentSync: TextDocumentSyncKind.Incremental,
             // Tell the client that this server supports code completion.
             completionProvider: {
-                resolveProvider: true
+                resolveProvider: true,
+                triggerCharacters: ['[', '(']
             },
             diagnosticProvider: {
                 interFileDependencies: false,
@@ -158,6 +161,10 @@ connection.onDidChangeWatchedFiles(_change => {
     // Monitored files have change in VSCode
     connection.console.log('File change event received.');
 });
+
+connection.onCompletion(completionProvider(documents, documentCache, globalSettings));
+
+connection.onCompletionResolve(item => item);
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events
