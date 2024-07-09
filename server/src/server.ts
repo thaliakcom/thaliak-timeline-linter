@@ -27,6 +27,7 @@ import { lintDocument } from './linter';
 import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
 import { UnprocessedRaidData } from './types/raids';
 import completionProvider from './completion-provider';
+import hoverProvider from './hover-provider';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -55,7 +56,8 @@ connection.onInitialize((params: InitializeParams) => {
             diagnosticProvider: {
                 interFileDependencies: false,
                 workspaceDiagnostics: false
-            }
+            },
+            hoverProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -165,6 +167,8 @@ connection.onDidChangeWatchedFiles(_change => {
 connection.onCompletion(completionProvider(documents, documentCache, globalSettings));
 
 connection.onCompletionResolve(item => item);
+
+connection.onHover(hoverProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events
