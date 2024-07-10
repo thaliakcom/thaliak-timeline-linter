@@ -48,9 +48,11 @@ export function mustHaveMechanic({ diagnostics, textDocument, document, options 
     }
 }
 
-function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, diagnostics: Diagnostic[], options: LinterOptions): boolean {
+function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, document: yaml.Document, diagnostics: Diagnostic[], options: LinterOptions): boolean {
     let lastAt: number = 0;
     let lastAtRange: yaml.Range | undefined;
+
+    const actions = (document.toJS() as UnprocessedRaidData).actions;
 
     for (const item of items.items) {
         if (!yaml.isMap(item)) {
@@ -80,6 +82,47 @@ function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, 
             lastAt = at.value;
             lastAtRange = at.range!;
         }
+
+        if (actions != null) {
+            const actionId = item.get('id') as string;
+            const action = actions[actionId];
+
+            if (action != null) {
+                const count = item.get('count', true);
+                if (count != null && count.value === action.count) {
+                    if (!addDiagnostic(diagnostics, options, {
+                        code: 'redundant-count',
+                        severity: DiagnosticSeverity.Error,
+                        message: `This value can be inferred from '${actionId}' and should be omitted.`,
+                        range: getRange(textDocument, count.range!)
+                    })) {
+                        return false;
+                    }
+                }
+
+                const players = item.get('players', true);
+                const mechanicType = options.enums['mechanic-types']?.yaml[action.mechanic as string];
+
+                if (players != null) {
+                    const type = players.value === action.players
+                        ? actionId
+                        : mechanicType != null && players.value === mechanicType.players
+                            ? action.mechanic
+                            : null;
+
+                    if (type != null) {
+                        if (!addDiagnostic(diagnostics, options, {
+                            code: 'redundant-players',
+                            severity: DiagnosticSeverity.Error,
+                            message: `This value can be inferred from '${type}' and should be omitted.`,
+                            range: getRange(textDocument, players.range!)
+                        })) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     return true;
@@ -102,7 +145,7 @@ export function validateAction({ diagnostics, textDocument, document, options }:
                 const children = action.value.get('children');
 
                 if (yaml.isSeq(children)) {
-                    if (!validateTimelineItems(children, textDocument, diagnostics, options)) {
+                    if (!validateTimelineItems(children, textDocument, document, diagnostics, options)) {
                         return;
                     }
                 }
@@ -362,6 +405,6 @@ export function validateTimeline({ diagnostics, textDocument, document, options 
     const timeline = document.get('children');
 
     if (yaml.isSeq(timeline)) {
-        validateTimelineItems(timeline, textDocument, diagnostics, options);
+        validateTimelineItems(timeline, textDocument, document, diagnostics, options);
     }
 }
