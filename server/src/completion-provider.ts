@@ -11,6 +11,40 @@ export default function completionProvider(documents: TextDocuments<TextDocument
         const textDocument = documents.get(params.textDocument.uri)!;
         const initializer = textDocument.getText({ start: { line: params.position.line, character: params.position.character - 1 }, end: params.position });
         const previousCharacter = textDocument.getText({ start: { line: params.position.line, character: params.position.character - 2 }, end: { line: params.position.line, character: params.position.character - 1 } });
+
+        const raidData = (documentCache.get(textDocument)?.toJS() as UnprocessedRaidData | undefined);
+        const actions = raidData?.actions;
+
+        if ((initializer === ':' || initializer === ' ') && textDocument.getText({ start: { line: params.position.line, character: 0 }, end: params.position }).includes('id:')) {
+            if (actions != null && typeof actions === 'object') {
+                const items: CompletionItem[] = [];
+
+                for (const key in actions) {
+                    const action = actions[key];
+
+                    items.push({
+                        label: key,
+                        labelDetails: { description: action.description },
+                        kind: CompletionItemKind.EnumMember
+                    } satisfies CompletionItem);
+                }
+
+                return items;
+            }
+        }
+
+        if (initializer === ':') {
+            return [{
+                label: 'unverified',
+                labelDetails: { description: 'Unverified information' },
+                kind: CompletionItemKind.Keyword,
+                insertText: 'unverified()'
+            }];
+        }
+        
+        if (initializer !== '(' && initializer !== '[') {
+            return [];
+        }
     
         const items: CompletionItem[] = [];
 
@@ -22,13 +56,13 @@ export default function completionProvider(documents: TextDocuments<TextDocument
             items.push(
                 {
                     label: 'fight',
-                    labelDetails: { description: 'Name of the fight.' },
+                    labelDetails: { description: 'Name of the fight' },
                     kind: CompletionItemKind.Reference,
                     commitCharacters: [']']
                 },
                 {
                     label: 'boss',
-                    labelDetails: { description: 'Name of the boss.' },
+                    labelDetails: { description: 'Name of the boss' },
                     kind: CompletionItemKind.Reference,
                     commitCharacters: [']']
                 },
@@ -40,8 +74,6 @@ export default function completionProvider(documents: TextDocuments<TextDocument
             );
         }
     
-        const raidData = (documentCache.get(textDocument)?.toJS() as UnprocessedRaidData | undefined);
-        const actions = raidData?.actions;
         const status = raidData?.status;
     
         const base = {
