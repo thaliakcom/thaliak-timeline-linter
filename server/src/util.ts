@@ -14,8 +14,10 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position)
     let startIndex = lineBefore.lastIndexOf('[');
     let brackets = true;
 
-    if (startIndex === -1) {
-        startIndex = lineBefore.lastIndexOf('(');
+    const startIndexCircular = lineBefore.lastIndexOf('(');
+
+    if (startIndexCircular > startIndex) {
+        startIndex = startIndexCircular;
         brackets = false;
     }
 
