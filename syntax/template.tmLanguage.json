@@ -2,7 +2,7 @@
     "scopeName": "source.timeline.template.thaliak",
     "injectionSelector": "L:string",
     "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-    "patterns": [{ "include": "markdown" }, { "include": "#template-expression" }],
+    "patterns": [{ "include": "#template-expression" }],
     "repository": {
         "template-expression": {
             "patterns": [
