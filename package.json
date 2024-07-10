@@ -5,6 +5,10 @@
     "license": "MIT",
     "version": "0.0.1",
     "categories": ["Programming Languages", "Linters"],
+    "repository": {
+        "url": "https://github.com/thaliakcom/thaliak-timeline-linter/",
+        "type": "git"
+    },
     "engines": {
         "vscode": "^1.75.0"
     },
