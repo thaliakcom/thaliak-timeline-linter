@@ -287,7 +287,8 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
     const matches: { text: string, range: [number, number] }[] = [];
 
     for (const match of textDocument.getText().matchAll(PLACEHOLDER_REGEX)) {
-        matches.push({ text: match[2], range: [match.index! + match[1].length, match.index! + match[1].length + match[2].length] });
+        const text = match[1] ?? match[2];
+        matches.push({ text: text, range: [match.index! + 1, match.index! + 1 + text.length] });
     }
 
     for (const match of textDocument.getText().matchAll(ID_REGEX)) {

@@ -14,7 +14,8 @@ function getKeyAt(textDocument: TextDocument, position: Position): TextRange | n
     const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
     const lineAfter = textDocument.getText({ start: position, end: { line: position.line, character: Infinity } });
 
-    const match = lineBefore.concat(lineAfter).match(KEY_REGEX);
+    const match = KEY_REGEX.exec(lineBefore.concat(lineAfter));
+    KEY_REGEX.lastIndex = 0;
 
     if (match == null) {
         return null;
@@ -34,7 +35,8 @@ function getIdAt(textDocument: TextDocument, position: Position): TextRange | nu
     const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
     const lineAfter = textDocument.getText({ start: position, end: { line: position.line, character: Infinity } });
 
-    const match = lineBefore.concat(lineAfter).match(ID_REGEX);
+    const match = ID_REGEX.exec(lineBefore.concat(lineAfter));
+    ID_REGEX.lastIndex = 0;
 
     if (match == null) {
         return null;
