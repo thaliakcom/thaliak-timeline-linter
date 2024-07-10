@@ -47,6 +47,13 @@
                 "scopeName": "source.timeline.id-expression.thaliak",
                 "path": "./syntax/id.tmLanguage.json"
             }
+        ],
+        "commands": [
+            {
+                "command": "thaliak-timeline-linter.restart",
+                "title": "Restart language server",
+                "category": "Thaliak Timeline Linter"
+            }
         ]
     },
     "scripts": {

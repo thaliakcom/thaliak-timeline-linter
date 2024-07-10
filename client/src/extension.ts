@@ -4,7 +4,8 @@
  * ------------------------------------------------------------------------------------------ */
 
 import * as path from 'path';
-import { ExtensionContext, workspace } from 'vscode';
+import type { ExtensionContext } from 'vscode';
+import * as vscode from 'vscode';
 
 import {
     LanguageClient,
@@ -48,12 +49,14 @@ export function activate(context: ExtensionContext) {
     // Start the client. This will also launch the server
     client.start();
 
-    workspace.findFiles('**/enums/*.yaml', '**/node_modules')
+    vscode.workspace.findFiles('**/enums/*.yaml', '**/node_modules')
         .then(uris => {
             for (const uri of uris) {
-                workspace.openTextDocument(uri);
+                vscode.workspace.openTextDocument(uri);
             }
         });
+
+    vscode.commands.registerCommand('thaliak-timeline-linter.restart', () => client.restart());
 }
 
 export function deactivate(): Thenable<void> | undefined {
