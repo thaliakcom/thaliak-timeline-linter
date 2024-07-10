@@ -47,7 +47,7 @@ export function mustHaveMechanic({ diagnostics, textDocument, document, options 
     }
 }
 
-export function mustMaybeHavePlayers({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function mustMaybeHavePlayersAndShape({ diagnostics, textDocument, document, options }: LinterInput): void {
     if (options.enums['mechanic-types'] == null) {
         return;
     }
@@ -83,6 +83,17 @@ export function mustMaybeHavePlayers({ diagnostics, textDocument, document, opti
                                 message: `Or remove this 'damage' field to avoid having to set 'players'.`
                             }
                         ]
+                    })) {
+                        return;
+                    }
+                }
+
+                if (mechanicType.shapeful === true && !action.value.has('shape')) {
+                    if (!addDiagnostic(diagnostics, options, {
+                        code: 'missing-shape',
+                        severity: DiagnosticSeverity.Error,
+                        message: `The 'shape' field must be set for mechanic type '${mechanic.value}'`,
+                        range: getRange(textDocument, action.key.range)
                     })) {
                         return;
                     }
