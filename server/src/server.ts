@@ -127,10 +127,22 @@ const documentCache = getParserCache();
 
 documents.onDidOpen(e => {
     documentCache.get(e.document);
+
+    if (documentCache.isSecondaryFile(e.document)) {
+        if (documentCache.getOpenDocument() != null) {
+            connection.languages.diagnostics.refresh();
+        }
+    }
 });
 
 documents.onDidChangeContent(e => {
     documentCache.get(e.document);
+
+    if (documentCache.isSecondaryFile(e.document)) {
+        if (documentCache.getOpenDocument() != null) {
+            connection.languages.diagnostics.refresh();
+        }
+    }
 });
 
 // Only keep settings for open documents
@@ -174,7 +186,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<Diagnos
 
     // Parse enums as TextDocuments
     const options = documentCache.getLinterOptions(globalSettings);
-    
+
     return lintDocument(textDocument, document, options);
 }
 

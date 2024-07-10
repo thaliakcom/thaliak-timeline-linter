@@ -7,6 +7,8 @@ import { LinterOptions, ThaliakTimelineLinterSettings } from './server';
 
 export interface ParserCache {
     get(document: TextDocument | TextDocumentIdentifier): yaml.Document | null;
+    getOpenDocument(): TextDocument | null;
+    isSecondaryFile(document: TextDocument | TextDocumentIdentifier): boolean;
     onDocumentRemoved(document: TextDocument): void;
     getLinterOptions(settings: ThaliakTimelineLinterSettings): LinterOptions;
     dispose(): void;
@@ -62,6 +64,13 @@ export function getParserCache(): ParserCache {
             }
 
             return yamlDocument;
+        },
+        isSecondaryFile(document: TextDocument | TextDocumentIdentifier): boolean {
+            this.get(document);
+            return secondaryDocuments[document.uri] != null;
+        },
+        getOpenDocument() {
+            return openDocument?.textDocument ?? null;
         },
         onDocumentRemoved(document: TextDocument) {
             console.log('Removing', document.uri, '(onDocumentRemoved)');
