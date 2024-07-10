@@ -77,8 +77,8 @@ export default function completionProvider(documents: TextDocuments<TextDocument
 
         const enums = documentCache.getLinterOptions(settings).enums;
 
-        if (enums != null) {
-            for (const key in enums.common.actions) {
+        if (enums.common != null) {
+            for (const key in enums.common.yaml.actions) {
                 items.push({
                     label: `a:${key}`,
                     labelDetails: { description: 'from enums/common.yaml' },
@@ -87,7 +87,7 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                 });
             }
 
-            for (const key in enums.common.status) {
+            for (const key in enums.common.yaml.status) {
                 items.push({
                     label: `s:${key}`,
                     labelDetails: { description: 'from enums/common.yaml' },
@@ -95,35 +95,43 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                     ...base
                 });
             }
+        }
 
-            for (const key in enums.terms) {
+        if (enums.terms != null) {
+            for (const key in enums.terms.yaml) {
                 items.push({
                     label: `t:${key}`,
-                    labelDetails: { description: enums.terms[key] },
+                    labelDetails: { description: enums.terms.yaml[key] },
                     ...base
                 });
             }
+        }
 
-            for (const key in enums['mechanic-types']) {
+        if (enums['mechanic-types'] != null) {
+            for (const key in enums['mechanic-types'].yaml) {
                 items.push({
                     label: `m:${key}`,
-                    labelDetails: { description: enums['mechanic-types'][key].description },
+                    labelDetails: { description: enums['mechanic-types'].yaml[key].description },
                     ...base
                 });
             }
+        }
 
-            for (const key in enums['mechanic-shapes']) {
+        if (enums['mechanic-shapes'] != null) {
+            for (const key in enums['mechanic-shapes'].yaml) {
                 items.push({
                     label: `ms:${key}`,
-                    labelDetails: { description: enums['mechanic-shapes'][key].description },
+                    labelDetails: { description: enums['mechanic-shapes'].yaml[key].description },
                     ...base
                 });
             }
+        }
 
-            for (const key in enums['status-types']) {
+        if (enums['status-types'] != null) {
+            for (const key in enums['status-types'].yaml) {
                 items.push({
                     label: `st:${key}`,
-                    labelDetails: { description: enums['status-types'][key].description },
+                    labelDetails: { description: enums['status-types'].yaml[key].description },
                     ...base
                 });
             }

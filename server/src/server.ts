@@ -28,6 +28,9 @@ import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, T
 import { UnprocessedRaidData } from './types/raids';
 import completionProvider from './completion-provider';
 import hoverProvider from './hover-provider';
+import definitionProvider from './definition-provider';
+import referenceProvider from './reference-provider.ts';
+import * as yaml from 'yaml';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -57,7 +60,9 @@ connection.onInitialize((params: InitializeParams) => {
                 interFileDependencies: false,
                 workspaceDiagnostics: false
             },
-            hoverProvider: true
+            hoverProvider: true,
+            definitionProvider: true,
+            referencesProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -84,16 +89,21 @@ export interface ThaliakTimelineLinterSettings {
     maxNumberOfProblems: number;
 }
 
+interface ParsedYAML<T> {
+    yaml: T;
+    document: yaml.Document,
+    textDocument: TextDocument
+}
+
 export interface LinterOptions extends ThaliakTimelineLinterSettings {
-    enumsPath?: string;
-    enums?: {
-        'common': Common,
-        'damage-types': DamageTypes,
-        'expansions': Record<number, string>,
-        'mechanic-shapes': MechanicShapes,
-        'mechanic-types': MechanicTypes,
-        'status-types': StatusTypes,
-        'terms': Terms
+    enums: {
+        'common'?: ParsedYAML<Common>,
+        'damage-types'?: ParsedYAML<DamageTypes>,
+        'expansions'?: ParsedYAML<Record<number, string>>,
+        'mechanic-shapes'?: ParsedYAML<MechanicShapes>,
+        'mechanic-types'?: ParsedYAML<MechanicTypes>,
+        'status-types'?: ParsedYAML<StatusTypes>,
+        'terms'?: ParsedYAML<Terms>
     };
 }
 
@@ -113,7 +123,15 @@ connection.onDidChangeConfiguration(change => {
     connection.languages.diagnostics.refresh();
 });
 
-const documentCache = getParserCache(1, 60);
+const documentCache = getParserCache();
+
+documents.onDidOpen(e => {
+    documentCache.get(e.document);
+});
+
+documents.onDidChangeContent(e => {
+    documentCache.get(e.document);
+});
 
 // Only keep settings for open documents
 documents.onDidClose(e => {
@@ -154,6 +172,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<Diagnos
         return [];
     }
 
+    // Parse enums as TextDocuments
     const options = documentCache.getLinterOptions(globalSettings);
     
     return lintDocument(textDocument, document, options);
@@ -169,6 +188,8 @@ connection.onCompletion(completionProvider(documents, documentCache, globalSetti
 connection.onCompletionResolve(item => item);
 
 connection.onHover(hoverProvider(documents, documentCache, globalSettings));
+connection.onDefinition(definitionProvider(documents, documentCache, globalSettings));
+connection.onReferences(referenceProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events

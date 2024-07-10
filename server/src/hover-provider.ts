@@ -3,6 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
+import { getPlaceholderAt } from './util';
 
 function makeDescription(name: string, description: string): string {
     return `## ${name}\n\n${description}`;
@@ -11,35 +12,13 @@ function makeDescription(name: string, description: string): string {
 export default function hoverProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: HoverParams) => Hover | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
-        const lineBefore = textDocument.getText({ start: { line: params.position.line, character: 0 }, end: params.position });
-        const lineAfter = textDocument.getText({ start: params.position, end: { line: params.position.line, character: Infinity } });
+        const result = getPlaceholderAt(textDocument, params.position);
 
-        let startIndex = lineBefore.lastIndexOf('[');
-        let brackets = true;
-
-        if (startIndex === -1) {
-            startIndex = lineBefore.lastIndexOf('(');
-            brackets = false;
-        }
-
-        const endSymbol = brackets ? ']' : ')';
-        const endIndex = lineAfter.indexOf(endSymbol);
-
-        if (startIndex === -1 || endIndex === -1) {
+        if (result == null) {
             return null;
         }
 
-        const keyBefore = lineBefore.slice(startIndex + 1);
-        const keyAfter = lineAfter.slice(0, endIndex);
-        const key = keyBefore + keyAfter;
-
-        if (key.includes(brackets ? '[' : '(') || key.includes(endSymbol)) {
-            return null;
-        }
-
-        const range: Range = {
-            start: { line: params.position.line, character: params.position.character - keyBefore.length },
-            end: { line: params.position.line, character: params.position.character + keyAfter.length } };
+        const { text: key, range } = result;
     
         const raidData = (documentCache.get(textDocument)?.toJS() as UnprocessedRaidData | undefined);
         const actions = raidData?.actions;
@@ -52,7 +31,7 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
 
             if (action != null) {
                 return { contents: { kind: 'markdown', value: makeDescription(innerKey, action.description) }, range };
-            } else if (enums != null && enums.common.actions[innerKey] != null) {
+            } else if (enums.common != null && enums.common.yaml.actions[innerKey] != null) {
                 return { contents: { kind: 'markdown', value: makeDescription(innerKey, 'Common action (`enums/common.yaml`).') }, range };
             }
         } else if (key.startsWith('s:')) {
@@ -61,32 +40,32 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
 
             if (item != null) {
                 return { contents: { kind: 'markdown', value: makeDescription(innerKey, item.description ?? 'Status effect.') }, range };
-            } else if (enums != null && enums.common.status[innerKey] != null) {
+            } else if (enums.common != null && enums.common.yaml.status[innerKey] != null) {
                 return { contents: { kind: 'markdown', value: makeDescription(innerKey, 'Common status (`enums/common.yaml`).') }, range };
             }
         } else if (key.startsWith('t:')) {
             const innerKey = key.slice(2);
 
-            if (enums != null && enums.terms[innerKey] != null) {
-                return { contents: { kind: 'markdown', value: makeDescription(innerKey, enums.terms[innerKey]) }, range };
+            if (enums.terms != null && enums.terms.yaml[innerKey] != null) {
+                return { contents: { kind: 'markdown', value: makeDescription(innerKey, enums.terms.yaml[innerKey]) }, range };
             }
         } else if (key.startsWith('m:')) {
             const innerKey = key.slice(2);
 
-            if (enums != null && enums['mechanic-types'][innerKey] != null) {
-                return { contents: { kind: 'markdown', value: makeDescription(enums['mechanic-types'][innerKey].name, enums['mechanic-types'][innerKey].description) }, range };
+            if (enums['mechanic-types'] != null && enums['mechanic-types'].yaml[innerKey] != null) {
+                return { contents: { kind: 'markdown', value: makeDescription(enums['mechanic-types'].yaml[innerKey].name, enums['mechanic-types'].yaml[innerKey].description) }, range };
             }
         } else if (key.startsWith('ms:')) {
             const innerKey = key.slice(2);
 
-            if (enums != null && enums['mechanic-shapes'][innerKey] != null) {
-                return { contents: { kind: 'markdown', value: makeDescription(enums['mechanic-shapes'][innerKey].name, enums['mechanic-shapes'][innerKey].description) }, range };
+            if (enums['mechanic-shapes'] != null && enums['mechanic-shapes'].yaml[innerKey] != null) {
+                return { contents: { kind: 'markdown', value: makeDescription(enums['mechanic-shapes'].yaml[innerKey].name, enums['mechanic-shapes'].yaml[innerKey].description) }, range };
             }
         } else if (key.startsWith('st:')) {
             const innerKey = key.slice(2);
 
-            if (enums != null && enums['status-types'][innerKey] != null) {
-                return { contents: { kind: 'markdown', value: makeDescription(enums['status-types'][innerKey].name, enums['status-types'][innerKey].description) }, range };
+            if (enums['status-types'] != null && enums['status-types'].yaml[innerKey] != null) {
+                return { contents: { kind: 'markdown', value: makeDescription(enums['status-types'].yaml[innerKey].name, enums['status-types'].yaml[innerKey].description) }, range };
             }
         }
 

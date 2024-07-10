@@ -3,6 +3,7 @@ import * as yaml from 'yaml';
 import { LinterInput } from './linter';
 import { LinterOptions } from './server';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { getEntry, getRange } from './util';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
     diagnostics.push(diagnostic);
@@ -22,14 +23,6 @@ function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagn
     }
 
     return diagnostics.length < settings.maxNumberOfProblems;
-}
-
-function getRange(textDocument: TextDocument, range: yaml.Range): Range {
-    return { start: textDocument.positionAt(range[0]), end: textDocument.positionAt(range[1]) };
-}
-
-function getEntry(map: yaml.YAMLMap, key: string): yaml.Pair<yaml.Scalar<string>, unknown> | undefined {
-    return map.items.find(x => yaml.isScalar(x.key) && x.key.value === key) as yaml.Pair<yaml.Scalar<string>, unknown>;
 }
 
 export function mustHaveMechanic({ diagnostics, textDocument, document, options }: LinterInput): void {
@@ -52,7 +45,7 @@ export function mustHaveMechanic({ diagnostics, textDocument, document, options 
 }
 
 export function mustMaybeHavePlayers({ diagnostics, textDocument, document, options }: LinterInput): void {
-    if (options.enums == null) {
+    if (options.enums['mechanic-types'] == null) {
         return;
     }
 
@@ -69,7 +62,7 @@ export function mustMaybeHavePlayers({ diagnostics, textDocument, document, opti
                     continue;
                 }
 
-                const mechanicType = options.enums['mechanic-types'][mechanic.value as string];
+                const mechanicType = options.enums['mechanic-types'].yaml[mechanic.value as string];
 
                 if (mechanicType == null) {
                     continue;

@@ -1,9 +1,7 @@
+import { TextDocumentIdentifier } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { LinterOptions, ThaliakTimelineLinterSettings } from './server';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { Connection, TextDocumentIdentifier } from 'vscode-languageserver';
 
 // Based on https://github.com/microsoft/vscode/blob/main/extensions/json-language-features/server/src/languageModelCache.ts
 
@@ -14,126 +12,75 @@ export interface ParserCache {
     dispose(): void;
 }
 
-export function getParserCache(maxEntries: number, cleanupIntervalTimeInSec: number): ParserCache {
-    let languageModels: { [uri: string]: { version: number; languageId: string; cTime: number; ast: yaml.Document, isRaidData: boolean } } = {};
-    let nModels = 0;
-    let options: LinterOptions | undefined;
+interface Document {
+    version?: number;
+    languageId?: string;
+    cTime: number;
+    ast: yaml.Document,
+    textDocument: TextDocument,
+    isRelevant: boolean;
+}
 
-    let cleanupInterval: NodeJS.Timeout | undefined = undefined;
-    if (cleanupIntervalTimeInSec > 0) {
-        cleanupInterval = setInterval(() => {
-            const cutoffTime = Date.now() - cleanupIntervalTimeInSec * 1000;
-            const uris = Object.keys(languageModels);
-            for (const uri of uris) {
-                const languageModelInfo = languageModels[uri];
-                if (languageModelInfo.cTime < cutoffTime) {
-                    delete languageModels[uri];
-                    nModels--;
-                }
-            }
-        }, cleanupIntervalTimeInSec * 1000);
-    }
+export function getParserCache(): ParserCache {
+    let secondaryDocuments: { [uri: string]: Document } = {};
+    let openDocument: Document | null = null;
+    const options: LinterOptions = { maxNumberOfProblems: Infinity, enums: {} };
 
     return {
         get(document: TextDocument | TextDocumentIdentifier): yaml.Document | null {
-            const languageModelInfo = languageModels[document.uri];
-            const version = 'version' in document ? document.version : languageModelInfo.version;
-            const languageId = 'languageId' in document ? document.languageId : languageModelInfo.languageId;
-            if (languageModelInfo && languageModelInfo.version === version && languageModelInfo.languageId === languageId && languageModelInfo.isRaidData) {
-                languageModelInfo.cTime = Date.now();
-                return languageModelInfo.ast;
+            const isEnum = document.uri.includes('enums/');
+
+            const info = isEnum ? secondaryDocuments[document.uri] : (openDocument?.textDocument.uri === document.uri ? openDocument : null);
+
+            const version = 'version' in document ? document.version : info?.version;
+            const languageId = 'languageId' in document ? document.languageId : info?.languageId;
+            if (info != null && info.version === version && info.languageId === languageId) {
+                info.cTime = Date.now();
+
+                if (!info.isRelevant) {
+                    return null;
+                }
+
+                return info.ast;
             }
 
             if (!('getText' in document)) {
                 return null;
             }
 
+            console.log('Adding or updating', document.uri);
+
             const yamlDocument = yaml.parseDocument(document.getText());
-            languageModels[document.uri] = { ast: yamlDocument, version, languageId, cTime: Date.now(), isRaidData: isRaidData(yamlDocument.toJS()) };
-            console.log('Adding', document.uri);
-            if (!languageModelInfo) {
-                nModels++;
+            const newInfo: Document = { ast: yamlDocument, textDocument: document, version, languageId, cTime: Date.now(), isRelevant: isEnum || isRaidData(yamlDocument.toJS()) };
+
+            if (isEnum) {
+                secondaryDocuments[document.uri] = newInfo;
+                const name = document.uri.slice(document.uri.lastIndexOf('/') + 1, document.uri.lastIndexOf('.yaml'));
+                (options.enums as any)[name] = { yaml: yamlDocument.toJS(), document: yamlDocument, textDocument: document };
+            } else {
+                openDocument = newInfo;
             }
 
-            if (nModels > maxEntries) {
-                let oldestTime = Number.MAX_VALUE;
-                let oldestUri = null;
-                for (const uri in languageModels) {
-                    const languageModelInfo = languageModels[uri];
-                    if (languageModelInfo.cTime < oldestTime) {
-                        oldestUri = uri;
-                        oldestTime = languageModelInfo.cTime;
-                    }
-                }
-                if (oldestUri) {
-                    console.log('Removing', oldestUri, '(maxEntries reached)');
-                    delete languageModels[oldestUri];
-                    nModels--;
-                }
-            }
             return yamlDocument;
         },
         onDocumentRemoved(document: TextDocument) {
-            const uri = document.uri;
-            if (languageModels[uri]) {
-                console.log('Removing', uri, '(onDocumentRemoved)');
-                delete languageModels[uri];
-                nModels--;
+            console.log('Removing', document.uri, '(onDocumentRemoved)');
+
+            // We don't remove any secondaryDocuments here
+            // because VSCode occasionally closes documents on its own
+            // and we still need the enum information.
+            if (secondaryDocuments[document.uri] == null && openDocument != null && openDocument.textDocument.uri === document.uri) {
+                openDocument = null;
             }
         },
         getLinterOptions(settings: ThaliakTimelineLinterSettings): LinterOptions {
-            if (options == null) {
-                options = { ...settings };
-            }
-
-            if (options.enums == null) {
-                const raidDataDocument = Object.entries(languageModels).find(x => x[1].isRaidData);
-
-                if (raidDataDocument == null) {
-                    console.log('No raid document found');
-                    return options;
-                }
-
-                const uri = raidDataDocument[0];
-                const isFileProtocol = uri.replace('file://', '');
-                let enumsPath = uri;
-
-                if (isFileProtocol) {
-                    enumsPath = enumsPath.slice(7);
-                }
-
-                enumsPath = path.join(enumsPath, '../..', 'enums');
-
-                if (!fs.existsSync(enumsPath)) {
-                    console.log(`Failed to parse enums. No enums found above '${uri}' (at: '${enumsPath}')`);
-                    return options;
-                }
-
-                options.enumsPath = enumsPath;
-
-                options.enums = {
-                    common: yaml.parse(fs.readFileSync(path.join(enumsPath, 'common.yaml')).toString()),
-                    'damage-types': yaml.parse(fs.readFileSync(path.join(enumsPath, 'damage-types.yaml')).toString()),
-                    expansions: yaml.parse(fs.readFileSync(path.join(enumsPath, 'expansions.yaml')).toString()),
-                    'mechanic-shapes': yaml.parse(fs.readFileSync(path.join(enumsPath, 'mechanic-shapes.yaml')).toString()),
-                    'mechanic-types': yaml.parse(fs.readFileSync(path.join(enumsPath, 'mechanic-types.yaml')).toString()),
-                    'status-types': yaml.parse(fs.readFileSync(path.join(enumsPath, 'status-types.yaml')).toString()),
-                    terms: yaml.parse(fs.readFileSync(path.join(enumsPath, 'terms.yaml')).toString())
-                };
-            }
-
             Object.assign(options, settings);
 
             return options;
         },
         dispose() {
-            if (typeof cleanupInterval !== 'undefined') {
-                console.log('Disposing all documents');
-                clearInterval(cleanupInterval);
-                cleanupInterval = undefined;
-                languageModels = {};
-                nModels = 0;
-            }
+            secondaryDocuments = {};
+            openDocument = null;
         }
     };
 }
