@@ -144,7 +144,7 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
         });
 
         if (!isValid) {
-            addDiagnostic(diagnostics, options, {
+            if (!addDiagnostic(diagnostics, options, {
                 code: 'invalid-id',
                 severity: DiagnosticSeverity.Error,
                 message: `Unresolved ${perPrefix(match.text, {
@@ -157,7 +157,9 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
                     'i:': key => `icon ${key}`
                 })}. Did you forget to define it?`,
                 range: getRange(textDocument, [match.range[0], match.range[1], match.range[1]])
-            });
+            })) {
+                return;
+            }
         }
     }
 }
@@ -206,7 +208,7 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
                     continue;
                 }
 
-                addDiagnostic(diagnostics, options, {
+                if (!addDiagnostic(diagnostics, options, {
                     code: 'recursion',
                     severity: DiagnosticSeverity.Error,
                     message: `This child is contained in itself: ${recursiveGraph}`,
@@ -215,7 +217,10 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
                         location: { uri: textDocument.uri, range: getRange(textDocument, x.range!) },
                         message: `This action is part of the recursion graph.`
                     }))
-                });
+                })) {
+                    recursiveGraphs.push(recursiveGraph);
+                    return;
+                }
                 recursiveGraphs.push(recursiveGraph);
                 continue;
             }
