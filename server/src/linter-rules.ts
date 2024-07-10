@@ -47,7 +47,7 @@ export function mustHaveMechanic({ diagnostics, textDocument, document, options 
     }
 }
 
-export function mustMaybeHavePlayersAndShape({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function validateMechanicType({ diagnostics, textDocument, document, options }: LinterInput): void {
     if (options.enums['mechanic-types'] == null) {
         return;
     }
@@ -87,9 +87,11 @@ export function mustMaybeHavePlayersAndShape({ diagnostics, textDocument, docume
                         return;
                     }
                 }
-
+                
+                const count = action.value.get('count') as number ?? 1;
                 const players = action.value.get('players', true);
-                if (mechanicType.players != null && players?.value === mechanicType.players) {
+
+                if (mechanicType.players != null && players?.value === mechanicType.players && (mechanicType.players * count) <= 8) {
                     if (!addDiagnostic(diagnostics, options, {
                         code: 'redundant-players',
                         severity: DiagnosticSeverity.Warning,
@@ -108,6 +110,21 @@ export function mustMaybeHavePlayersAndShape({ diagnostics, textDocument, docume
                         range: getRange(textDocument, action.key.range)
                     })) {
                         return;
+                    }
+                }
+
+                if (!action.value.has('players') && mechanicType.players != null) {
+                    const totalPlayersHit = mechanicType.players * count;
+    
+                    if (totalPlayersHit > 8) {
+                        if (!addDiagnostic(diagnostics, options, {
+                            code: 'too-many-players-hit',
+                            severity: DiagnosticSeverity.Warning,
+                            message: `With ${count} instances of this mechanic and a 'players' value of ${mechanicType.players}, this mechanic targets more players than fit in a full party! Explicitly set the 'players' field to silence this warning.`,
+                            range: getRange(textDocument, action.key.range)
+                        })) {
+                            return;
+                        }
                     }
                 }
             }
