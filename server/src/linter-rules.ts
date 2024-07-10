@@ -88,6 +88,18 @@ export function mustMaybeHavePlayersAndShape({ diagnostics, textDocument, docume
                     }
                 }
 
+                const players = action.value.get('players', true);
+                if (mechanicType.players != null && players?.value === mechanicType.players) {
+                    if (!addDiagnostic(diagnostics, options, {
+                        code: 'redundant-players',
+                        severity: DiagnosticSeverity.Warning,
+                        message: `This value can be inferred from '${mechanic.value}' and should be omitted.`,
+                        range: getRange(textDocument, players.range!)
+                    })) {
+                        return;
+                    }
+                }
+
                 if (mechanicType.shapeful === true && !action.value.has('shape')) {
                     if (!addDiagnostic(diagnostics, options, {
                         code: 'missing-shape',
