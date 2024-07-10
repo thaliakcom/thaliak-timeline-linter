@@ -35,7 +35,19 @@
                     "description": "Traces the communication between VS Code and the language server."
                 }
             }
-        }
+        },
+        "grammars": [
+            {
+                "injectTo": ["source.yaml"],
+                "scopeName": "source.timeline.template.thaliak",
+                "path": "./syntax/template.tmLanguage.json"
+            },
+            {
+                "injectTo": ["source.yaml"],
+                "scopeName": "source.timeline.id-expression.thaliak",
+                "path": "./syntax/id.tmLanguage.json"
+            }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
