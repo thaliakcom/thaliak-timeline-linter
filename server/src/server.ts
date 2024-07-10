@@ -29,7 +29,7 @@ import { UnprocessedRaidData } from './types/raids';
 import completionProvider from './completion-provider';
 import hoverProvider from './hover-provider';
 import definitionProvider from './definition-provider';
-import referenceProvider from './reference-provider.ts';
+import referenceProvider from './reference-provider';
 import * as yaml from 'yaml';
 
 // Create a connection for the server, using Node's IPC as a transport.

@@ -2,7 +2,7 @@ import { Position, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 
-interface TextRange {
+export interface TextRange {
     text: string;
     range: Range;
 }
@@ -28,9 +28,10 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position)
 
     const keyBefore = lineBefore.slice(startIndex + 1);
     const keyAfter = lineAfter.slice(0, endIndex);
-    const key = keyBefore + keyAfter;
+    const rawKey = keyBefore + keyAfter;
+    const key = rawKey.replace(':c]', ']').replace(':d]', ']');
 
-    if (key.includes(brackets ? '[' : '(') || key.includes(endSymbol)) {
+    if (rawKey.includes(brackets ? '[' : '(') || rawKey.includes(endSymbol)) {
         return null;
     }
 
