@@ -3,12 +3,11 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { getAction, getPlaceholderAt, getRange, getStatus, ID_REGEX, KEY_REGEX, perPrefix, TextRange } from './util';
+import { getAction, getRange, getStatus, getSymbolAt, ID_REGEX, KEY_REGEX, perPrefix, TextRange } from './util';
 
 function escapeRegExp(string: string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
 }
-
 
 function getKeyAt(textDocument: TextDocument, position: Position): TextRange | null {
     const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
@@ -57,7 +56,7 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
             return null;
         }
 
-        let key = getPlaceholderAt(textDocument, params.position);
+        let key = getSymbolAt(textDocument, params.position);
         let textKey: string;
 
         if (key != null) {
@@ -70,9 +69,9 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
                 const status = document?.get('status');
                 const offset = textDocument.offsetAt(key.range.start);
 
-                if (actions != null && yaml.isMap(actions) && offset > actions.range![0] && offset < actions.range![2] && actions.has(key.text)) {
+                if (actions != null && yaml.isMap(actions) && offset >= actions.range![0] && offset < actions.range![2] && actions.has(key.text)) {
                     textKey = `a:${key.text}`;
-                } else if (status != null && yaml.isMap(status) && offset > status.range![0] && offset < status.range![2] && status.has(key.text)) {
+                } else if (status != null && yaml.isMap(status) && offset >= status.range![0] && offset < status.range![2] && status.has(key.text)) {
                     textKey = `s:${key.text}`;
                 } else {
                     return null;

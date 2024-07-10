@@ -1,9 +1,9 @@
-import { Hover, HoverParams, Range, TextDocuments } from 'vscode-languageserver';
+import { Hover, HoverParams, TextDocuments } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getPlaceholderAt, perPrefix } from './util';
+import { getSymbolAt, perPrefix } from './util';
 
 function makeDescription(name: string, description: string): string {
     return `## ${name}\n\n${description}`;
@@ -12,7 +12,7 @@ function makeDescription(name: string, description: string): string {
 export default function hoverProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: HoverParams) => Hover | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
-        const result = getPlaceholderAt(textDocument, params.position);
+        const result = getSymbolAt(textDocument, params.position);
 
         if (result == null) {
             return null;

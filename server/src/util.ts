@@ -52,6 +52,67 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position)
     };
 }
 
+export function getKeyValueAt(textDocument: TextDocument, position: Position, key: string): TextRange | null {
+    const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
+    const lineAfter = textDocument.getText({ start: position, end: { line: position.line, character: Infinity } });
+
+    if (!lineBefore.trimStart().startsWith(`${key}: `)) {
+        return null;
+    }
+
+    const startIndex = lineBefore.indexOf(key) + key.length + 2;
+    let endIndex = lineAfter.lastIndexOf('\n');
+
+    if (endIndex !== -1) {
+        endIndex += lineBefore.length;
+    } else {
+        endIndex = Infinity;
+    }
+
+    const keyBefore = lineBefore.slice(startIndex);
+    const keyAfter = lineAfter.slice(0, endIndex - lineBefore.length);
+    const rawKey = keyBefore + keyAfter;
+
+    return {
+        text: rawKey,
+        range: {
+            start: { line: position.line, character: startIndex },
+            end: { line: position.line, character: endIndex }
+        }
+    };
+}
+
+export function getSymbolAt(textDocument: TextDocument, position: Position): TextRange | null {
+    const placeholder = getPlaceholderAt(textDocument, position);
+
+    if (placeholder != null) {
+        return placeholder;
+    }
+
+    const mechanic = getKeyValueAt(textDocument, position, 'mechanic');
+
+    if (mechanic != null) {
+        mechanic.text = `m:${mechanic.text}`;
+        return mechanic;
+    }
+
+    const shape = getKeyValueAt(textDocument, position, 'shape');
+
+    if (shape != null) {
+        shape.text = `ms:${shape.text}`;
+        return shape;
+    }
+
+    const statusType = getKeyValueAt(textDocument, position, 'type');
+
+    if (statusType != null) {
+        statusType.text = `st:${statusType.text}`;
+        return statusType;
+    }
+
+    return null;
+}
+
 export function getRange(textDocument: TextDocument, range: yaml.Range): Range {
     return { start: textDocument.positionAt(range[0]), end: textDocument.positionAt(range[1]) };
 }

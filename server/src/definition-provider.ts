@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { getAction, getEntry, getPlaceholderAt, getRange, getStatus, perPrefix } from './util';
+import { getAction, getEntry, getRange, getStatus, getSymbolAt, perPrefix } from './util';
 
 function makeDefinitionLink(originRange: Range, textDocument: TextDocument, target: yaml.Pair<yaml.Node<unknown>, yaml.Node<unknown>>): [DefinitionLink] {
     return [{
@@ -17,7 +17,7 @@ function makeDefinitionLink(originRange: Range, textDocument: TextDocument, targ
 export default function definitionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: DefinitionParams) => DefinitionLink[] | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
-        const result = getPlaceholderAt(textDocument, params.position);
+        const result = getSymbolAt(textDocument, params.position);
 
         if (result == null) {
             return null;
