@@ -5,4 +5,4 @@ A linter (but actually a full-blown language server) for timeline files on [thal
 Supports code completion, hover, go to definition, find references, and
 has built-in syntax highlighting.
 
-![Demo](https://github.com/Microsoft/vscode-chrome-debug/blob/master/demo.webp?raw=true)
+![Demo](https://github.com/thaliakcom/thaliak-timeline-linter/blob/master/demo.webp?raw=true)
