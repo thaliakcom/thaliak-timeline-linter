@@ -161,3 +161,72 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
         }
     }
 }
+
+export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, document, options }: LinterInput): void {
+    const graph: yaml.Scalar[] = [];
+    const recursiveGraphs: string[] = [];
+
+    const actions = document.get('actions');
+
+    if (actions != null && yaml.isMap(actions)) {
+        for (const item of actions.items) {
+            checkAction(item);
+        }
+    }
+
+    function checkAction(action: yaml.Pair): void {
+        if (!yaml.isScalar(action.key) || !yaml.isMap(action.value)) {
+            return;
+        }
+
+        const children = action.value.get('children');
+
+        if (children == null || !yaml.isSeq(children)) {
+            return;
+        }
+
+        graph.push(action.key as yaml.Scalar);
+
+        for (const child of children.items) {
+            if (!yaml.isMap(child)) {
+                continue;
+            }
+
+            const id = child.get('id', true);
+
+            if (!yaml.isScalar(id)) {
+                continue;
+            }
+
+            if (graph.some(x => x.value === id.value)) {
+                const recursiveGraph = `${graph.map(x => x.value).join(' -> ')} -> ${id.value}`;
+
+                if (recursiveGraphs.some(x => x.includes(recursiveGraph))) {
+                    // We already emitted a diagnostic for this recursion.
+                    continue;
+                }
+
+                addDiagnostic(diagnostics, options, {
+                    code: 'recursion',
+                    severity: DiagnosticSeverity.Error,
+                    message: `This child is contained in itself: ${recursiveGraph}`,
+                    range: getRange(textDocument, id.range!),
+                    relatedInformation: graph.map(x => ({
+                        location: { uri: textDocument.uri, range: getRange(textDocument, x.range!) },
+                        message: `This action is part of the recursion graph.`
+                    }))
+                });
+                recursiveGraphs.push(recursiveGraph);
+                continue;
+            }
+
+            const childAction = (actions as yaml.YAMLMap).items.find(x => yaml.isScalar(x.key) && x.key.value === id.value);
+
+            if (childAction != null) {
+                checkAction(childAction);
+            }
+        }
+
+        graph.pop();
+    }
+}
