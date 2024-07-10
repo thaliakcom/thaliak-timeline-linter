@@ -1,13 +1,12 @@
-import { Diagnostic, DiagnosticSeverity, Range } from 'vscode-languageserver';
+import { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver';
 import * as yaml from 'yaml';
 import { LinterInput } from './linter';
 import { LinterOptions } from './server';
-import { TextDocument } from 'vscode-languageserver-textdocument';
-import { getAction, getEntry, getRange, ICONS, ID_REGEX, perPrefix, PLACEHOLDER_REGEX } from './util';
 import { UnprocessedRaidData } from './types/raids';
+import { getEntry, getRange, ICONS, ID_REGEX, perPrefix, PLACEHOLDER_REGEX } from './util';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
-    diagnostic.source = 'thaliak-timeline-linter';
+    diagnostic.source = 'thaliak';
 
     diagnostics.push(diagnostic);
 
@@ -36,6 +35,7 @@ export function mustHaveMechanic({ diagnostics, textDocument, document, options 
             if (yaml.isScalar(action.key) && action.key.range != null && yaml.isMap(action.value) && !action.value.has('mechanic')) {
 
                 if (!addDiagnostic(diagnostics, options, {
+                    code: 'missing-mechanic',
                     severity: DiagnosticSeverity.Error,
                     message: `Every action must specify the 'mechanic' field.\nIf no suitable mechanic type exists, add one to 'enums/mechanic-types.yaml'.`,
                     range: getRange(textDocument, action.key.range)
@@ -73,6 +73,7 @@ export function mustMaybeHavePlayers({ diagnostics, textDocument, document, opti
 
                 if (mechanicType.players == null && hasDamage && !action.value.has('players')) {
                     if (!addDiagnostic(diagnostics, options, {
+                        code: 'missing-players',
                         severity: DiagnosticSeverity.Error,
                         message: `The 'players' field must be set for mechanic type '${mechanic.value}'`,
                         range: getRange(textDocument, action.key.range),
@@ -96,6 +97,7 @@ export function mustSpecifyPartyHP({ diagnostics, textDocument, document, option
 
     if ((wip == null || wip === false) && !document.has('party_hp')) {
         addDiagnostic(diagnostics, options, {
+            code: 'missing-party-hp',
             severity: DiagnosticSeverity.Error,
             message: `Field 'party_hp' is required in non-work-in-progress timelines.`,
             range: { start: textDocument.positionAt(0), end: textDocument.positionAt(1) }
@@ -108,6 +110,7 @@ export function mustHaveAtLeastOneAuthor({ diagnostics, textDocument, document, 
 
     if (by != null && ((yaml.isSeq(by.value) && !by.value.items.some(x => !yaml.isMap(x) || x.get('role') === 'author')) || yaml.isMap(by.value) && by.value.get('role') !== 'author')) {
         addDiagnostic(diagnostics, options, {
+            code: 'missing-author',
             severity: DiagnosticSeverity.Error,
             message: `Field 'by' must contain at least one contributor with the 'author' role.`,
             range: getRange(textDocument, by.key.range!)
@@ -142,6 +145,7 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
 
         if (!isValid) {
             addDiagnostic(diagnostics, options, {
+                code: 'invalid-id',
                 severity: DiagnosticSeverity.Error,
                 message: `Unresolved ${perPrefix(match.text, {
                     'a:': key => `action ${key}`,
