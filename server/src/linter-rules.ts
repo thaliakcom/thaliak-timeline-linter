@@ -127,6 +127,17 @@ export function validateMechanicType({ diagnostics, textDocument, document, opti
                         }
                     }
                 }
+
+                if ((players != null || mechanicType.players != null) && !action.value.has('damage') && mechanic.value !== 'raidwide.sethp' && !action.value.has('children')) {
+                    if (!addDiagnostic(diagnostics, options, {
+                        code: 'missing-damage',
+                        severity: DiagnosticSeverity.Error,
+                        message: `This action specifies that ${players ?? mechanicType.players} players take damage, but the 'damage' field is missing.`,
+                        range: getRange(textDocument, action.key.range)
+                    })) {
+                        return;
+                    }
+                }
             }
         }
     }
