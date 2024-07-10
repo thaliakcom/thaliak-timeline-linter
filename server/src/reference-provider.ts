@@ -1,13 +1,9 @@
-import { DefinitionLink, DefinitionParams, Hover, HoverParams, Location, Position, Range, ReferenceParams, TextDocuments } from 'vscode-languageserver';
+import { Location, Position, ReferenceParams, TextDocuments } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { UnprocessedRaidData } from './types/raids';
-import { getAction, getPlaceholderAt, getRange, getStatus, TextRange } from './util';
-import * as yaml from 'yaml';
-
-const KEY_REGEX = /^\s{2}([^\s]*):\s/;
-const ID_REGEX = /^\s*id:\s(.*)/;
+import { getAction, getPlaceholderAt, getRange, getStatus, ID_REGEX, KEY_REGEX, perPrefix, TextRange } from './util';
 
 function escapeRegExp(string: string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
@@ -92,28 +88,29 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
 
         const locations: Location[] = [];
 
-        if (textKey.startsWith('a:')) {
-            const innerKey = textKey.slice(2);
-            const action = getAction(document, innerKey);
-
-            if (action != null) {
-                locations.push(makeLocation(textDocument, action.key.range!));
+        perPrefix(textKey, {
+            'a:': key => {
+                const action = getAction(document, key);
+    
+                if (action != null) {
+                    locations.push(makeLocation(textDocument, action.key.range!));
+                }
+    
+                const regex = new RegExp(`\\s*id:\\s(${escapeRegExp(key)})\\s`, 'g');
+    
+                for (const match of documentText.matchAll(regex)) {
+                    const delta = match[0].length - match[1].length - 1;
+                    locations.push(makeLocation(textDocument, [match.index! + delta, match.index! + match[1].length + delta, match.index! + match[1].length + delta]));
+                }
+            },
+            's:': key => {
+                const status = getStatus(document, key);
+    
+                if (status != null) {
+                    locations.push(makeLocation(textDocument, status.key.range!));
+                }
             }
-
-            const regex = new RegExp(`\\s*id:\\s(${escapeRegExp(innerKey)})\\s`, 'g');
-
-            for (const match of documentText.matchAll(regex)) {
-                const delta = match[0].length - match[1].length - 1;
-                locations.push(makeLocation(textDocument, [match.index! + delta, match.index! + match[1].length + delta, match.index! + match[1].length + delta]));
-            }
-        } else if (textKey.startsWith('s:')) {
-            const innerKey = textKey.slice(2);
-            const status = getStatus(document, innerKey);
-
-            if (status != null) {
-                locations.push(makeLocation(textDocument, status.key.range!));
-            }
-        }
+        });
 
         let index = -1;
 

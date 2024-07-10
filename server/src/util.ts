@@ -2,6 +2,12 @@ import { Position, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 
+export const PLACEHOLDER_REGEX = /(\(|\[)((?:a|s|m|ms|st|t|i):[A-z0-9\-_()]+)(?:(?::c)|(?::d))?(?:\)|\])/g;
+export const KEY_REGEX = /^\s{2}([^\s]*):\s/g;
+export const ID_REGEX = /^\s*id:\s(.*)/g;
+
+export const ICONS = ['tank', 'healer', 'dps', 'melee', 'ranged', 'pranged', 'caster', 'circle', 'cross', 'square', 'triangle'] as const;
+
 export interface TextRange {
     text: string;
     range: Range;
@@ -76,6 +82,27 @@ export function getStatus(document: yaml.Document | undefined, key: string): yam
 
         if (status != null) {
             return status as yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>>;
+        }
+    }
+
+    return null;
+}
+
+interface Prefixes<T> {
+    'a:'?: (key: string) => T;
+    's:'?: (key: string) => T;
+    'm:'?: (key: string) => T;
+    'ms:'?: (key: string) => T;
+    'st:'?: (key: string) => T;
+    't:'?: (key: string) => T;
+    'i:'?: (key: string) => T;
+}
+
+export function perPrefix<T>(key: string, prefixes: Prefixes<T>): T | null {
+    for (const prefix in prefixes) {
+        if (key.startsWith(prefix)) {
+            // @ts-expect-error TS failure to infer
+            return prefixes[prefix](key.slice(prefix.length));
         }
     }
 

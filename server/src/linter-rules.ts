@@ -3,9 +3,12 @@ import * as yaml from 'yaml';
 import { LinterInput } from './linter';
 import { LinterOptions } from './server';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { getEntry, getRange } from './util';
+import { getAction, getEntry, getRange, ICONS, ID_REGEX, perPrefix, PLACEHOLDER_REGEX } from './util';
+import { UnprocessedRaidData } from './types/raids';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
+    diagnostic.source = 'thaliak-timeline-linter';
+
     diagnostics.push(diagnostic);
 
     if (diagnostic.relatedInformation != null) {
@@ -109,5 +112,48 @@ export function mustHaveAtLeastOneAuthor({ diagnostics, textDocument, document, 
             message: `Field 'by' must contain at least one contributor with the 'author' role.`,
             range: getRange(textDocument, by.key.range!)
         });
+    }
+}
+
+export function idMustBeValid({ diagnostics, textDocument, document, options }: LinterInput): void {
+    const matches: { text: string, range: [number, number] }[] = [];
+
+    for (const match of textDocument.getText().matchAll(PLACEHOLDER_REGEX)) {
+        matches.push({ text: match[2], range: [match.index! + match[1].length, match.index! + match[1].length + match[2].length] });
+    }
+
+    for (const match of textDocument.getText().matchAll(ID_REGEX)) {
+        const delta = match[0].length - match[1].length;
+        matches.push({ text: `a:${match[1]}`, range: [match.index! + delta, match.index! + match[0].length] });
+    }
+
+    const json = document.toJS() as UnprocessedRaidData;
+
+    for (const match of matches) {
+        const isValid = perPrefix(match.text, {
+            'a:': key => (json.actions != null && key in json.actions) || (options.enums.common != null && key in options.enums.common.yaml.actions),
+            's:': key => (json.status != null && key in json.status) || (options.enums.common != null && key in options.enums.common.yaml.status),
+            'm:': key => options.enums['mechanic-types'] != null && key in options.enums['mechanic-types'].yaml,
+            'ms:': key => options.enums['mechanic-shapes'] != null && key in options.enums['mechanic-shapes'].yaml,
+            'st:': key => options.enums['status-types'] != null && key in options.enums['status-types'].yaml,
+            't:': key => options.enums.terms != null && key in options.enums.terms.yaml,
+            'i:': key => ICONS.includes(key as typeof ICONS[number])
+        });
+
+        if (!isValid) {
+            addDiagnostic(diagnostics, options, {
+                severity: DiagnosticSeverity.Error,
+                message: `Unresolved ${perPrefix(match.text, {
+                    'a:': key => `action ${key}`,
+                    's:': key => `status effect ${key}`,
+                    'm:': key => `mechanic type ${key}`,
+                    'ms:': key => `mechanic shape ${key}`,
+                    'st:': key => `status effect type ${key}`,
+                    't:': key => `term ${key}`,
+                    'i:': key => `icon ${key}`
+                })}. Did you forget to define it?`,
+                range: getRange(textDocument, [match.range[0], match.range[1], match.range[1]])
+            });
+        }
     }
 }

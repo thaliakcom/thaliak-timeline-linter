@@ -3,8 +3,7 @@ import { ParserCache } from './parser-cache';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-
-const ICONS = ['tank', 'healer', 'dps', 'melee', 'ranged', 'pranged', 'caster', 'circle', 'cross', 'square', 'triangle'] as const;
+import { ICONS } from './util';
 
 export default function completionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CompletionParams) => CompletionItem[] {
     return (params) => {
