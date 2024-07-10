@@ -56,13 +56,13 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
                 return { contents: { kind: 'markdown', value: makeDescription(enums['mechanic-types'].yaml[innerKey].name, enums['mechanic-types'].yaml[innerKey].description) }, range };
             }
         } else if (key.startsWith('ms:')) {
-            const innerKey = key.slice(2);
+            const innerKey = key.slice(3);
 
             if (enums['mechanic-shapes'] != null && enums['mechanic-shapes'].yaml[innerKey] != null) {
                 return { contents: { kind: 'markdown', value: makeDescription(enums['mechanic-shapes'].yaml[innerKey].name, enums['mechanic-shapes'].yaml[innerKey].description) }, range };
             }
         } else if (key.startsWith('st:')) {
-            const innerKey = key.slice(2);
+            const innerKey = key.slice(3);
 
             if (enums['status-types'] != null && enums['status-types'].yaml[innerKey] != null) {
                 return { contents: { kind: 'markdown', value: makeDescription(enums['status-types'].yaml[innerKey].name, enums['status-types'].yaml[innerKey].description) }, range };

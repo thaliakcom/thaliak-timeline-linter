@@ -80,7 +80,7 @@ export default function definitionProvider(documents: TextDocuments<TextDocument
                 }
             }
         } else if (key.startsWith('ms:')) {
-            const innerKey = key.slice(2);
+            const innerKey = key.slice(3);
 
             if (enums['mechanic-shapes'] != null && yaml.isMap(enums['mechanic-shapes'].document.contents)) {
                 const mechanicShape = getEntry(enums['mechanic-shapes'].document.contents, innerKey);
@@ -90,7 +90,7 @@ export default function definitionProvider(documents: TextDocuments<TextDocument
                 }
             }
         } else if (key.startsWith('st:')) {
-            const innerKey = key.slice(2);
+            const innerKey = key.slice(3);
 
             if (enums['status-types'] != null && yaml.isMap(enums['status-types'].document.contents)) {
                 const statusType = getEntry(enums['status-types'].document.contents, innerKey);
