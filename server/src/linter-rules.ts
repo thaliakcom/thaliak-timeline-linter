@@ -4,6 +4,7 @@ import { LinterInput } from './linter';
 import { LinterOptions } from './server';
 import { UnprocessedRaidData } from './types/raids';
 import { getEntry, getRange, ICONS, ID_REGEX, perPrefix, PLACEHOLDER_REGEX } from './util';
+import { TextDocument } from 'vscode-languageserver-textdocument';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
     diagnostic.source = 'thaliak';
@@ -47,7 +48,44 @@ export function mustHaveMechanic({ diagnostics, textDocument, document, options 
     }
 }
 
-export function validateMechanicType({ diagnostics, textDocument, document, options }: LinterInput): void {
+function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, diagnostics: Diagnostic[], options: LinterOptions): boolean {
+    let lastAt: number = 0;
+    let lastAtRange: yaml.Range | undefined;
+
+    for (const item of items.items) {
+        if (!yaml.isMap(item)) {
+            continue;
+        }
+
+        const at = item.get('at', true);
+
+        if (at != null && typeof at.value === 'number') {
+            if (lastAtRange != null && lastAt > at.value) {
+                if (!addDiagnostic(diagnostics, options, {
+                    code: 'timeline-order',
+                    severity: DiagnosticSeverity.Error,
+                    message: `All timeline items must be in order, but this item (at ${at.value}ms) comes before the last item (at ${lastAt}ms).`,
+                    range: getRange(textDocument, at.range!),
+                    relatedInformation: [
+                        {
+                            location: { uri: textDocument.uri, range: getRange(textDocument, lastAtRange) },
+                            message: `Item should be placed before this one.`
+                        }
+                    ]
+                })) {
+                    return false;
+                }
+            }
+    
+            lastAt = at.value;
+            lastAtRange = at.range!;
+        }
+    }
+
+    return true;
+}
+
+export function validateAction({ diagnostics, textDocument, document, options }: LinterInput): void {
     if (options.enums['mechanic-types'] == null) {
         return;
     }
@@ -60,6 +98,14 @@ export function validateMechanicType({ diagnostics, textDocument, document, opti
                 const mechanic = action.value.get('mechanic', true);
                 const damage = getEntry(action.value, 'damage');
                 const hasDamage = damage != null && yaml.isScalar(damage.value) && damage.value.value as number > 0;
+
+                const children = action.value.get('children');
+
+                if (yaml.isSeq(children)) {
+                    if (!validateTimelineItems(children, textDocument, diagnostics, options)) {
+                        return;
+                    }
+                }
 
                 if (!yaml.isScalar(mechanic)) {
                     continue;
@@ -137,6 +183,31 @@ export function validateMechanicType({ diagnostics, textDocument, document, opti
                     })) {
                         return;
                     }
+                }
+            }
+        }
+    }
+}
+
+export function validateStatus({ diagnostics, textDocument, document, options }: LinterInput): void {
+    const statusEffects = document.get('status');
+    
+    if (yaml.isMap(statusEffects)) {
+        for (const status of statusEffects.items) {
+            if (!yaml.isScalar(status.key) || status.key.range == null || !yaml.isMap(status.value)) {
+                continue;
+            }
+
+            const type = status.value.get('type', true);
+
+            if (type?.value === 'dot' && !status.value.has('tick')) {
+                if (!addDiagnostic(diagnostics, options, {
+                    code: 'missing-tick',
+                    severity: DiagnosticSeverity.Error,
+                    message: `Damage-over-time status effects must define the tick damage (via 'tick').`,
+                    range: getRange(textDocument, type.range!)
+                })) {
+                    return;
                 }
             }
         }
@@ -284,5 +355,13 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
         }
 
         graph.pop();
+    }
+}
+
+export function validateTimeline({ diagnostics, textDocument, document, options }: LinterInput): void {
+    const timeline = document.get('children');
+
+    if (yaml.isSeq(timeline)) {
+        validateTimelineItems(timeline, textDocument, diagnostics, options);
     }
 }
