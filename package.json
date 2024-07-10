@@ -1,7 +1,8 @@
 {
     "name": "thaliak-timeline-linter",
     "description": "A linter for Thaliak timeline files.",
-    "author": "thaliak.com",
+    "author": "Thaliak <contact@thaliak.com> (https://thaliak.com/)",
+    "publisher": "cengels",
     "license": "MIT",
     "version": "0.0.1",
     "categories": [
