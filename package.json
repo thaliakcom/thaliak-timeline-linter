@@ -4,7 +4,10 @@
     "author": "thaliak.com",
     "license": "MIT",
     "version": "0.0.1",
-    "categories": ["Programming Languages", "Linters"],
+    "categories": [
+        "Programming Languages",
+        "Linters"
+    ],
     "repository": {
         "url": "https://github.com/thaliakcom/thaliak-timeline-linter/",
         "type": "git"
@@ -15,7 +18,7 @@
     "activationEvents": [
         "onLanguage:yaml"
     ],
-    "main": "./client/out/extension",
+    "main": "./out/client/src/extension",
     "contributes": {
         "configuration": {
             "type": "object",
@@ -42,12 +45,16 @@
         },
         "grammars": [
             {
-                "injectTo": ["source.yaml"],
+                "injectTo": [
+                    "source.yaml"
+                ],
                 "scopeName": "source.timeline.template.thaliak",
                 "path": "./syntax/template.tmLanguage.json"
             },
             {
-                "injectTo": ["source.yaml"],
+                "injectTo": [
+                    "source.yaml"
+                ],
                 "scopeName": "source.timeline.id-expression.thaliak",
                 "path": "./syntax/id.tmLanguage.json"
             }
@@ -61,9 +68,13 @@
         ]
     },
     "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "compile": "node ./get-objects.mjs && tsc -b",
-        "watch": "node ./get-objects.mjs && tsc -b -w",
+        "vscode:prepublish": "npm run package",
+        "compile": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs",
+        "package": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs --production",
+        "check-types": "tsc --noEmit",
+        "watch": "npm-run-all -p watch:*",
+        "watch:esbuild": "node esbuild.mjs --watch",
+        "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
         "lint": "eslint ./client/src ./server/src --ext .ts,.tsx",
         "postinstall": "cd client && npm install && cd ../server && npm install && cd ..",
         "test": "sh ./scripts/e2e.sh"
@@ -74,6 +85,7 @@
         "@typescript-eslint/eslint-plugin": "^7.1.0",
         "@typescript-eslint/parser": "^7.1.0",
         "dotenv-cli": "^7.4.2",
+        "esbuild": "^0.23.0",
         "eslint": "^8.57.0",
         "mocha": "^10.3.0",
         "typescript": "^5.3.3"
