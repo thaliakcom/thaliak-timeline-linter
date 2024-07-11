@@ -1,17 +1,24 @@
 {
     "name": "thaliak-timeline-linter",
-    "description": "A linter for Thaliak timeline files.",
+    "displayName": "Thaliak Timeline Linter",
+    "description": "A linter (but actually a full LSP) for thaliak.com timeline files.",
     "author": "Thaliak <contact@thaliak.com> (https://thaliak.com/)",
     "publisher": "thaliak",
     "license": "MIT",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "categories": [
         "Programming Languages",
         "Linters"
     ],
+    "keywords": ["thaliak", "ffxiv", "lsp", "language-server", "yaml"],
     "repository": {
         "url": "https://github.com/thaliakcom/thaliak-timeline-linter/",
         "type": "git"
+    },
+    "homepage": "https://github.com/thaliakcom/thaliak-timeline-linter/",
+    "bugs": {
+        "url": "https://github.com/thaliakcom/thaliak-timeline-linter/issues",
+        "email": "contact@thaliak.com"
     },
     "engines": {
         "vscode": "^1.75.0"
@@ -19,6 +26,11 @@
     "activationEvents": [
         "workspaceContains:**/enums/mechanic-types.yaml"
     ],
+    "icon": "./icon.png",
+    "galleryBanner": {
+        "color": "#65bdf2",
+        "theme": "dark"
+    },
     "main": "./out/client/src/extension",
     "contributes": {
         "configuration": {
@@ -73,7 +85,7 @@
         "compile": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs",
         "package": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs --production",
         "check-types": "tsc --noEmit",
-        "watch": "npm-run-all -p watch:*",
+        "watch": "npm run watch:esbuild & npm run watch:tsc",
         "watch:esbuild": "node esbuild.mjs --watch",
         "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
         "lint": "eslint ./client/src ./server/src --ext .ts,.tsx",
