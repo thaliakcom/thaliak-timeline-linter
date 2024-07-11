@@ -16,6 +16,11 @@ import {
 
 let client: LanguageClient;
 
+async function isThaliakProject(): Promise<boolean> {
+    return (await vscode.workspace.findFiles('**/{calender,metadata,recent}.yaml', '**/node_modules')).length === 3
+        && (await vscode.workspace.findFiles('**/{ultimates,raids,extremes}/.yaml', '**/node_modules')).length > 0;
+}
+
 export function activate(context: ExtensionContext) {
     // The server is implemented in node
     const serverModule = context.asAbsolutePath(
@@ -50,9 +55,15 @@ export function activate(context: ExtensionContext) {
     client.start();
 
     vscode.workspace.findFiles('**/enums/*.yaml', '**/node_modules')
-        .then(uris => {
+        .then(async uris => {
             for (const uri of uris) {
                 vscode.workspace.openTextDocument(uri);
+            }
+
+            if (uris.length === 0 && await isThaliakProject()) {
+                // Due to the activation event, which checks for the presence of an enum file,
+                // this branch should never be reached.
+                vscode.window.showErrorMessage('The Thaliak language server failed to find enums in the current workspace. This will limit the language server\'s functionality. Please make sure your workspace contains the enums from the https://github.com/thaliakcom/data repository.');
             }
         });
 
