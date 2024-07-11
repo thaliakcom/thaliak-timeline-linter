@@ -40,6 +40,7 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position)
     const key = rawKey.replace(':c]', ']').replace(':d]', ']');
 
     if (rawKey.includes(brackets ? '[' : '(') || rawKey.includes(endSymbol)) {
+        console.log(`[symbol-resolver]: parsed key (${rawKey}) contains brackets; aborting`);
         return null;
     }
 
@@ -56,7 +57,11 @@ export function getKeyValueAt(textDocument: TextDocument, position: Position, ke
     const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
     const lineAfter = textDocument.getText({ start: position, end: { line: position.line, character: Infinity } });
 
-    if (!lineBefore.trimStart().startsWith(`${key}: `)) {
+    const trimmedLineBefore = lineBefore.trimStart();
+
+    // We don't want to match if the key is at the top level of the document
+    // to avoid false positives.
+    if (trimmedLineBefore === lineBefore || !trimmedLineBefore.startsWith(`${key}: `)) {
         return null;
     }
 
@@ -86,12 +91,22 @@ export function getSymbolAt(textDocument: TextDocument, position: Position): Tex
     const placeholder = getPlaceholderAt(textDocument, position);
 
     if (placeholder != null) {
+        console.log(`[symbol-resolver]: found placeholder '${placeholder.text}' at cursor position`);
         return placeholder;
+    }
+
+    const id = getKeyValueAt(textDocument, position, 'id');
+
+    if (id != null) {
+        console.log(`[symbol-resolver]: found action '${id.text}' at cursor position`);
+        id.text = `a:${id.text}`;
+        return id;
     }
 
     const mechanic = getKeyValueAt(textDocument, position, 'mechanic');
 
     if (mechanic != null) {
+        console.log(`[symbol-resolver]: found mechanic '${mechanic.text}' at cursor position`);
         mechanic.text = `m:${mechanic.text}`;
         return mechanic;
     }
@@ -99,6 +114,7 @@ export function getSymbolAt(textDocument: TextDocument, position: Position): Tex
     const shape = getKeyValueAt(textDocument, position, 'shape');
 
     if (shape != null) {
+        console.log(`[symbol-resolver]: found shape '${shape.text}' at cursor position`);
         shape.text = `ms:${shape.text}`;
         return shape;
     }
@@ -106,9 +122,12 @@ export function getSymbolAt(textDocument: TextDocument, position: Position): Tex
     const statusType = getKeyValueAt(textDocument, position, 'type');
 
     if (statusType != null) {
+        console.log(`[symbol-resolver]: found status type '${statusType.text}' at cursor position`);
         statusType.text = `st:${statusType.text}`;
         return statusType;
     }
+
+    console.log(`[symbol-resolver]: no symbol found at cursor position`);
 
     return null;
 }

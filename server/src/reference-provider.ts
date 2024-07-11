@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { getAction, getRange, getStatus, getSymbolAt, ID_REGEX, KEY_REGEX, perPrefix, TextRange } from './util';
+import { getAction, getKeyValueAt, getRange, getStatus, getSymbolAt, KEY_REGEX, perPrefix, TextRange } from './util';
 
 function escapeRegExp(string: string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
@@ -28,22 +28,6 @@ function makeLocation(textDocument: TextDocument, range: yaml.Range): Location {
         uri: textDocument.uri,
         range: getRange(textDocument, range)
     };
-}
-
-function getIdAt(textDocument: TextDocument, position: Position): TextRange | null {
-    const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
-    const lineAfter = textDocument.getText({ start: position, end: { line: position.line, character: Infinity } });
-
-    const match = ID_REGEX.exec(lineBefore.concat(lineAfter));
-    ID_REGEX.lastIndex = 0;
-
-    if (match == null) {
-        return null;
-    }
-
-    const delta = match[0].length - match[1].length;
-
-    return { text: match[1], range: { start: { line: position.line, character: delta }, end: { line: position.line, character: match[1].length + delta } } };
 }
 
 export default function referenceProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: ReferenceParams) => Location[] | null {
@@ -77,7 +61,7 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
                     return null;
                 }
             } else {
-                key = getIdAt(textDocument, params.position);
+                key = getKeyValueAt(textDocument, params.position, 'id');
 
                 if (key == null) {
                     return null;
