@@ -28,8 +28,8 @@
     ],
     "icon": "./icon.png",
     "galleryBanner": {
-        "color": "#65bdf2",
-        "theme": "dark"
+        "color": "#59a2e3",
+        "theme": "light"
     },
     "main": "./out/client/src/extension",
     "contributes": {
