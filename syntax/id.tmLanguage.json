@@ -5,7 +5,7 @@
     "patterns": [{ "include": "#id-expression" }],
     "repository": {
         "id-expression": {
-            "match": "(?<=id:\\s)([A-z<][A-z0-9\\-_\\(\\)<>]+)",
+            "match": "(?<=id:\\s)([A-z<][A-z0-9\\-._\\(\\)<>]+)",
             "captures": {
                 "1": { "name": "entity.name.variable.template.thaliak" }
             }

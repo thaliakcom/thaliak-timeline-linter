@@ -14,7 +14,7 @@
             ]
         },
         "template-expression-unnamed": {
-            "match": "(\\[)(a|s|m|ms|st|t|i)(:)([A-z0-9\\-_\\(\\)]+)(?:(:)(c|d))?(\\])",
+            "match": "(\\[)(a|s|m|ms|st|t|i)(:)([A-z0-9\\-._\\(\\)]+)(?:(:)(c|d))?(\\])",
             "captures": {
                 "1": { "name": "punctuation.definition.template-expression.begin.thaliak" },
                 "2": { "name": "keyword.control.template.thaliak" },
@@ -26,7 +26,7 @@
             }
         },
         "template-expression-named": {
-            "match": "(\\[)([^\\]]+)(\\])(\\()(a|s|m|ms|st|t)(:)([A-z0-9\\-_\\(\\)]+)(\\))",
+            "match": "(\\[)([^\\]]+)(\\])(\\()(a|s|m|ms|st|t)(:)([A-z0-9\\-._\\(\\)]+)(\\))",
             "captures": {
                 "1": { "name": "punctuation.definition.template-expression.begin.thaliak" },
                 "2": { "name": "string.unquoted.template-expression.thaliak" },
