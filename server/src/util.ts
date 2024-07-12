@@ -52,6 +52,10 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position,
         return null;
     }
 
+    if (startSymbol === '(' && lineBefore[startIndex - 1] !== ']') {
+        return null;
+    }
+
     const keyBefore = lineBefore.slice(startIndex + 1);
     const keyAfter = lineAfter.slice(0, endIndex);
     const rawKey = keyBefore + keyAfter;
