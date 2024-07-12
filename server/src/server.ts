@@ -31,6 +31,7 @@ import hoverProvider from './hover-provider';
 import definitionProvider from './definition-provider';
 import referenceProvider from './reference-provider';
 import * as yaml from 'yaml';
+import renameProvider from './rename-provider';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -40,6 +41,8 @@ const connection = createConnection(ProposedFeatures.all);
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
 let hasWorkspaceFolderCapability = false;
+
+const TRIGGER_CHARACTERS = '[(: '.split('');
 
 connection.onInitialize((params: InitializeParams) => {
     const capabilities = params.capabilities;
@@ -53,8 +56,7 @@ connection.onInitialize((params: InitializeParams) => {
             textDocumentSync: TextDocumentSyncKind.Incremental,
             // Tell the client that this server supports code completion.
             completionProvider: {
-                resolveProvider: true,
-                triggerCharacters: ['[', '(', ':', ' ']
+                triggerCharacters: TRIGGER_CHARACTERS
             },
             diagnosticProvider: {
                 interFileDependencies: false,
@@ -62,7 +64,8 @@ connection.onInitialize((params: InitializeParams) => {
             },
             hoverProvider: true,
             definitionProvider: true,
-            referencesProvider: true
+            referencesProvider: true,
+            renameProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -197,11 +200,10 @@ connection.onDidChangeWatchedFiles(_change => {
 
 connection.onCompletion(completionProvider(documents, documentCache, globalSettings));
 
-connection.onCompletionResolve(item => item);
-
 connection.onHover(hoverProvider(documents, documentCache, globalSettings));
 connection.onDefinition(definitionProvider(documents, documentCache, globalSettings));
 connection.onReferences(referenceProvider(documents, documentCache, globalSettings));
+connection.onRenameRequest(renameProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events

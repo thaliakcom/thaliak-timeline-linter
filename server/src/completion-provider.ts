@@ -1,57 +1,83 @@
 import { CompletionItem, CompletionItemKind, CompletionParams, TextDocuments } from 'vscode-languageserver';
-import { ParserCache } from './parser-cache';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { ICONS } from './util';
+import { getSymbolAt, ICONS, perPrefix } from './util';
 
 export default function completionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CompletionParams) => CompletionItem[] {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
-        const initializer = textDocument.getText({ start: { line: params.position.line, character: params.position.character - 1 }, end: params.position });
-        const previousCharacter = textDocument.getText({ start: { line: params.position.line, character: params.position.character - 2 }, end: { line: params.position.line, character: params.position.character - 1 } });
+        const symbol = getSymbolAt(textDocument, params.position, true);
 
         const raidData = (documentCache.get(textDocument)?.toJS() as UnprocessedRaidData | undefined);
         const actions = raidData?.actions;
 
-        if ((initializer === ':' || initializer === ' ') && textDocument.getText({ start: { line: params.position.line, character: 0 }, end: params.position }).includes('id:')) {
-            if (actions != null && typeof actions === 'object') {
-                const items: CompletionItem[] = [];
+        if (symbol == null) {
+            const lineBefore = textDocument.getText({ start: { line: params.position.line, character: 0 }, end: params.position });
+            const colonIndex = lineBefore.indexOf(':');
 
-                for (const key in actions) {
-                    const action = actions[key];
-
-                    items.push({
-                        label: key,
-                        labelDetails: { description: action.description },
-                        kind: CompletionItemKind.EnumMember
-                    } satisfies CompletionItem);
-                }
-
-                return items;
+            if (colonIndex !== -1 && !lineBefore.slice(colonIndex, params.position.character).includes(' ')) {
+                return [{
+                    label: 'unverified',
+                    labelDetails: { description: 'Unverified information' },
+                    kind: CompletionItemKind.Keyword,
+                    insertText: 'unverified()'
+                }];
             }
-        }
 
-        if (initializer === ':') {
-            return [{
-                label: 'unverified',
-                labelDetails: { description: 'Unverified information' },
-                kind: CompletionItemKind.Keyword,
-                insertText: 'unverified()'
-            }];
-        }
-        
-        if (initializer !== '(' && initializer !== '[') {
             return [];
         }
+
+        let accumulateActions = false;
+        let accumulateStatus = false;
+        let accumulateTerms = false;
+        let accumulateMechanicTypes = false;
+        let accumulateMechanicShapes = false;
+        let accumulateStatusTypes = false;
+        let accumulateIcons = false;
+        let accumulateSpecials = false;
+
+        perPrefix(symbol.text, {
+            'a:': () => { accumulateActions = true; },
+            's:': () => { accumulateStatus = true; },
+            't:': () => { accumulateTerms = true; },
+            'm:': () => { accumulateMechanicTypes = true; },
+            'ms:': () => { accumulateMechanicShapes = true; },
+            'st:': () => { accumulateStatusTypes = true; },
+            'i:': () => { accumulateIcons = true; },
+            else: () => {
+                accumulateActions = true;
+                accumulateStatus = true;
+                accumulateTerms = true;
+                accumulateMechanicTypes = true;
+                accumulateMechanicShapes = true;
+                accumulateStatusTypes = true;
+                accumulateIcons = true;
+                accumulateSpecials = symbol.delimiter === 'square';
+            }
+        });
+    
+        const base = {
+            kind: CompletionItemKind.EnumMember
+        };
     
         const items: CompletionItem[] = [];
 
-        if (initializer === '(' && previousCharacter !== ']') {
-            return items;
+        if (accumulateActions && actions != null && typeof actions === 'object') {
+            for (const key in actions) {
+                const action = actions[key];
+
+                items.push({
+                    label: symbol.delimiter != null ? `a:${key}` : key,
+                    labelDetails: { description: action.description },
+                    sortText: `a1:${key}`,
+                    ...base
+                } satisfies CompletionItem);
+            }
         }
     
-        if (initializer === '[') {
+        if (accumulateSpecials) {
             items.push(
                 {
                     label: 'fight',
@@ -64,41 +90,26 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                     labelDetails: { description: 'Name of the boss' },
                     kind: CompletionItemKind.Reference,
                     commitCharacters: [']']
-                },
-                ...ICONS.map(x => ({
-                    label: `i:${x}`,
-                    labelDetails: { description: 'icon' },
-                    kind: CompletionItemKind.EnumMember
-                }))
+                }
             );
+        }
+
+        if (accumulateIcons) {
+            items.push(...ICONS.map(x => ({
+                label: `i:${x}`,
+                labelDetails: { description: 'icon' },
+                kind: CompletionItemKind.EnumMember
+            })));
         }
     
         const status = raidData?.status;
     
-        const base = {
-            kind: CompletionItemKind.EnumMember,
-            commitCharacters: [initializer === '[' ? ']' : ')']
-        };
-    
-        if (actions != null && typeof actions === 'object') {
-            for (const key in actions) {
-                const action = actions[key];
-    
-                items.push({
-                    label: `a:${key}`,
-                    labelDetails: { description: action.description },
-                    sortText: `a1:${key}`,
-                    ...base
-                } satisfies CompletionItem);
-            }
-        }
-    
-        if (status != null && typeof status === 'object') {
+        if (accumulateStatus && status != null && typeof status === 'object') {
             for (const key in status) {
                 const item = status[key];
 
                 items.push({
-                    label: `s:${key}`,
+                    label: symbol.delimiter != null ? `s:${key}` : key,
                     labelDetails: { description: item.description },
                     sortText: `s1:${key}`,
                     ...base
@@ -108,60 +119,64 @@ export default function completionProvider(documents: TextDocuments<TextDocument
 
         const enums = documentCache.getLinterOptions(settings).enums;
 
-        if (enums.common != null) {
-            for (const key in enums.common.yaml.actions) {
-                items.push({
-                    label: `a:${key}`,
-                    labelDetails: { description: 'from enums/common.yaml' },
-                    sortText: `a2:${key}`,
-                    ...base
-                });
+        if (enums.common != null && symbol.delimiter != null) {
+            if (accumulateActions) {
+                for (const key in enums.common.yaml.actions) {
+                    items.push({
+                        label: symbol.delimiter != null ? `a:${key}` : key,
+                        labelDetails: { description: 'common action' },
+                        sortText: `a2:${key}`,
+                        ...base
+                    });
+                }
             }
 
-            for (const key in enums.common.yaml.status) {
-                items.push({
-                    label: `s:${key}`,
-                    labelDetails: { description: 'from enums/common.yaml' },
-                    sortText: `s2:${key}`,
-                    ...base
-                });
+            if (accumulateStatus) {
+                for (const key in enums.common.yaml.status) {
+                    items.push({
+                        label: symbol.delimiter != null ? `s:${key}` : key,
+                        labelDetails: { description: 'common status' },
+                        sortText: `s2:${key}`,
+                        ...base
+                    });
+                }
             }
         }
 
-        if (enums.terms != null) {
+        if (enums.terms != null && accumulateTerms) {
             for (const key in enums.terms.yaml) {
                 items.push({
-                    label: `t:${key}`,
+                    label: symbol.delimiter != null ? `t:${key}` : key,
                     labelDetails: { description: enums.terms.yaml[key] },
                     ...base
                 });
             }
         }
 
-        if (enums['mechanic-types'] != null) {
+        if (enums['mechanic-types'] != null && accumulateMechanicTypes) {
             for (const key in enums['mechanic-types'].yaml) {
                 items.push({
-                    label: `m:${key}`,
+                    label: symbol.delimiter != null ? `m:${key}` : key,
                     labelDetails: { description: enums['mechanic-types'].yaml[key].description },
                     ...base
                 });
             }
         }
 
-        if (enums['mechanic-shapes'] != null) {
+        if (enums['mechanic-shapes'] != null && accumulateMechanicShapes) {
             for (const key in enums['mechanic-shapes'].yaml) {
                 items.push({
-                    label: `ms:${key}`,
+                    label: symbol.delimiter != null ? `ms:${key}` : key,
                     labelDetails: { description: enums['mechanic-shapes'].yaml[key].description },
                     ...base
                 });
             }
         }
 
-        if (enums['status-types'] != null) {
+        if (enums['status-types'] != null && accumulateStatusTypes) {
             for (const key in enums['status-types'].yaml) {
                 items.push({
-                    label: `st:${key}`,
+                    label: symbol.delimiter != null ? `st:${key}` : key,
                     labelDetails: { description: enums['status-types'].yaml[key].description },
                     ...base
                 });

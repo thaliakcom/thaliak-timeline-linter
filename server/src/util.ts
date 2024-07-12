@@ -12,22 +12,32 @@ export interface TextRange {
     range: Range;
 }
 
-export function getPlaceholderAt(textDocument: TextDocument, position: Position): TextRange | null {
+export interface PlaceholderRange extends TextRange {
+    delimiter: 'square' | 'round';
+}
+
+export function getPlaceholderAt(textDocument: TextDocument, position: Position, allowIncomplete: boolean = false): PlaceholderRange | null {
     const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
     const lineAfter = textDocument.getText({ start: position, end: { line: position.line, character: Infinity } });
 
-    let startIndex = lineBefore.lastIndexOf('[');
-    let brackets = true;
+    let startSymbol = '[';
+    let startIndex = lineBefore.lastIndexOf(startSymbol);
+    let endSymbol = ']';
 
     const startIndexCircular = lineBefore.lastIndexOf('(');
 
     if (startIndexCircular > startIndex) {
         startIndex = startIndexCircular;
-        brackets = false;
+        startSymbol = '(';
+        endSymbol = ')';
     }
 
-    const endSymbol = brackets ? ']' : ')';
-    const endIndex = lineAfter.indexOf(endSymbol);
+    let endIndex = lineAfter.indexOf(endSymbol);
+
+    if (endIndex === -1 && allowIncomplete) {
+        endSymbol = ' ';
+        endIndex = lineAfter.indexOf(endSymbol);
+    }
 
     if (startIndex === -1 || endIndex === -1) {
         return null;
@@ -38,8 +48,8 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position)
     const rawKey = keyBefore + keyAfter;
     const key = rawKey.replace(':c]', ']').replace(':d]', ']');
 
-    if (rawKey.includes(brackets ? '[' : '(') || rawKey.includes(endSymbol)) {
-        console.log(`[symbol-resolver]: parsed key (${rawKey}) contains brackets; aborting`);
+    if (rawKey.includes(startSymbol) || rawKey.includes(endSymbol)) {
+        console.log(`[symbol-resolver]: parsed key (${rawKey}) contains '${startSymbol}' or '${endSymbol}'; aborting`);
         return null;
     }
 
@@ -48,7 +58,8 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position)
         range: {
             start: { line: position.line, character: position.character - keyBefore.length },
             end: { line: position.line, character: position.character + keyAfter.length }
-        }
+        },
+        delimiter: startSymbol === '[' ? 'square' : 'round'
     };
 }
 
@@ -86,8 +97,10 @@ export function getKeyValueAt(textDocument: TextDocument, position: Position, ke
     };
 }
 
-export function getSymbolAt(textDocument: TextDocument, position: Position): TextRange | null {
-    const placeholder = getPlaceholderAt(textDocument, position);
+type SymbolRange = TextRange & Partial<PlaceholderRange>;
+
+export function getSymbolAt(textDocument: TextDocument, position: Position, allowIncomplete: boolean = false): SymbolRange | null {
+    const placeholder = getPlaceholderAt(textDocument, position, allowIncomplete);
 
     if (placeholder != null) {
         console.log(`[symbol-resolver]: found placeholder '${placeholder.text}' at cursor position`);
@@ -175,6 +188,7 @@ interface Prefixes<T> {
     'st:'?: (key: string) => T;
     't:'?: (key: string) => T;
     'i:'?: (key: string) => T;
+    else?: (key: string) => T;
 }
 
 export function perPrefix<T>(key: string, prefixes: Prefixes<T>): T | null {
@@ -185,5 +199,5 @@ export function perPrefix<T>(key: string, prefixes: Prefixes<T>): T | null {
         }
     }
 
-    return null;
+    return prefixes.else?.(key) ?? null;
 }

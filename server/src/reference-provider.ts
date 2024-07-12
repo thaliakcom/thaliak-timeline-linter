@@ -1,4 +1,4 @@
-import { Location, Position, ReferenceParams, TextDocuments } from 'vscode-languageserver';
+import { Location, Position, ReferenceParams, TextDocumentPositionParams, TextDocuments } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
@@ -30,7 +30,7 @@ function makeLocation(textDocument: TextDocument, range: yaml.Range): Location {
     };
 }
 
-export default function referenceProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: ReferenceParams) => Location[] | null {
+export default function referenceProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: TextDocumentPositionParams) => Location[] | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
         const documentText = textDocument.getText();
