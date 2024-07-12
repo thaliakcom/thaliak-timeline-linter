@@ -3,7 +3,7 @@ import * as yaml from 'yaml';
 import { LinterInput } from './linter';
 import { LinterOptions } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getEntry, getRange, ICONS, ID_REGEX, perPrefix, PLACEHOLDER_REGEX } from './util';
+import { getEntry, getRange, ICONS, perPrefix, PLACEHOLDER_REGEX } from './util';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
@@ -283,17 +283,50 @@ export function mustHaveAtLeastOneAuthor({ diagnostics, textDocument, document, 
     }
 }
 
+function *traverseTimelineItems(document: yaml.Document): Generator<yaml.YAMLMap> {
+    const actions = document.get('actions');
+
+    if (yaml.isMap(actions)) {
+        for (const action of actions.items) {
+            if (yaml.isMap(action.value)) {
+                const children = action.value.get('children');
+
+                if (yaml.isSeq(children)) {
+                    for (const child of children.items) {
+                        if (yaml.isMap(child)) {
+                            yield child;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    const timeline = document.get('timeline');
+
+    if (yaml.isSeq(timeline)) {
+        for (const item of timeline.items) {
+            if (yaml.isMap(item)) {
+                yield item;
+            }
+        }
+    }
+}
+
 export function idMustBeValid({ diagnostics, textDocument, document, options }: LinterInput): void {
-    const matches: { text: string, range: [number, number] }[] = [];
+    const matches: { text: string, range: [number, number, number?] }[] = [];
 
     for (const match of textDocument.getText().matchAll(PLACEHOLDER_REGEX)) {
         const text = match[1] ?? match[2];
         matches.push({ text: text, range: [match.index! + 1, match.index! + 1 + text.length] });
     }
 
-    for (const match of textDocument.getText().matchAll(ID_REGEX)) {
-        const delta = match[0].length - match[1].length;
-        matches.push({ text: `a:${match[1]}`, range: [match.index! + delta, match.index! + match[0].length] });
+    for (const item of traverseTimelineItems(document)) {
+        const id = item.get('id', true);
+
+        if (yaml.isScalar(id) && typeof id.value === 'string') {
+            matches.push({ text: `a:${id.value}`, range: id.range! });
+        }
     }
 
     const json = document.toJS() as UnprocessedRaidData;
@@ -322,7 +355,7 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
                     't:': key => `term ${key}`,
                     'i:': key => `icon ${key}`
                 })}. Did you forget to define it?`,
-                range: getRange(textDocument, [match.range[0], match.range[1], match.range[1]])
+                range: getRange(textDocument, [match.range[0], match.range[1], match.range[2] ?? match.range[1]])
             })) {
                 return;
             }

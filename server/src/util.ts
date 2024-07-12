@@ -4,7 +4,6 @@ import * as yaml from 'yaml';
 
 export const PLACEHOLDER_REGEX = /(?:(?:\(((?:a|s|m|ms|st|t|i):[A-z0-9\-_()]+)\))|(?:\[((?:a|s|m|ms|st|t|i):[A-z0-9\-_()]+?)(?:(?::c)|(?::d))?\]))/g;
 export const KEY_REGEX = /^\s{2}([^\s]*):\s/g;
-export const ID_REGEX = /^\s+id:\s(.*)/g;
 
 export const ICONS = ['tank', 'healer', 'dps', 'melee', 'ranged', 'pranged', 'caster', 'circle', 'cross', 'square', 'triangle'] as const;
 
