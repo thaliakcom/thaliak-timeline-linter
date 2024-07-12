@@ -403,7 +403,7 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
 }
 
 export function validateTimeline({ diagnostics, textDocument, document, options }: LinterInput): void {
-    const timeline = document.get('children');
+    const timeline = document.get('timeline');
 
     if (yaml.isSeq(timeline)) {
         validateTimelineItems(timeline, textDocument, document, diagnostics, options);
