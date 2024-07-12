@@ -3,7 +3,7 @@ import * as yaml from 'yaml';
 import { LinterInput } from './linter';
 import { LinterOptions } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getEntry, getRange, ICONS, perPrefix, PLACEHOLDER_REGEX } from './util';
+import { getEntry, getRange, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
@@ -333,7 +333,7 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
 
     for (const match of matches) {
         const isValid = perPrefix(match.text, {
-            'a:': key => (json.actions != null && key in json.actions) || (options.enums.common != null && key in options.enums.common.yaml.actions),
+            'a:': key => (json.actions != null && key in json.actions) || (options.enums.common != null && key in options.enums.common.yaml.actions) || SPECIAL_TIMELINE_IDS.some(x => x.id === key),
             's:': key => (json.status != null && key in json.status) || (options.enums.common != null && key in options.enums.common.yaml.status),
             'm:': key => options.enums['mechanic-types'] != null && key in options.enums['mechanic-types'].yaml,
             'ms:': key => options.enums['mechanic-shapes'] != null && key in options.enums['mechanic-shapes'].yaml,

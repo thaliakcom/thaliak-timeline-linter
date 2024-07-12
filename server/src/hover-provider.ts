@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getSymbolAt, perPrefix } from './util';
+import { getSymbolAt, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 
 function makeDescription(name: string, description: string): string {
     return `## ${name}\n\n${description}`;
@@ -33,6 +33,12 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
                     return { contents: { kind: 'markdown', value: makeDescription(key, action.description) }, range };
                 } else if (enums.common != null && enums.common.yaml.actions[key] != null) {
                     return { contents: { kind: 'markdown', value: makeDescription(key, 'Common action (`enums/common.yaml`).') }, range };
+                } else if (result.delimiter == null) {
+                    const specialTimelineItem = SPECIAL_TIMELINE_IDS.find(x => x.id === key);
+
+                    if (specialTimelineItem != null) {
+                        return { contents: { kind: 'markdown', value: makeDescription('\\' + key, specialTimelineItem.description) }, range };
+                    }
                 }
             },
             's:': key => {

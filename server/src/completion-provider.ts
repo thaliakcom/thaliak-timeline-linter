@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getSymbolAt, ICONS, perPrefix } from './util';
+import { getSymbolAt, ICONS, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 
 export default function completionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CompletionParams) => CompletionItem[] {
     return (params) => {
@@ -73,7 +73,18 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                     labelDetails: { description: action.description },
                     sortText: `a1:${key}`,
                     ...base
-                } satisfies CompletionItem);
+                });
+            }
+
+            if (symbol.delimiter == null) {
+                for (const item of SPECIAL_TIMELINE_IDS) {
+                    items.push({
+                        label: item.id,
+                        labelDetails: { description: item.description },
+                        sortText: 'zzzz' + item.id,
+                        ...base
+                    });
+                }
             }
         }
     
