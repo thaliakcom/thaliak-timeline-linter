@@ -9,9 +9,10 @@ export default function completionProvider(documents: TextDocuments<TextDocument
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
         const symbol = getSymbolAt(textDocument, params.position, true);
-
         const raidData = (documentCache.get(textDocument)?.toJS() as UnprocessedRaidData | undefined);
         const actions = raidData?.actions;
+        const accumulatedActions: Set<string> = new Set();
+        const accumulatedStatuses: Set<string> = new Set();
 
         if (symbol == null) {
             const lineBefore = textDocument.getText({ start: { line: params.position.line, character: 0 }, end: params.position });
@@ -74,6 +75,8 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                     sortText: `a1:${key}`,
                     ...base
                 });
+
+                accumulatedActions.add(key);
             }
 
             if (symbol.delimiter == null) {
@@ -124,7 +127,9 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                     labelDetails: { description: item.description },
                     sortText: `s1:${key}`,
                     ...base
-                } satisfies CompletionItem);
+                });
+
+                accumulatedStatuses.add(key);
             }
         }
 
@@ -133,23 +138,27 @@ export default function completionProvider(documents: TextDocuments<TextDocument
         if (enums.common != null && symbol.delimiter != null) {
             if (accumulateActions) {
                 for (const key in enums.common.yaml.actions) {
-                    items.push({
-                        label: symbol.delimiter != null ? `a:${key}` : key,
-                        labelDetails: { description: 'common action' },
-                        sortText: `a2:${key}`,
-                        ...base
-                    });
+                    if (!accumulatedActions.has(key)) {
+                        items.push({
+                            label: symbol.delimiter != null ? `a:${key}` : key,
+                            labelDetails: { description: 'common action' },
+                            sortText: `a2:${key}`,
+                            ...base
+                        });
+                    }
                 }
             }
 
             if (accumulateStatus) {
                 for (const key in enums.common.yaml.status) {
-                    items.push({
-                        label: symbol.delimiter != null ? `s:${key}` : key,
-                        labelDetails: { description: 'common status' },
-                        sortText: `s2:${key}`,
-                        ...base
-                    });
+                    if (!accumulatedStatuses.has(key)) {
+                        items.push({
+                            label: symbol.delimiter != null ? `s:${key}` : key,
+                            labelDetails: { description: 'common status' },
+                            sortText: `s2:${key}`,
+                            ...base
+                        });
+                    }
                 }
             }
         }
