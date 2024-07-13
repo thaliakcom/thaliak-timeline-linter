@@ -48,6 +48,26 @@ export function mustHaveMechanic({ diagnostics, textDocument, document, options 
     }
 }
 
+export function mustHaveStatusType({ diagnostics, textDocument, document, options }: LinterInput): void {
+    const statuses = document.get('status');
+
+    if (yaml.isMap(statuses)) {
+        for (const status of statuses.items) {
+            if (yaml.isScalar(status.key) && status.key.range != null && yaml.isMap(status.value) && !status.value.has('type')) {
+
+                if (!addDiagnostic(diagnostics, options, {
+                    code: 'missing-status-type',
+                    severity: DiagnosticSeverity.Error,
+                    message: `Every status must specify the 'type' field.\nIf no suitable status type exists, add one to 'enums/status-types.yaml'.`,
+                    range: getRange(textDocument, status.key.range)
+                })) {
+                    return;
+                }
+            }
+        }
+    }
+}
+
 function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, document: yaml.Document, diagnostics: Diagnostic[], options: LinterOptions): boolean {
     let lastAt: number = 0;
     let lastAtRange: yaml.Range | undefined;
