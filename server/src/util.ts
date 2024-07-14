@@ -217,7 +217,23 @@ export function getSymbolAt(document: yaml.Document, textDocument: TextDocument,
 }
 
 export function getRange(textDocument: TextDocument, range: yaml.Range): Range {
-    return { start: textDocument.positionAt(range[0]), end: textDocument.positionAt(range[1]) };
+    return getRangeFromOffset(textDocument, range[0], range[1]);
+}
+
+export function getRangeFromOffset(textDocument: TextDocument, start: number, end: number): Range {
+    return { start: textDocument.positionAt(start), end: textDocument.positionAt(end) };
+}
+
+export function getRangeAt(textDocument: TextDocument, offset: number, linePos?: 'start' | 'end'): Range {
+    const position = textDocument.positionAt(offset);
+
+    if (linePos === 'start') {
+        position.character = 0;
+    } else if (linePos === 'end') {
+        position.character = 99999;
+    }
+
+    return { start: position, end: position };
 }
 
 export function getEntry(map: yaml.YAMLMap, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | undefined {

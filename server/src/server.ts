@@ -16,10 +16,12 @@ import {
     TextDocumentSyncKind,
     InitializeResult,
     DocumentDiagnosticReportKind,
-    type DocumentDiagnosticReport
+    type DocumentDiagnosticReport,
+    CodeActionKind
 } from 'vscode-languageserver/node';
 
 import {
+    Range,
     TextDocument
 } from 'vscode-languageserver-textdocument';
 import { getParserCache } from './parser-cache';
@@ -32,6 +34,8 @@ import definitionProvider from './definition-provider';
 import referenceProvider from './reference-provider';
 import * as yaml from 'yaml';
 import renameProvider from './rename-provider';
+import codeActionProvider from './code-action-provider';
+import { TextRange } from './util';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -65,7 +69,10 @@ connection.onInitialize((params: InitializeParams) => {
             hoverProvider: true,
             definitionProvider: true,
             referencesProvider: true,
-            renameProvider: true
+            renameProvider: true,
+            codeActionProvider: {
+                codeActionKinds: [CodeActionKind.QuickFix]
+            }
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -98,6 +105,14 @@ interface ParsedYAML<T> {
     textDocument: TextDocument
 }
 
+export interface PropertyOrder {
+    range: Range;
+    /** Specifies that this item must come between this key and {@link before} (or the start of the object and {@link before} if this is `null`). */
+    after: string | undefined;
+    /** Specifies that this item must come between {@link after} and this key (or {@link after} and the end of the object if this is `null`). */
+    before: string | undefined;
+}
+
 export interface LinterOptions extends ThaliakTimelineLinterSettings {
     enums: {
         'common'?: ParsedYAML<Common>,
@@ -108,7 +123,10 @@ export interface LinterOptions extends ThaliakTimelineLinterSettings {
         'status-types'?: ParsedYAML<StatusTypes>,
         'terms'?: ParsedYAML<Terms>
     };
+    propOrder: Map<string, Map<string, PropertyOrder>>;
 }
+
+export const fixableDiagnostics: Diagnostic[] = [];
 
 // The global settings, used when the `workspace/configuration` request is not supported by the client.
 // Please note that this is not the case when using this server with the client provided in this example
@@ -204,6 +222,7 @@ connection.onHover(hoverProvider(documents, documentCache, globalSettings));
 connection.onDefinition(definitionProvider(documents, documentCache, globalSettings));
 connection.onReferences(referenceProvider(documents, documentCache, globalSettings));
 connection.onRenameRequest(renameProvider(documents, documentCache, globalSettings));
+connection.onCodeAction(codeActionProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events

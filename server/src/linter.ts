@@ -1,8 +1,8 @@
-import { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver';
-import { LinterOptions, ThaliakTimelineLinterSettings } from './server';
+import { Diagnostic } from 'vscode-languageserver';
+import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import * as linterRules from './linter-rules';
-import { TextDocument } from 'vscode-languageserver-textdocument';
+import { fixableDiagnostics, LinterOptions } from './server';
 
 export interface LinterInput {
     diagnostics: Diagnostic[];
@@ -18,6 +18,9 @@ export function lintDocument(textDocument: TextDocument, document: yaml.Document
         document,
         options: settings
     };
+
+    settings.propOrder.clear();
+    fixableDiagnostics.length = 0;
 
     for (const rule of Object.values(linterRules)) {
         rule(input);

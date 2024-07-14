@@ -26,7 +26,7 @@ interface Document {
 export function getParserCache(): ParserCache {
     let secondaryDocuments: { [uri: string]: Document } = {};
     let openDocument: Document | null = null;
-    const options: LinterOptions = { maxNumberOfProblems: Infinity, enums: {} };
+    const options: LinterOptions = { maxNumberOfProblems: Infinity, enums: {}, propOrder: new Map() };
 
     return {
         get(document: TextDocument | TextDocumentIdentifier): yaml.Document | null {

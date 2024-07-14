@@ -1,10 +1,10 @@
-import { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver';
+import { Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, TextEdit } from 'vscode-languageserver';
 import * as yaml from 'yaml';
 import { LinterInput } from './linter';
-import { LinterOptions } from './server';
+import { fixableDiagnostics, LinterOptions, PropertyOrder } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getEntry, getRange, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
-import { TextDocument } from 'vscode-languageserver-textdocument';
+import { getEntry, getRange, getRangeAt, getRangeFromOffset, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { Range, TextDocument } from 'vscode-languageserver-textdocument';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
     diagnostic.source = 'thaliak';
@@ -25,6 +25,10 @@ function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagn
         }
     }
 
+    if (diagnostic.data != null && diagnostic.data.textEdits != null) {
+        fixableDiagnostics.push(diagnostic);
+    }
+
     return diagnostics.length < settings.maxNumberOfProblems;
 }
 
@@ -37,6 +41,10 @@ function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, 
     for (const item of items.items) {
         if (!yaml.isMap(item)) {
             continue;
+        }
+
+        if (!validatePropertyOrder(item, 'timeline item', false, textDocument, document, diagnostics, options)) {
+            return false;
         }
 
         const at = item.get('at', true);
@@ -108,6 +116,165 @@ function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, 
     return true;
 }
 
+function getOrSet<K, V>(map: Map<K, V>, key: K, defaultValue: () => V): V {
+    let value = map.get(key);
+
+    if (value == null) {
+        value = defaultValue();
+        map.set(key, value);
+    }
+
+    return value;
+}
+
+function emptyMap(): Map<never, never> {
+    return new Map<never, never>();
+}
+
+function updateOrderItem(order: Map<string, PropertyOrder>, orderItem: PropertyOrder, after: string | undefined, before: string | undefined, range: Range): void {
+    let hasChanged = false;
+    let afterItem = orderItem.after;
+    let beforeItem = orderItem.before;
+
+    if (afterItem !== after) {
+        if (afterItem == null) {
+            afterItem = after;
+            hasChanged = true;
+        } else if (after != null) {
+            while (afterItem != null) {
+                const item = order.get(afterItem);
+
+                if (item == null) {
+                    orderItem.after = after;
+                    hasChanged = true;
+                    break;
+                } else if (item.after === after) {
+                    break;
+                } else {
+                    afterItem = item.after;
+                }
+            }
+        }
+    }
+
+    if (beforeItem !== before) {
+        if (beforeItem == null) {
+            beforeItem = before;
+            hasChanged = true;
+        } else if (before != null) {
+            while (beforeItem != null) {
+                const item = order.get(beforeItem);
+
+                if (item == null) {
+                    orderItem.before = before;
+                    hasChanged = true;
+                    break;
+                } else if (item.before === before) {
+                    break;
+                } else {
+                    beforeItem = item.before;
+                }
+            }
+        }
+    }
+
+    if (hasChanged) {
+        orderItem.range = range;
+    }
+}
+
+function validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: boolean, textDocument: TextDocument, document: yaml.Document, diagnostics: Diagnostic[], options: LinterOptions): boolean {
+    const order = getOrSet(options.propOrder, itemKind, emptyMap);
+    const keysBefore: string[] = [];
+
+    for (let i: number = 0, j: number = 0; i < map.items.length; i++, j++) {
+        const key = map.items[i].key;
+
+        if (!yaml.isScalar(key)) {
+            continue;
+        }
+
+        const value = key.value as string;
+        const orderItem = order.get(value);
+
+        const after = map.items[i - 1]?.key as yaml.Scalar<string> | undefined;
+        const before = map.items[i + 1]?.key as yaml.Scalar<string> | undefined;
+        const range = getRange(textDocument, key.range!);
+
+        if (orderItem == null) {
+            order.set(value, {
+                range,
+                after: after?.value,
+                before: before?.value
+            });
+        } else {
+            let orderAfter = orderItem.after;
+            let orderBefore = orderItem.before;
+
+            while (orderAfter != null && !map.has(orderAfter)) {
+                orderAfter = order.get(orderAfter)?.after;
+            }
+
+            while (orderBefore != null && !map.has(orderBefore)) {
+                orderBefore = order.get(orderBefore)?.before;
+            }
+
+            if ((orderAfter != null && !keysBefore.includes(orderAfter)) || (orderBefore != null && keysBefore.includes(orderBefore))) {
+                const insertionItem = (orderAfter == null
+                    ? (map.items.find(x => (x.key as yaml.Scalar).value === orderBefore))!
+                    : (map.items.find(x => (x.key as yaml.Scalar).value === orderAfter))!) as yaml.Pair<yaml.Scalar<string>, yaml.Node>;
+                const relatedInformation: DiagnosticRelatedInformation = orderAfter == null ? {
+                    location: { uri: textDocument.uri, range: getRange(textDocument, insertionItem.key.range!) },
+                    message: `'${value}' should come before '${orderBefore}'.`
+                } : {
+                    location: { uri: textDocument.uri, range: getRange(textDocument, insertionItem.key.range!) },
+                    message: `'${value}' should come after '${orderAfter}'.`
+                };
+
+                const currentRange = getRangeFromOffset(textDocument, (map.items[i].key as yaml.Scalar).range![0], (map.items[i].value as yaml.Node).range![2]);
+                currentRange.start.character = 0;
+
+                const codeActionData = codeAction ? {
+                    textEdits: [
+                        {
+                            range: currentRange,
+                            newText: ''
+                        },
+                        {
+                            range: orderAfter == null ? getRangeAt(textDocument, insertionItem.key.range![0], 'start') : getRangeAt(textDocument, insertionItem.value!.range![2], 'start'),
+                            newText: textDocument.getText(currentRange)
+                        }
+                    ] satisfies TextEdit[],
+                    uniqueness: map.range?.toString()
+                } : undefined;
+
+                if (!addDiagnostic(diagnostics, options, {
+                    code: `inconsistent-prop-order/${itemKind.replaceAll(' ', '-')}`,
+                    severity: DiagnosticSeverity.Warning,
+                    message: `The order of this '${value}' is inconsistent.`,
+                    range: getRange(textDocument, (map.items[i].key as yaml.Scalar).range!),
+                    relatedInformation: [
+                        relatedInformation,
+                        {
+                            location: { uri: textDocument.uri, range: orderItem.range },
+                            message: `The order of '${value}' was last adjusted here.`
+                        }
+                    ],
+                    data: codeActionData
+                })) {
+                    return false;
+                }
+            } else {
+                updateOrderItem(order, orderItem, after?.value, before?.value, range);
+            }
+        }
+
+        keysBefore.push(value);
+    }
+
+    return true;
+}
+
 export function validateAction({ diagnostics, textDocument, document, options }: LinterInput): void {
     if (options.enums['mechanic-types'] == null) {
         return;
@@ -118,6 +285,10 @@ export function validateAction({ diagnostics, textDocument, document, options }:
     if (yaml.isMap(actions)) {
         for (const action of actions.items) {
             if (yaml.isScalar(action.key) && action.key.range != null && yaml.isMap(action.value)) {
+                if (!validatePropertyOrder(action.value, 'action', true, textDocument, document, diagnostics, options)) {
+                    return;
+                }
+
                 const mechanic = action.value.get('mechanic', true);
                 const damage = getEntry(action.value, 'damage');
                 const hasDamage = damage != null && yaml.isScalar(damage.value) && damage.value.value as number > 0;
@@ -276,6 +447,10 @@ export function validateStatus({ diagnostics, textDocument, document, options }:
         for (const status of statusEffects.items) {
             if (!yaml.isScalar(status.key) || status.key.range == null || !yaml.isMap(status.value)) {
                 continue;
+            }
+
+            if (!validatePropertyOrder(status.value, 'status effect', true, textDocument, document, diagnostics, options)) {
+                return;
             }
 
             const type = status.value.get('type', true);
