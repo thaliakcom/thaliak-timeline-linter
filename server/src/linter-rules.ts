@@ -28,46 +28,6 @@ function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagn
     return diagnostics.length < settings.maxNumberOfProblems;
 }
 
-export function mustHaveMechanic({ diagnostics, textDocument, document, options }: LinterInput): void {
-    const actions = document.get('actions');
-
-    if (yaml.isMap(actions)) {
-        for (const action of actions.items) {
-            if (yaml.isScalar(action.key) && action.key.range != null && yaml.isMap(action.value) && !action.value.has('mechanic')) {
-
-                if (!addDiagnostic(diagnostics, options, {
-                    code: 'missing-mechanic',
-                    severity: DiagnosticSeverity.Error,
-                    message: `Every action must specify the 'mechanic' field.\nIf no suitable mechanic type exists, add one to 'enums/mechanic-types.yaml'.`,
-                    range: getRange(textDocument, action.key.range)
-                })) {
-                    return;
-                }
-            }
-        }
-    }
-}
-
-export function mustHaveStatusType({ diagnostics, textDocument, document, options }: LinterInput): void {
-    const statuses = document.get('status');
-
-    if (yaml.isMap(statuses)) {
-        for (const status of statuses.items) {
-            if (yaml.isScalar(status.key) && status.key.range != null && yaml.isMap(status.value) && !status.value.has('type')) {
-
-                if (!addDiagnostic(diagnostics, options, {
-                    code: 'missing-status-type',
-                    severity: DiagnosticSeverity.Error,
-                    message: `Every status must specify the 'type' field.\nIf no suitable status type exists, add one to 'enums/status-types.yaml'.`,
-                    range: getRange(textDocument, status.key.range)
-                })) {
-                    return;
-                }
-            }
-        }
-    }
-}
-
 function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, document: yaml.Document, diagnostics: Diagnostic[], options: LinterOptions): boolean {
     let lastAt: number = 0;
     let lastAtRange: yaml.Range | undefined;
@@ -170,6 +130,54 @@ export function validateAction({ diagnostics, textDocument, document, options }:
                     }
                 }
 
+                if (mechanic == null) {
+                    if (!addDiagnostic(diagnostics, options, {
+                        code: 'missing-mechanic',
+                        severity: DiagnosticSeverity.Error,
+                        message: `Every action must specify the 'mechanic' field.\nIf no suitable mechanic type exists, add one to 'enums/mechanic-types.yaml'.`,
+                        range: getRange(textDocument, action.key.range)
+                    })) {
+                        return;
+                    }
+                }
+
+                if (!action.value.has('id') && !action.value.has('name')) {
+                    if (!addDiagnostic(diagnostics, options, {
+                        code: 'missing-name',
+                        severity: DiagnosticSeverity.Error,
+                        message: `An action must set either a valid 'id' or a custom 'name'.`,
+                        range: getRange(textDocument, action.key.range)
+                    })) {
+                        return;
+                    }
+                }
+
+                const shape = action.value.get('shape', true);
+
+                if (shape != null && options.enums['mechanic-shapes'] != null && options.enums['mechanic-shapes'].yaml[shape.value as string] == null) {
+                    if (!addDiagnostic(diagnostics, options, {
+                        code: 'invalid-shape',
+                        severity: DiagnosticSeverity.Error,
+                        message: `The 'shape' field must be one of the following values: '${Object.keys(options.enums['mechanic-shapes'].yaml).join('\', \'')}'`,
+                        range: getRange(textDocument, shape.range!)
+                    })) {
+                        return;
+                    }
+                }
+
+                const damageType = action.value.get('type', true);
+
+                if (damageType != null && options.enums['damage-types'] != null && options.enums['damage-types'].yaml[damageType.value as string] == null) {
+                    if (!addDiagnostic(diagnostics, options, {
+                        code: 'invalid-damage-type',
+                        severity: DiagnosticSeverity.Error,
+                        message: `The 'type' field must be one of the following values: '${Object.keys(options.enums['damage-types'].yaml).join('\', \'')}'`,
+                        range: getRange(textDocument, damageType.range!)
+                    })) {
+                        return;
+                    }
+                }
+
                 if (!yaml.isScalar(mechanic)) {
                     continue;
                 }
@@ -177,6 +185,15 @@ export function validateAction({ diagnostics, textDocument, document, options }:
                 const mechanicType = options.enums['mechanic-types'].yaml[mechanic.value as string];
 
                 if (mechanicType == null) {
+                    if (!addDiagnostic(diagnostics, options, {
+                        code: 'invalid-mechanic',
+                        severity: DiagnosticSeverity.Error,
+                        message: `The 'mechanic' field must be one of the following values: '${Object.keys(options.enums['mechanic-types'].yaml).join('\', \'')}'`,
+                        range: getRange(textDocument, mechanic.range!)
+                    })) {
+                        return;
+                    }
+
                     continue;
                 }
 
@@ -211,7 +228,7 @@ export function validateAction({ diagnostics, textDocument, document, options }:
                     }
                 }
 
-                if (mechanicType.shapeful === true && !action.value.has('shape')) {
+                if (mechanicType.shapeful === true && shape == null) {
                     if (!addDiagnostic(diagnostics, options, {
                         code: 'missing-shape',
                         severity: DiagnosticSeverity.Error,
@@ -263,7 +280,31 @@ export function validateStatus({ diagnostics, textDocument, document, options }:
 
             const type = status.value.get('type', true);
 
-            if (type?.value === 'dot' && !status.value.has('tick')) {
+            if (type == null) {
+                if (!addDiagnostic(diagnostics, options, {
+                    code: 'missing-status-type',
+                    severity: DiagnosticSeverity.Error,
+                    message: `Every status must specify the 'type' field.\nIf no suitable status type exists, add one to 'enums/status-types.yaml'.`,
+                    range: getRange(textDocument, status.key.range)
+                })) {
+                    return;
+                }
+
+                continue;
+            }
+
+            if (options.enums['status-types'] != null && options.enums['status-types'].yaml[type.value as string] == null) {
+                if (!addDiagnostic(diagnostics, options, {
+                    code: 'invalid-mechanic',
+                    severity: DiagnosticSeverity.Error,
+                    message: `The 'type' field must be one of the following values: '${Object.keys(options.enums['status-types'].yaml).join('\', \'')}'`,
+                    range: getRange(textDocument, type.range!)
+                })) {
+                    return;
+                }
+            }
+
+            if (type.value === 'dot' && !status.value.has('tick')) {
                 if (!addDiagnostic(diagnostics, options, {
                     code: 'missing-tick',
                     severity: DiagnosticSeverity.Error,
