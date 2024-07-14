@@ -17,19 +17,19 @@ function makeDefinitionLink(originRange: Range, textDocument: TextDocument, targ
 export default function definitionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: DefinitionParams) => DefinitionLink[] | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
-        const result = getSymbolAt(textDocument, params.position);
+        const document = documentCache.get(textDocument);
+
+        if (document == null) {
+            return null;
+        }
+
+        const result = getSymbolAt(document, textDocument, params.position);
 
         if (result == null) {
             return null;
         }
 
         const { text: key, range } = result;
-    
-        const document = documentCache.get(textDocument);
-
-        if (document == null) {
-            return null;
-        }
 
         const enums = documentCache.getLinterOptions(settings).enums;
 

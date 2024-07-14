@@ -110,9 +110,28 @@ export function getKeyValueAt(textDocument: TextDocument, position: Position, ke
     };
 }
 
+function isInRange(textDocument: TextDocument, textRange: Range, yamlRange: yaml.Range): boolean {
+    const start = textDocument.offsetAt(textRange.start);
+    const end = textDocument.offsetAt(textRange.end);
+
+    return start >= yamlRange[0] && end <= yamlRange[2];
+}
+
+type GuardedType<T> = T extends (node: unknown) => node is infer U ? U : never;
+
+export function getIfType<T extends (node: unknown) => boolean>(node: yaml.YAMLMap | yaml.Document, key: string, typeFn: T): GuardedType<T> | null {
+    const item = node.get(key, true);
+
+    if (typeFn(item)) {
+        return item as GuardedType<T>;
+    }
+
+    return null;
+}
+
 type SymbolRange = TextRange & Partial<PlaceholderRange>;
 
-export function getSymbolAt(textDocument: TextDocument, position: Position, allowIncomplete: boolean = false): SymbolRange | null {
+export function getSymbolAt(document: yaml.Document, textDocument: TextDocument, position: Position, allowIncomplete: boolean = false): SymbolRange | null {
     const placeholder = getPlaceholderAt(textDocument, position, allowIncomplete);
 
     if (placeholder != null) {
@@ -120,36 +139,76 @@ export function getSymbolAt(textDocument: TextDocument, position: Position, allo
         return placeholder;
     }
 
+    const status = getIfType(document, 'status', yaml.isMap);
+    const actions = getIfType(document, 'actions', yaml.isMap);
+    const timeline = getIfType(document, 'timeline', yaml.isSeq);
+
     const id = getKeyValueAt(textDocument, position, 'id');
 
     if (id != null) {
-        console.log(`[symbol-resolver]: found action '${id.text}' at cursor position`);
-        id.text = `a:${id.text}`;
-        return id;
+        if (timeline != null && isInRange(textDocument, id.range, timeline.range!)) {
+            console.log(`[symbol-resolver]: found timeline action '${id.text}' at cursor position`);
+            id.text = `a:${id.text}`;
+            return id;
+        }
+
+        if (actions != null) {
+            for (const action of actions.items) {
+                if (yaml.isMap(action.value)) {
+                    const children = getIfType(action.value, 'children', yaml.isSeq);
+
+                    if (children != null && isInRange(textDocument, id.range, children.range!)) {
+                        console.log(`[symbol-resolver]: found child action '${id.text}' at cursor position`);
+                        id.text = `a:${id.text}`;
+                        return id;
+                    }
+                }
+            }
+        }
+        
+        return null;
     }
 
     const mechanic = getKeyValueAt(textDocument, position, 'mechanic');
 
     if (mechanic != null) {
-        console.log(`[symbol-resolver]: found mechanic '${mechanic.text}' at cursor position`);
-        mechanic.text = `m:${mechanic.text}`;
-        return mechanic;
+        if (actions != null && isInRange(textDocument, mechanic.range, actions.range!)) {
+            console.log(`[symbol-resolver]: found mechanic '${mechanic.text}' at cursor position`);
+            mechanic.text = `m:${mechanic.text}`;
+            return mechanic;
+        }
+
+        return null;
     }
 
     const shape = getKeyValueAt(textDocument, position, 'shape');
 
     if (shape != null) {
-        console.log(`[symbol-resolver]: found shape '${shape.text}' at cursor position`);
-        shape.text = `ms:${shape.text}`;
-        return shape;
+        if (actions != null && isInRange(textDocument, shape.range, actions.range!)) {
+            console.log(`[symbol-resolver]: found shape '${shape.text}' at cursor position`);
+            shape.text = `ms:${shape.text}`;
+            return shape;
+        }
+
+        return null;
     }
 
-    const statusType = getKeyValueAt(textDocument, position, 'type');
+    const _type = getKeyValueAt(textDocument, position, 'type');
 
-    if (statusType != null) {
-        console.log(`[symbol-resolver]: found status type '${statusType.text}' at cursor position`);
-        statusType.text = `st:${statusType.text}`;
-        return statusType;
+    if (_type != null) {
+        if (status != null && isInRange(textDocument, _type.range, status.range!)) {
+            console.log(`[symbol-resolver]: found status type '${_type.text}' at cursor position`);
+            _type.text = `st:${_type.text}`;
+            return _type;
+        }
+
+        if (actions != null && isInRange(textDocument, _type.range, actions.range!)) {
+            console.log(`[symbol-resolver]: found damage type '${_type.text}' at cursor position`);
+            _type.text = `dt:${_type.text}`;
+            return _type;
+        }
+
+        return null;
     }
 
     console.log(`[symbol-resolver]: no symbol found at cursor position`);

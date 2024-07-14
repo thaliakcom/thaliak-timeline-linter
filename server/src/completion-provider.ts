@@ -8,8 +8,14 @@ import { getSymbolAt, ICONS, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 export default function completionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CompletionParams) => CompletionItem[] {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
-        const symbol = getSymbolAt(textDocument, params.position, true);
-        const raidData = (documentCache.get(textDocument)?.toJS() as UnprocessedRaidData | undefined);
+        const document = documentCache.get(textDocument);
+
+        if (document == null) {
+            return [];
+        }
+
+        const raidData = document.toJS() as UnprocessedRaidData;
+        const symbol = getSymbolAt(document, textDocument, params.position, true);
         const actions = raidData?.actions;
         const accumulatedActions: Set<string> = new Set();
         const accumulatedStatuses: Set<string> = new Set();

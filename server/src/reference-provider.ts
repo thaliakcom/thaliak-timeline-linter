@@ -40,7 +40,7 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
             return null;
         }
 
-        let key = getSymbolAt(textDocument, params.position);
+        let key = getSymbolAt(document, textDocument, params.position);
         let textKey: string;
 
         if (key != null) {

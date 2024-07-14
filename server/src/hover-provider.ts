@@ -12,7 +12,13 @@ function makeDescription(name: string, description: string): string {
 export default function hoverProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: HoverParams) => Hover | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
-        const result = getSymbolAt(textDocument, params.position);
+        const document = documentCache.get(textDocument);
+
+        if (document == null) {
+            return null;
+        }
+
+        const result = getSymbolAt(document, textDocument, params.position);
 
         if (result == null) {
             return null;
@@ -20,7 +26,7 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
 
         const { text: key, range } = result;
     
-        const raidData = (documentCache.get(textDocument)?.toJS() as UnprocessedRaidData | undefined);
+        const raidData = document.toJS() as UnprocessedRaidData;
         const actions = raidData?.actions;
         const status = raidData?.status;
         const enums = documentCache.getLinterOptions(settings).enums;
