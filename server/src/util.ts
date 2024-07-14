@@ -2,7 +2,7 @@ import { Position, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 
-export const PLACEHOLDER_REGEX = /(?:(?:\(((?:a|s|m|ms|st|t|i):[A-z0-9\-_()]+)\))|(?:\[((?:a|s|m|ms|st|t|i):[A-z0-9\-_()]+?)(?:(?::c)|(?::d))?\]))/g;
+export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|t|i):[^()\n]+)\))|(?:\[((?:a|s|m|ms|st|t|i):[^[\]\n]+?)(?:(?::c)|(?::d))?\]))/g;
 export const KEY_REGEX = /^\s{2}([^\s]*):\s/g;
 
 export const ICONS = ['tank', 'healer', 'dps', 'melee', 'ranged', 'pranged', 'caster', 'circle', 'cross', 'square', 'triangle'] as const;
