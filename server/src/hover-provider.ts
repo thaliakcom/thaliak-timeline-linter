@@ -69,6 +69,11 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
                 if (enums['status-types'] != null && enums['status-types'].yaml[key] != null) {
                     return { contents: { kind: 'markdown', value: makeDescription(enums['status-types'].yaml[key].name, enums['status-types'].yaml[key].description) }, range };
                 }
+            },
+            'dt:': key => {
+                if (enums['damage-types'] != null && enums['damage-types'].yaml[key] != null) {
+                    return { contents: { kind: 'markdown', value: makeDescription(enums['damage-types'].yaml[key].name, enums['damage-types'].yaml[key].description) }, range };
+                }
             }
         }) ?? null;
     };

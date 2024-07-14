@@ -95,6 +95,15 @@ export default function definitionProvider(documents: TextDocuments<TextDocument
                         return makeDefinitionLink(range, enums['status-types'].textDocument, statusType);
                     }
                 }
+            },
+            'dt:': key => {
+                if (enums['damage-types'] != null && yaml.isMap(enums['damage-types'].document.contents)) {
+                    const damageType = getEntry(enums['damage-types'].document.contents, key);
+
+                    if (damageType != null) {
+                        return makeDefinitionLink(range, enums['damage-types'].textDocument, damageType);
+                    }
+                }
             }
         }) ?? null;
     };

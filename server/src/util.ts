@@ -2,7 +2,7 @@ import { Position, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 
-export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|t|i):[^()\n]+)\))|(?:\[((?:a|s|m|ms|st|t|i):[^[\]\n]+?)(?:(?::c)|(?::d))?\]))/g;
+export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|dt|t|i):[^()\n]+)\))|(?:\[((?:a|s|m|ms|st|dt|t|i):[^[\]\n]+?)(?:(?::c)|(?::d))?\]))/g;
 export const KEY_REGEX = /^\s{2}([^\s]*):\s/g;
 
 export const ICONS = ['tank', 'healer', 'dps', 'melee', 'ranged', 'pranged', 'caster', 'circle', 'cross', 'square', 'triangle'] as const;
@@ -199,6 +199,7 @@ interface Prefixes<T> {
     'm:'?: (key: string) => T;
     'ms:'?: (key: string) => T;
     'st:'?: (key: string) => T;
+    'dt:'?: (key: string) => T;
     't:'?: (key: string) => T;
     'i:'?: (key: string) => T;
     else?: (key: string) => T;

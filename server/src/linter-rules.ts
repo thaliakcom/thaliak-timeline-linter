@@ -358,6 +358,7 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
             'm:': key => options.enums['mechanic-types'] != null && key in options.enums['mechanic-types'].yaml,
             'ms:': key => options.enums['mechanic-shapes'] != null && key in options.enums['mechanic-shapes'].yaml,
             'st:': key => options.enums['status-types'] != null && key in options.enums['status-types'].yaml,
+            'dt:': key => options.enums['damage-types'] != null && key in options.enums['damage-types'].yaml,
             't:': key => options.enums.terms != null && key in options.enums.terms.yaml,
             'i:': key => ICONS.includes(key as typeof ICONS[number])
         });

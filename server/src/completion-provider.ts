@@ -36,6 +36,7 @@ export default function completionProvider(documents: TextDocuments<TextDocument
         let accumulateMechanicTypes = false;
         let accumulateMechanicShapes = false;
         let accumulateStatusTypes = false;
+        let accumulateDamageTypes = false;
         let accumulateIcons = false;
         let accumulateSpecials = false;
 
@@ -46,6 +47,7 @@ export default function completionProvider(documents: TextDocuments<TextDocument
             'm:': () => { accumulateMechanicTypes = true; },
             'ms:': () => { accumulateMechanicShapes = true; },
             'st:': () => { accumulateStatusTypes = true; },
+            'dt:': () => { accumulateDamageTypes = true; },
             'i:': () => { accumulateIcons = true; },
             else: () => {
                 accumulateActions = true;
@@ -54,6 +56,7 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                 accumulateMechanicTypes = true;
                 accumulateMechanicShapes = true;
                 accumulateStatusTypes = true;
+                accumulateDamageTypes = true;
                 accumulateIcons = true;
                 accumulateSpecials = symbol.delimiter === 'square';
             }
@@ -198,6 +201,16 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                 items.push({
                     label: symbol.delimiter != null ? `st:${key}` : key,
                     labelDetails: { description: enums['status-types'].yaml[key].description },
+                    ...base
+                });
+            }
+        }
+
+        if (enums['damage-types'] != null && accumulateDamageTypes) {
+            for (const key in enums['damage-types'].yaml) {
+                items.push({
+                    label: symbol.delimiter != null ? `dt:${key}` : key,
+                    labelDetails: { description: enums['damage-types'].yaml[key].description },
                     ...base
                 });
             }
