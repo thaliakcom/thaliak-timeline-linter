@@ -52,18 +52,23 @@ export function getParserCache(): ParserCache {
 
             console.log('Adding or updating', document.uri);
 
-            const yamlDocument = yaml.parseDocument(document.getText());
-            const newInfo: Document = { ast: yamlDocument, textDocument: document, version, languageId, cTime: Date.now(), isRelevant: isEnum || isRaidData(yamlDocument.toJS()) };
-
-            if (isEnum) {
-                secondaryDocuments[document.uri] = newInfo;
-                const name = document.uri.slice(document.uri.lastIndexOf('/') + 1, document.uri.lastIndexOf('.yaml'));
-                (options.enums as any)[name] = { yaml: yamlDocument.toJS(), document: yamlDocument, textDocument: document };
-            } else {
-                openDocument = newInfo;
+            try {
+                const yamlDocument = yaml.parseDocument(document.getText());
+                const newInfo: Document = { ast: yamlDocument, textDocument: document, version, languageId, cTime: Date.now(), isRelevant: isEnum || isRaidData(yamlDocument.toJS()) };
+    
+                if (isEnum) {
+                    secondaryDocuments[document.uri] = newInfo;
+                    const name = document.uri.slice(document.uri.lastIndexOf('/') + 1, document.uri.lastIndexOf('.yaml'));
+                    (options.enums as any)[name] = { yaml: yamlDocument.toJS(), document: yamlDocument, textDocument: document };
+                } else {
+                    openDocument = newInfo;
+                }
+    
+                return yamlDocument;
+            } catch (e) {
+                console.log(`Aborting ParserCache.get() due to error in the source document.`);
+                return null;
             }
-
-            return yamlDocument;
         },
         isSecondaryFile(document: TextDocument | TextDocumentIdentifier): boolean {
             this.get(document);
