@@ -3,39 +3,32 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
 import {
+    CodeActionKind,
     createConnection,
-    TextDocuments,
     Diagnostic,
-    DiagnosticSeverity,
-    ProposedFeatures,
-    InitializeParams,
-    DidChangeConfigurationNotification,
-    CompletionItem,
-    CompletionItemKind,
-    TextDocumentPositionParams,
-    TextDocumentSyncKind,
-    InitializeResult,
     DocumentDiagnosticReportKind,
-    type DocumentDiagnosticReport,
-    CodeActionKind
+    InitializeParams,
+    InitializeResult,
+    ProposedFeatures,
+    TextDocuments,
+    TextDocumentSyncKind,
+    type DocumentDiagnosticReport
 } from 'vscode-languageserver/node';
 
 import {
     Range,
     TextDocument
 } from 'vscode-languageserver-textdocument';
-import { getParserCache } from './parser-cache';
-import { lintDocument } from './linter';
-import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
-import { UnprocessedRaidData } from './types/raids';
-import completionProvider from './completion-provider';
-import hoverProvider from './hover-provider';
-import definitionProvider from './definition-provider';
-import referenceProvider from './reference-provider';
 import * as yaml from 'yaml';
-import renameProvider from './rename-provider';
 import codeActionProvider from './code-action-provider';
-import { TextRange } from './util';
+import completionProvider from './completion-provider';
+import definitionProvider from './definition-provider';
+import hoverProvider from './hover-provider';
+import { lintDocument } from './linter';
+import { getParserCache } from './parser-cache';
+import referenceProvider from './reference-provider';
+import renameProvider from './rename-provider';
+import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
