@@ -10,7 +10,13 @@
         "Programming Languages",
         "Linters"
     ],
-    "keywords": ["thaliak", "ffxiv", "lsp", "language-server", "yaml"],
+    "keywords": [
+        "thaliak",
+        "ffxiv",
+        "lsp",
+        "language-server",
+        "yaml"
+    ],
     "repository": {
         "url": "https://github.com/thaliakcom/thaliak-timeline-linter/",
         "type": "git"
@@ -93,6 +99,7 @@
         "test": "sh ./scripts/e2e.sh"
     },
     "devDependencies": {
+        "@types/color-string": "^1.5.5",
         "@types/mocha": "^10.0.6",
         "@types/node": "^18.14.6",
         "@typescript-eslint/eslint-plugin": "^7.1.0",
@@ -102,5 +109,8 @@
         "eslint": "^8.57.0",
         "mocha": "^10.3.0",
         "typescript": "^5.3.3"
+    },
+    "dependencies": {
+        "color-string": "^1.9.1"
     }
 }

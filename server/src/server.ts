@@ -29,6 +29,8 @@ import { getParserCache } from './parser-cache';
 import referenceProvider from './reference-provider';
 import renameProvider from './rename-provider';
 import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
+import documentColorProvider from './document-color-provider';
+import colorPresentationProvider from './color-presentation-provider';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -65,7 +67,9 @@ connection.onInitialize((params: InitializeParams) => {
             renameProvider: true,
             codeActionProvider: {
                 codeActionKinds: [CodeActionKind.QuickFix]
-            }
+            },
+            colorProvider: true,
+            codeLensProvider: {}
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -216,6 +220,8 @@ connection.onDefinition(definitionProvider(documents, documentCache, globalSetti
 connection.onReferences(referenceProvider(documents, documentCache, globalSettings));
 connection.onRenameRequest(renameProvider(documents, documentCache, globalSettings));
 connection.onCodeAction(codeActionProvider(documents, documentCache, globalSettings));
+connection.onDocumentColor(documentColorProvider(documents, documentCache, globalSettings));
+connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events

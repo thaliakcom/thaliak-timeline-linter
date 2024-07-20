@@ -25,9 +25,15 @@ export interface PlaceholderRange extends TextRange {
     delimiter: 'square' | 'round';
 }
 
+export function getLineAt(textDocument: TextDocument, position: Position): { lineBefore: string, lineAfter: string } {
+    return {
+        lineBefore: textDocument.getText({ start: { line: position.line, character: 0 }, end: position }),
+        lineAfter: textDocument.getText({ start: position, end: { line: position.line, character: Infinity } })
+    };
+}
+
 export function getPlaceholderAt(textDocument: TextDocument, position: Position, allowIncomplete: boolean = false): PlaceholderRange | null {
-    const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
-    const lineAfter = textDocument.getText({ start: position, end: { line: position.line, character: Infinity } });
+    const { lineBefore, lineAfter } = getLineAt(textDocument, position);
 
     if (/^\s+([^\s]+):\s(?:\[|\()/.test(lineBefore.concat(lineAfter))) {
         return null;
@@ -81,8 +87,7 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position,
 }
 
 export function getKeyValueAt(textDocument: TextDocument, position: Position, key: string): TextRange | null {
-    const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
-    const lineAfter = textDocument.getText({ start: position, end: { line: position.line, character: Infinity } });
+    const { lineBefore, lineAfter } = getLineAt(textDocument, position);
 
     const trimmedLineBefore = lineBefore.trimStart();
 
@@ -114,7 +119,7 @@ export function getKeyValueAt(textDocument: TextDocument, position: Position, ke
     };
 }
 
-function isInRange(textDocument: TextDocument, textRange: Range, yamlRange: yaml.Range): boolean {
+export function isInRange(textDocument: TextDocument, textRange: Range, yamlRange: yaml.Range): boolean {
     const start = textDocument.offsetAt(textRange.start);
     const end = textDocument.offsetAt(textRange.end);
 
