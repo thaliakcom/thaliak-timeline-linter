@@ -149,7 +149,7 @@ function graphingActionProvider(documents: TextDocuments<TextDocument>, document
             let json: Record<string, unknown>;
     
             try {
-                json = JSON.parse(objectString);
+                json = yaml.parse(objectString);
             } catch {
                 json = {};
             }
