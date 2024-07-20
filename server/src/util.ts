@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 
 export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|dt|t|i):[^()\n]+)\))|(?:\[((?:a|s|m|ms|st|dt|t|i):[^[\]\n]+?)(?:(?::c)|(?::d))?\]))/g;
-export const KEY_REGEX = /^\s{2}([^\s]*):\s/g;
+export const KEY_REGEX = /^\s{2}([^\s]+):\s/g;
 
 export const ICONS = ['tank', 'healer', 'dps', 'melee', 'ranged', 'pranged', 'caster', 'circle', 'cross', 'square', 'triangle'] as const;
 
@@ -28,6 +28,10 @@ export interface PlaceholderRange extends TextRange {
 export function getPlaceholderAt(textDocument: TextDocument, position: Position, allowIncomplete: boolean = false): PlaceholderRange | null {
     const lineBefore = textDocument.getText({ start: { line: position.line, character: 0 }, end: position });
     const lineAfter = textDocument.getText({ start: position, end: { line: position.line, character: Infinity } });
+
+    if (/^\s+([^\s]+):\s(?:\[|\()/.test(lineBefore.concat(lineAfter))) {
+        return null;
+    }
 
     let startSymbol = '[';
     let startIndex = lineBefore.lastIndexOf(startSymbol);
