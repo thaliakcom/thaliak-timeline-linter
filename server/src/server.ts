@@ -68,8 +68,7 @@ connection.onInitialize((params: InitializeParams) => {
             codeActionProvider: {
                 codeActionKinds: [CodeActionKind.QuickFix]
             },
-            colorProvider: true,
-            codeLensProvider: {}
+            colorProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
