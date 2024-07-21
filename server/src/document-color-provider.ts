@@ -14,7 +14,7 @@ export default function documentColorProvider(documents: TextDocuments<TextDocum
 
             if (parsedColor != null) {
                 colors.push({
-                    range: { start: textDocument.positionAt(match.index + 1), end: textDocument.positionAt(match.index + 1 + match[0].length) },
+                    range: { start: textDocument.positionAt(match.index + 1), end: textDocument.positionAt(match.index + match[0].length) },
                     color: {
                         red: parsedColor.value[0] / 255,
                         green: parsedColor.value[1] / 255,
