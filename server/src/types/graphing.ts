@@ -132,6 +132,10 @@ export interface StepElementData extends SharedElementData {
     status?: (string | number | SpecialStatus | StatusInfo)[];
     /** Allows you to add some text on top of the element itself. */
     text?: string;
+    /** Sets the CSS `transform` property on this element during this step. */
+    transform?: string;
+    /** Sets the CSS `filter` property on this element during this step. */
+    filter?: string;
 }
 
 export interface DonutDefinition extends DefinitionElementData, Colored {
