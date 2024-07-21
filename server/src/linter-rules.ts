@@ -3,7 +3,7 @@ import * as yaml from 'yaml';
 import { LinterInput } from './linter';
 import { fixableDiagnostics, LinterOptions, PropertyOrder } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getEntry, getRange, getRangeAt, getRangeFromOffset, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 import { Range, TextDocument } from 'vscode-languageserver-textdocument';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
@@ -673,9 +673,261 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
 }
 
 export function validateTimeline({ diagnostics, textDocument, document, options }: LinterInput): void {
-    const timeline = document.get('timeline');
+    const timeline = getIfType(document, 'timeline', yaml.isSeq);
 
-    if (yaml.isSeq(timeline)) {
+    if (timeline != null) {
         validateTimelineItems(timeline, textDocument, document, diagnostics, options);
+    }
+}
+
+const SPECIAL_ELEMENT_KEYS = [
+    'players',
+    'DPS',
+    'tanks',
+    'healers',
+    'supports',
+    'T1',
+    'T2',
+    'H1',
+    'H2',
+    'M1',
+    'M2',
+    'R1',
+    'R2',
+    'boss',
+    'arena',
+    'enemy',
+    'cast',
+    'tower',
+    'marker-a',
+    'marker-1',
+    'marker-b',
+    'marker-2',
+    'marker-c',
+    'marker-3',
+    'marker-d',
+    'marker-4',
+];
+const KEY_REGEX = /([^#]+)(?:#(?:(?:(\d+)\.\.(\d+))|(.+)))?/;
+const SUBKEY_REGEX = /\[([^[\]]+)\]/g;
+const RANGE_REGEX = /(?:(\d+)\.\.(\d+))/;
+
+interface KeyResolverResult {
+    definition?: string;
+    elements: string[];
+    wildcard: boolean;
+}
+
+function resolveKey(key: string, elements: Set<string>): KeyResolverResult {
+    if (SPECIAL_ELEMENT_KEYS.includes(key)) {
+        return { definition: key, elements: unwrapSpecialKey(key), wildcard: false };
+    }
+
+    const match = KEY_REGEX.exec(key);
+
+    if (match == null || match.index !== 0 || match[0].length !== key.length) {
+        throw new Error(`"${key}" is not a valid diagram key.`);
+    }
+
+    const [_, elementKey, rangeStart, rangeEnd, subkey] = match as unknown as [string, string, string | undefined, string | undefined, string | undefined];
+    const result: KeyResolverResult = { definition: elementKey, elements: [], wildcard: false };
+
+    if (rangeStart != null && rangeEnd != null) {
+        for (const i of parseRangeExpression(rangeStart, rangeEnd)) {
+            result.elements.push(`${elementKey}#${i}`);
+        }
+    } else if (subkey != null) {
+        const wildcardElements = accumulateWildcardElements(subkey, elementKey, elements);
+
+        if (wildcardElements != null) {
+            result.wildcard = true;
+            result.elements.push(...wildcardElements);
+        } else {
+            result.elements.push(...accumulateBrackets(subkey, elementKey));
+        }
+    } else {
+        if (key[0] === '[' && key[key.length - 1] === ']') {
+            key = key.slice(1, -1);
+            result.definition = undefined;
+        }
+
+        const values = key.split(',');
+
+        for (const value of values) {
+            result.elements.push(value.trim());
+        }
+    }
+
+    return result;
+}
+
+function unwrapSpecialKey(key: string): string[] {
+    switch (key) {
+        case 'players': return ['T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2'];
+        case 'DPS': return ['M1', 'M2', 'R1', 'R2'];
+        case 'tanks': return ['T1', 'T2'];
+        case 'healers': return ['H1', 'H2'];
+        case 'supports': return ['T1', 'T2', 'H1', 'H2'];
+        default: return [key];
+    }
+}
+
+function* parseRangeExpression(from: string, to: string): Generator<number> {
+    const rangeStart = Number.parseInt(from);
+    const rangeEnd = Number.parseInt(to);
+
+    if (rangeStart >= rangeEnd) {
+        throw new Error(`Invalid range ${from}..${to}: end must be greater than start.`);
+    }
+
+    for (let i: number = rangeStart; i <= rangeEnd; i++) {
+        yield i;
+    }
+}
+
+function accumulateWildcardElements(subkey: string, elementKey: string, elements: Set<string>): string[] | null {
+    const wildcardIndex = subkey.indexOf('*');
+
+    if (wildcardIndex !== -1) {
+        // Wildcard pattern match
+        const leftKey = `${elementKey}#${subkey.slice(0, wildcardIndex)}`;
+        const rightKey = subkey.slice(wildcardIndex + 1);
+        const foundElements: string[] = [];
+
+        for (const innerElementKey in elements) {
+            if (innerElementKey.startsWith(leftKey) && innerElementKey.endsWith(rightKey)) {
+                foundElements.push(innerElementKey);
+            }
+        }
+
+        return foundElements;
+    }
+
+    return null;
+}
+
+function* accumulateBrackets(subkey: string, elementKey: string): Generator<string> {
+    let strings: string[] = [elementKey + '#'];
+    let lastIndex = 0;
+
+    for (const match of subkey.matchAll(SUBKEY_REGEX)) {
+        const prefix = subkey.slice(lastIndex, match.index);
+        const rangeMatch = RANGE_REGEX.exec(match[1]!);
+
+        if (rangeMatch != null) {
+            const numbers = Array.from(parseRangeExpression(rangeMatch[1]!, rangeMatch[2]!));
+            strings = strings.flatMap(string => numbers.map(element => string + prefix + element));
+        } else {
+            const split = match[1]!.split(',');
+
+            if (split.length === 0) {
+                throw new Error(`Bracket expression [] is missing contents: ${match[0]}`);
+            }
+
+            strings = strings.flatMap(string => split.map(element => string + prefix + element.trim()));
+        }
+
+        lastIndex = match.index! + match[0].length;
+    }
+
+    const suffix = subkey.slice(lastIndex);
+
+    for (let j: number = 0; j < strings.length; j++) {
+        strings[j] += suffix;
+
+        yield strings[j];
+    }
+}
+
+export function validateGraphingItems({ diagnostics, textDocument, document, options }: LinterInput): void {
+    const graphing = getIfType(document, 'graphing', yaml.isMap);
+
+    if (graphing != null) {
+        const elements = getIfType(graphing, 'elements', yaml.isMap);
+        const graphs = getIfType(graphing, 'graphs', yaml.isMap);
+        
+        if (elements != null && graphs != null) {
+            const resolvedElements = new Set<string>();
+
+            for (const item of elements.items) {
+                if (yaml.isScalar(item.key) && typeof item.key.value === 'string') {
+                    resolvedElements.add(item.key.value);
+                }
+            }
+
+            for (const graph of graphs.items) {
+                if (yaml.isSeq(graph.value)) {
+                    let first = true;
+                    const firstStepElements = new Set<string>();
+
+                    for (const step of graph.value.items) {
+                        if (yaml.isMap(step)) {
+                            for (const item of step.items) {
+                                const key = textDocument.getText(getRange(textDocument, (item.key as yaml.Node).range!));
+                                let result: KeyResolverResult;
+
+                                try {
+                                    result = resolveKey(key, firstStepElements);
+                                } catch (e) {
+                                    if (!addDiagnostic(diagnostics, options, {
+                                        code: 'graphing-error',
+                                        severity: DiagnosticSeverity.Error,
+                                        message: (e as Error).message,
+                                        range: getRange(textDocument, (item.key as yaml.Node).range!)
+                                    })) {
+                                        return;
+                                    }
+
+                                    continue;
+                                }
+
+                                if (result.wildcard && first) {
+                                    if (!addDiagnostic(diagnostics, options, {
+                                        code: 'first-step-wildcard',
+                                        severity: DiagnosticSeverity.Error,
+                                        message: 'Wildcards in element identifiers may only be used in step 2 and onwards.',
+                                        range: getRange(textDocument, (item.key as yaml.Node).range!)
+                                    })) {
+                                        return;
+                                    }
+                                }
+
+                                const definitions = result.definition != null ? [result.definition] : result.elements;
+
+                                for (const definition of definitions) {
+                                    if (!resolvedElements.has(definition) && !SPECIAL_ELEMENT_KEYS.includes(definition)) {
+                                        if (!addDiagnostic(diagnostics, options, {
+                                            code: 'unresolved-graphing-element',
+                                            severity: DiagnosticSeverity.Error,
+                                            message: `Failed to resolve '${definition}'. Did you remember to add the element definition to 'elements'?`,
+                                            range: getRange(textDocument, (item.key as yaml.Node).range!)
+                                        })) {
+                                            return;
+                                        }
+                                    }
+                                }
+
+                                for (const element of result.elements) {
+                                    if (first) {
+                                        firstStepElements.add(element);
+                                    } else if (!firstStepElements.has(element)) {
+                                        if (!addDiagnostic(diagnostics, options, {
+                                            code: 'uninitialized-graphing-element',
+                                            severity: DiagnosticSeverity.Error,
+                                            message: `Found uninitialized element '${element}'. All elements must be initialized in the first step of a graph.`,
+                                            range: getRange(textDocument, (item.key as yaml.Node).range!)
+                                        })) {
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        first = false;
+                    }
+                }
+            }
+        }
     }
 }

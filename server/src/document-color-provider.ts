@@ -9,12 +9,12 @@ export default function documentColorProvider(documents: TextDocuments<TextDocum
         const colors: ColorInformation[] = [];
         const textDocument = documents.get(params.textDocument.uri)!;
         
-        for (const match of textDocument.getText().matchAll(/((?:#(?:[A-Fa-f0-9]{8}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{3}))|rgba?\(.+\))/g)) {
+        for (const match of textDocument.getText().matchAll(/[\s"']((?:#(?:[A-Fa-f0-9]{8}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{4}|[A-Fa-f0-9]{3}))|rgba?\(.+\))/g)) {
             const parsedColor = color.get(match[1]);
 
             if (parsedColor != null) {
                 colors.push({
-                    range: { start: textDocument.positionAt(match.index), end: textDocument.positionAt(match.index + match[0].length) },
+                    range: { start: textDocument.positionAt(match.index + 1), end: textDocument.positionAt(match.index + 1 + match[0].length) },
                     color: {
                         red: parsedColor.value[0] / 255,
                         green: parsedColor.value[1] / 255,
