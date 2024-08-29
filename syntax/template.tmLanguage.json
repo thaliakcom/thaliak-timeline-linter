@@ -14,7 +14,7 @@
             ]
         },
         "template-expression-unnamed": {
-            "match": "(\\[)(a|s|m|ms|st|dt|t|i)(:)([^\\]\\[\\n]+)(?:(:)(c|d))?(\\])",
+            "match": "(\\[)(a|s|m|ms|st|dt|t|i)(:)(?:(?:([^\\]\\[\\n:]+(:)(c|d|\\d+)))|([^\\]\\[\\n]+))(\\])",
             "captures": {
                 "1": { "name": "punctuation.definition.template-expression.begin.thaliak" },
                 "2": { "name": "keyword.control.template.thaliak" },
@@ -22,7 +22,8 @@
                 "4": { "name": "entity.name.variable.template.thaliak" },
                 "5": { "name": "punctuation.separator.template.thaliak" },
                 "6": { "name": "keyword.control.modifier.template.thaliak" },
-                "7": { "name": "punctuation.definition.template-expression.begin.thaliak" }
+                "7": { "name": "entity.name.variable.template.thaliak" },
+                "8": { "name": "punctuation.definition.template-expression.end.thaliak" }
             }
         },
         "template-expression-named": {
@@ -30,12 +31,12 @@
             "captures": {
                 "1": { "name": "punctuation.definition.template-expression.begin.thaliak" },
                 "2": { "name": "string.unquoted.template-expression.thaliak" },
-                "3": { "name": "punctuation.definition.template-expression.begin.thaliak" },
+                "3": { "name": "punctuation.definition.template-expression.end.thaliak" },
                 "4": { "name": "punctuation.definition.template-expression.begin.thaliak" },
                 "5": { "name": "keyword.control.template.thaliak" },
                 "6": { "name": "punctuation.separator.template.thaliak" },
                 "7": { "name": "entity.name.variable.template.thaliak" },
-                "8": { "name": "punctuation.definition.template-expression.begin.thaliak" }
+                "8": { "name": "punctuation.definition.template-expression.end.thaliak" }
             }
         },
         "boss-template-expression": {
@@ -43,7 +44,7 @@
             "captures": {
                 "1": { "name": "punctuation.definition.template-expression.begin.thaliak" },
                 "2": { "name": "entity.name.variable.template.boss.thaliak" },
-                "3": { "name": "punctuation.definition.template-expression.begin.thaliak" }
+                "3": { "name": "punctuation.definition.template-expression.end.thaliak" }
             }
         },
         "fight-template-expression": {
@@ -51,7 +52,7 @@
             "captures": {
                 "1": { "name": "punctuation.definition.template-expression.begin.thaliak" },
                 "2": { "name": "entity.name.variable.template.fight.thaliak" },
-                "3": { "name": "punctuation.definition.template-expression.begin.thaliak" }
+                "3": { "name": "punctuation.definition.template-expression.end.thaliak" }
             }
         },
         "unverified-template": {
@@ -61,7 +62,7 @@
                 "2": { "name": "keyword.control.preamble.unverified.template.thaliak" },
                 "3": { "name": "punctuation.definition.template-expression.begin.thaliak" },
                 "4": { "name": "string.unquoted.template-expression.thaliak" },
-                "5": { "name": "punctuation.definition.template-expression.begin.thaliak" }
+                "5": { "name": "punctuation.definition.template-expression.end.thaliak" }
             }
         }
     }

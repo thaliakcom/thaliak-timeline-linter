@@ -2,8 +2,9 @@ import { Position, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 
-export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|dt|t|i):[^()\n]+)\))|(?:\[((?:a|s|m|ms|st|dt|t|i):[^[\]\n]+?)(?:(?::c)|(?::d))?\]))/g;
+export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|dt|t|i):[^()\n]+)\))|(?:\[((?:a|s|m|ms|st|dt|t|i):[^[\]\n]+?)(?:(?::c)|(?::d)|(?::\d+))?\]))/g;
 export const KEY_REGEX = /^\s{2}([^\s]+):\s/g;
+export const SUFFIX_REGEX = /.+(:\d+|d|c)/g;
 
 export const ICONS = ['tank', 'healer', 'dps', 'melee', 'ranged', 'pranged', 'caster', 'circle', 'cross', 'square', 'triangle'] as const;
 
@@ -69,7 +70,10 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position,
     const keyBefore = lineBefore.slice(startIndex + 1);
     const keyAfter = lineAfter.slice(0, endIndex);
     const rawKey = keyBefore + keyAfter;
-    const key = rawKey.replace(':c]', ']').replace(':d]', ']');
+    const suffixMatch = SUFFIX_REGEX.exec(rawKey);
+    const key = suffixMatch != null
+        ? rawKey.slice(0, suffixMatch[0].length - suffixMatch[1].length)
+        : rawKey;
 
     if (rawKey.includes(startSymbol) || rawKey.includes(endSymbol)) {
         console.log(`[symbol-resolver]: parsed key (${rawKey}) contains '${startSymbol}' or '${endSymbol}'; aborting`);
