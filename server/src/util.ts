@@ -12,6 +12,7 @@ export const SPECIAL_TIMELINE_IDS: Array<{ id: string, description: string }> = 
     { id: '<untargetable>', description: 'Indicates that the enemy or enemies on the field become untargetable. Should be followed by a <targetable> item.' },
     { id: '<targetable>', description: 'Indicates that the enemy or enemies on the field become targetable (again). Must be preceded by an <untargetable> item.' },
     { id: '<phase>', description: 'Indicates that a new phase of the fight begins.' },
+    { id: '<endphase>', description: 'Indicates that a phase previously started with <phase> ends. Only use this kind of item if the timeline items immediately following this item should not be part of any phase.' },
     { id: '<addstatus>', description: 'Indicates that status effects are inflicted on players. Only use this kind of item if the statuses are not inflicted by an enemy action.' },
     { id: '<removestatus>', description: 'Indicates that status effects fall off from players. Only use this kind of item if the statuses do not have a fixed duration and instead fall off as a result of some other condition. Do not use this kind of item if the status is consumed by some other enemy action.' },
     { id: '<loop>', description: 'Indicates that all mechanics or a subset of mechanics up until now will loop until the boss enrages or a specific condition is met.' }

@@ -322,6 +322,23 @@ export enum MitigationMode {
     Max = 'max'
 }
 
+export enum Timing {
+    /** 
+     * Indicates that the exact timing of this action is based on a *health
+     * push*, i.e. it occurs when the health of the enemy or enemies on the
+     * field is reduced past a certain threshold and not at a fixed time in
+     * the fight.
+     */
+    Push = 'push',
+    /** 
+     * Indicates that the exact timing of this action is based on a *player
+     * action*, i.e. it occurs when a player manually resolves a debuff or
+     * interacts with a part of the arena in a specific way, and may therefore
+     * vary.
+     */
+    Player = 'player'
+}
+
 export interface BaseTimelineItem {
     /**
      * The time in milliseconds relative to the `at` value of the parent ability
@@ -395,10 +412,8 @@ export interface BaseTimelineItem {
      * the action itself.
      */
     players?: number;
-    /** 
-     * If true, indicates that the exact timing of this timeline item may vary, as it is based on a *health push*, i.e. it occurs when the health of the enemy or enemies on the field is reduced past a certain threshold and not at a fixed time in the fight.
-     */
-    push?: boolean;
+    /** Allows specifying additional information about the timing of the action. */
+    timing?: Timing;
     /** 
      * If true, completely hides the element from the timeline and instead
      * only prints its children.
@@ -439,7 +454,11 @@ export interface Macro {
     text: string;
 }
 
-export interface PhaseShiftItem extends Pick<BaseTimelineItem, 'at' | 'push'> {
+export interface EndPhaseItem extends Pick<BaseTimelineItem, 'at' | 'timing'> {
+    id: '<endphase>';
+}
+
+export interface PhaseShiftItem extends Pick<BaseTimelineItem, 'at' | 'timing'> {
     id: '<phase>';
     /**
      * The full name of the phase. Phases aren't automatically numbered, so if
@@ -474,7 +493,7 @@ export interface LoopItem extends Pick<BaseTimelineItem, 'at' | 'description'> {
     id: '<loop>';
 }
 
-export type SpecialTimelineItem = PhaseShiftItem | SpecialChildTimelineItem | LoopItem;
+export type SpecialTimelineItem = PhaseShiftItem | EndPhaseItem | SpecialChildTimelineItem | LoopItem;
 export type SpecialChildTimelineItem = TargetableItem | StatusTimelineItem;
 
 export type TimelineItem = ProcessedTimelineItem | SpecialTimelineItem;
