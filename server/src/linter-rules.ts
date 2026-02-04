@@ -493,15 +493,35 @@ export function validateStatus({ diagnostics, textDocument, document, options }:
     }
 }
 
-export function mustSpecifyPartyHP({ diagnostics, textDocument, document, options }: LinterInput): void {
-    const wip = document.get('wip');
+function isWip(document: yaml.Document, kind: WipKind): [boolean, yaml.Range | undefined] {
+    if (!yaml.isMap(document.contents)) {
+        return [false, undefined];
+    }
 
-    if ((wip == null || wip === false) && !document.has('party_hp')) {
+    const wip = getEntry(document.contents, 'wip');
+
+    if (wip == null) {
+        return [false, undefined];
+    }
+
+    return [
+        yaml.isScalar(wip.value) ? wip.value.value === 'full' : (yaml.isSeq(wip.value) && wip.value.items.includes(kind)),
+        wip.key.range ?? undefined
+    ];
+}
+
+export function mustSpecifyPartyHP({ diagnostics, textDocument, document, options }: LinterInput): void {
+    const [wip, wipRange] = isWip(document, 'damage');
+
+    if (!wip && !document.has('party_hp')) {
         addDiagnostic(diagnostics, options, {
             code: 'missing-party-hp',
             severity: DiagnosticSeverity.Error,
-            message: `Field 'party_hp' is required in non-work-in-progress timelines.`,
-            range: { start: textDocument.positionAt(0), end: textDocument.positionAt(1) }
+            message: `Field 'party_hp' is required in timeline files without the "damage" work-in-progress kind.`,
+            range: getRangeOrStart(textDocument, wipRange)
+        });
+    }
+}
         });
     }
 }
