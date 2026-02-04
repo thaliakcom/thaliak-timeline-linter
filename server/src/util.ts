@@ -231,7 +231,42 @@ export function getSymbolAt(document: yaml.Document, textDocument: TextDocument,
     return null;
 }
 
+export function isPositionInYamlRange(textDocument: TextDocument, position: Position, range: yaml.Range): boolean {
+    const offset = textDocument.offsetAt(position);
+
+    return range[0] <= offset && range[1] > offset;
+}
+
+export function isOffsetInRange(textDocument: TextDocument, offset: number, range: Range): boolean {
+    const start = textDocument.offsetAt(range.start);
+    const end = textDocument.offsetAt(range.end);
+
+    return start <= offset && offset <= end;
+}
+
+export function isPositionInRange(textDocument: TextDocument, position: Position, range: Range): boolean {
+    const offset = textDocument.offsetAt(position);
+
+    return isOffsetInRange(textDocument, offset, range);
+}
+
 export function getRange(textDocument: TextDocument, range: yaml.Range): Range {
+    return getRangeFromOffset(textDocument, range[0], range[1]);
+}
+
+export function getRangeFromNode(node: unknown): yaml.Range | null {
+    if (yaml.isNode(node) && node.range != null) {
+        return node.range;
+    }
+
+    return null;
+}
+
+export function getRangeOrStart(textDocument: TextDocument, range: yaml.Range | undefined | null): Range {
+    if (range == null) {
+        return { start: textDocument.positionAt(0), end: textDocument.positionAt(1) };
+    }
+
     return getRangeFromOffset(textDocument, range[0], range[1]);
 }
 
@@ -249,6 +284,11 @@ export function getRangeAt(textDocument: TextDocument, offset: number, linePos?:
     }
 
     return { start: position, end: position };
+}
+
+export function getLineLength(textDocument: TextDocument, line: number): number {
+    const nextLineStart = textDocument.offsetAt({ character: 0, line: line + 1 });
+    return textDocument.positionAt(nextLineStart - 1).character;
 }
 
 export function getEntry(map: yaml.YAMLMap, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | undefined {
