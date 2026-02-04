@@ -1,9 +1,16 @@
-import { CodeAction, CodeActionKind, CodeActionParams, Command, Diagnostic, TextDocuments, TextEdit } from 'vscode-languageserver';
+import { CodeAction, CodeActionKind, CodeActionParams, Command, Diagnostic, Range, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { fixableDiagnostics, ThaliakTimelineLinterSettings } from './server';
-import { getIfType, getLineAt, isInRange } from './util';
+import { getIfType, getLineAt, getLineLength, getRange, getRangeFromNode, isInRange, isOffsetInRange, isPositionInRange, isPositionInYamlRange } from './util';
+
+const stringifyOptions: yaml.ToStringOptions = {
+    collectionStyle: 'block',
+    directives: false,
+    indent: 4,
+    simpleKeys: true
+};
 
 function autoFixerProvider(params: CodeActionParams): CodeAction[] {
     const codeActions: CodeAction[] = [];
@@ -97,6 +104,159 @@ function autoFixerProvider(params: CodeActionParams): CodeAction[] {
     return codeActions;
 }
 
+export function childActionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, params: CodeActionParams): CodeAction[] {
+    const textDocument = documents.get(params.textDocument.uri);
+    const document = documentCache.get(params.textDocument);
+    
+    if (textDocument == null || document == null) {
+        return [];
+    }
+
+    const text = textDocument.getText(params.range);
+    const codeActions: CodeAction[] = [];
+
+    function handleTimeline(seq: yaml.YAMLSeq): boolean {
+        if (seq.range == null || !isInRange(textDocument!, params.range, seq.range)) {
+            return false;
+        }
+
+        let firstItem = -1;
+        let lastItem = -1;
+
+        for (let i: number = 0; i < seq.items.length; i++) {
+            const item = seq.items[i];
+            
+            if (!yaml.isMap(item) || item.range == null) {
+                continue;
+            }
+            
+            if (firstItem === -1 && (isOffsetInRange(textDocument!, item.range[0], params.range) || isOffsetInRange(textDocument!, item.range[2] - 1, params.range))) {
+                firstItem = i;
+            }
+
+            if (lastItem === -1 && isPositionInYamlRange(textDocument!, params.range.end, item.range)) {
+                lastItem = i;
+            }
+        }
+
+        if (firstItem === -1 || lastItem === -1 || firstItem >= lastItem || firstItem === 0) {
+            return false;
+        }
+        
+        const items = seq.items.slice(firstItem + 1, lastItem + 1);
+        const removalStart = getRangeFromNode(seq.items[firstItem + 1])?.[0];
+        const removalEnd = getRangeFromNode(seq.items[lastItem])?.[2];
+        const newParentItem = seq.items[firstItem];
+
+        if (removalStart == null || removalEnd == null || !yaml.isMap(newParentItem)) {
+            return false;
+        }
+
+        const parentTimestamp = newParentItem.get('at', true)?.value;
+        const parentActionId = newParentItem.get('id', true)?.value as string | undefined;
+
+        if (typeof parentTimestamp !== 'number' || parentActionId == null) {
+            return false;
+        }
+
+        const actions = getIfType(document!.contents as yaml.YAMLMap, 'actions', yaml.isMap);
+
+        if (actions == null) {
+            return false;
+        }
+
+        const parentAction = getIfType(actions, parentActionId, yaml.isMap);
+
+        if (parentAction == null) {
+            return false;
+        }
+
+        const newSeq = new yaml.YAMLSeq();
+
+        for (const item of items) {
+            if (yaml.isMap(item)) {
+                const newItem = item.clone() as yaml.YAMLMap;
+                const at = newItem.get('at', true)?.value;
+                
+                if (typeof at !== 'number') {
+                    newSeq.add(item);
+                    continue;
+                }
+
+                newItem.set('at', at - parentTimestamp);
+                newSeq.add(newItem);
+                continue;
+            }
+
+            newSeq.add(item);
+        }
+
+        // Select the entire line
+        const removalStartPosition = textDocument!.positionAt(removalStart);
+        removalStartPosition.character = 0;
+        const rangeToDelete = getRange(textDocument!, [textDocument!.offsetAt(removalStartPosition), removalEnd, removalEnd]);
+        let insertionIndex = -1;
+        let insertionText = '';
+
+        const children = getIfType(parentAction, 'children', yaml.isSeq);
+
+        if (children != null && children.range != null) {
+            insertionIndex = children.range[2];
+            insertionText = '    ' + yaml.stringify(newSeq, stringifyOptions).replaceAll('\n', '\n    ');
+            const lastIndex = insertionText.lastIndexOf('\n    ');
+            insertionText = insertionText.slice(0, lastIndex + 1);
+        } else if (parentAction.range != null) {
+            insertionIndex = parentAction.range![2];
+            const keyPair = new yaml.Pair('children', newSeq);
+            insertionText = '    ' + yaml.stringify(keyPair, stringifyOptions);
+        }
+
+        if (insertionIndex === -1) {
+            return false;
+        }
+
+        codeActions.push({
+            title: `Transform to children`,
+            kind: `${CodeActionKind.RefactorRewrite}.make-children`,
+            edit: {
+                changes: {
+                    [params.textDocument.uri]: [
+                        TextEdit.del(rangeToDelete),
+                        TextEdit.insert(textDocument!.positionAt(insertionIndex), insertionText)
+                    ]
+                }
+            }
+        });
+
+        return true;
+    }
+
+    if (text.length > 0) {
+        const actions = getIfType(document, 'actions', yaml.isMap);
+        const timeline = getIfType(document, 'timeline', yaml.isSeq);
+
+        if (actions != null && actions.range != null && isInRange(textDocument, params.range, actions.range)) {
+            for (const action of actions.items) {
+                if (!yaml.isMap(action.value)) {
+                    continue;
+                }
+
+                const children = getIfType(action.value, 'children', yaml.isSeq);
+
+                if (children != null) {
+                    handleTimeline(children);
+                }
+            }
+        }
+
+        if (timeline != null && timeline.range != null && isInRange(textDocument, params.range, timeline.range)) {
+            handleTimeline(timeline);
+        }
+    }
+
+    return codeActions;
+}
+
 function graphingActionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, params: CodeActionParams): CodeAction[] {
     const textDocument = documents.get(params.textDocument.uri);
     const document = documentCache.get(params.textDocument);
@@ -178,7 +338,8 @@ export default function codeActionProvider(documents: TextDocuments<TextDocument
     return (params) => {
         return [
             ...autoFixerProvider(params),
-            ...graphingActionProvider(documents, documentCache, params)
+            ...graphingActionProvider(documents, documentCache, params),
+            ...childActionProvider(documents, documentCache, params)
         ];
     };
 }
