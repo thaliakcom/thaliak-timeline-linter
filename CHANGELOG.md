@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0 (2026-02-05)
+
+* **Fixed**: certain placeholders not being correctly parsed (fbc17f59e39931b4f899a7999098cd19f14deaf8)
+
 ## 0.2.0 (2026-02-04)
 
 * **Added**: "make children" code action (select multiple timeline items, then
