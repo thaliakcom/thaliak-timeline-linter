@@ -88,8 +88,10 @@
     },
     "scripts": {
         "vscode:prepublish": "npm run package",
-        "compile": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs",
-        "package": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs --production",
+        "compile-anew": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs",
+        "package-anew": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs --production",
+        "compile": "npm run check-types && node esbuild.mjs",
+        "package": "npm run check-types && node esbuild.mjs --production",
         "check-types": "tsc --noEmit",
         "watch": "npm run watch:esbuild & npm run watch:tsc",
         "watch:esbuild": "node esbuild.mjs --watch",
