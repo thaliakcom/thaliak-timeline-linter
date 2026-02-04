@@ -226,6 +226,28 @@ export function getSymbolAt(document: yaml.Document, textDocument: TextDocument,
         return null;
     }
 
+    if (actions != null) {
+        for (const action of actions.items) {
+            if (yaml.isScalar(action.key) && action.key.range != null) {
+                if (isPositionInYamlRange(textDocument, position, action.key.range)) {
+                    console.log(`[symbol-resolver]: found action '${action.key}' at cursor position`);
+                    return { text: `a:${action.key}`, range: getRange(textDocument, action.key.range) };
+                }
+            }
+        }
+    }
+
+    if (status != null) {
+        for (const effect of status.items) {
+            if (yaml.isScalar(effect.key) && effect.key.range != null) {
+                if (isPositionInYamlRange(textDocument, position, effect.key.range)) {
+                    console.log(`[symbol-resolver]: found status effect '${effect.key}' at cursor position`);
+                    return { text: `s:${effect.key}`, range: getRange(textDocument, effect.key.range) };
+                }
+            }
+        }
+    }
+
     console.log(`[symbol-resolver]: no symbol found at cursor position`);
 
     return null;
