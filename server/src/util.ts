@@ -124,11 +124,12 @@ export function getKeyValueAt(textDocument: TextDocument, position: Position, ke
     };
 }
 
+/** Checks if the text range is within the given YAML range. */
 export function isInRange(textDocument: TextDocument, textRange: Range, yamlRange: yaml.Range): boolean {
     const start = textDocument.offsetAt(textRange.start);
     const end = textDocument.offsetAt(textRange.end);
 
-    return start >= yamlRange[0] && end <= yamlRange[2];
+    return start >= yamlRange[0] && end < yamlRange[2];
 }
 
 type GuardedType<T> = T extends (node: unknown) => node is infer U ? U : never;
