@@ -12,24 +12,19 @@ export interface StatusEffect extends UnprocessedStatusEffect {
     gameDescription: string;
     isBuff: boolean;
     maxStacks: integer;
-    isPlayerSource: boolean;
+    affects: 'player' | 'enemy';
     duration: integer[];
 }
 
 export interface UnprocessedStatusEffect {
     /**
-     * If specified, will use this ID to retrieve additional information
-     * about the status from game data. If not specified, will use the
-     * key of this status instead.
+     * The ID of the status in the game's files. This iD is used to retrieve
+     * additional information about the status from within the game's files.
      *
-     * Note that timeline items and in-text references still use the key
-     * of the status to retrieve additional action data.
-     *
-     * While not necessary, using this field is generally recommended to
-     * "alias" statuses used in the fight to make the timeline easier to
-     * read and maintain.
+     * Note that timeline items and in-text references use the status effect's
+     * key in the `status` object to refer back to this status effect.
      */
-    id?: number;
+    id: integer;
     /**
      * Can be used to override the name of the status effect.
      * Note that the status name is automatically retrieved from game data
@@ -83,11 +78,11 @@ export interface UnprocessedStatusEffect {
      */
     maxStacks?: integer;
     /**
-     * Whether the status effect originates from a player or an enemy.
-     * Note that this value is automatically retrieved from game data, so explicitly defining
-     * it here is strongly discouraged.
+     * Whether the status effect affects players or enemies.
+     * 
+     * If not specified, assumes that a status affects players.
      */
-    isPlayerSource?: boolean;
+    affects?: 'player' | 'enemy';
 }
 
 export interface Strategy {
@@ -106,7 +101,7 @@ export interface Action extends Omit<UnprocessedAction, 'children'> {
     cast: integer;
     isPlayerSource: boolean;
     strategies: Record<string, Strategy>;
-    children: (ProcessedTimelineItem | SpecialChildTimelineItem)[];
+    children: (ProcessedChildItem | SpecialChildTimelineItem)[];
 }
 
 export enum CompactMode {
@@ -123,17 +118,17 @@ export type Element = 'fire' | 'ice' | 'wind' | 'earth' | 'lightning' | 'water';
 export interface UnprocessedAction {
     /**
      * If specified, will use this ID to retrieve additional information
-     * about the action from game data. If not specified, will use the
-     * key of this action instead.
+     * about the action from game data.
      *
-     * Note that timeline items and in-text references still use the key
-     * of the action to retrieve additional action data.
-     *
-     * While not necessary, using this field is strongly recommended to
-     * "alias" actions used in the fight to make the timeline easier to
-     * read and maintain.
+     * Note that timeline items and in-text references use the action's
+     * key in the `actions` object to refer back to this action.
+     * 
+     * Unlike status effects, actions allow you to omit this ID. If the ID
+     * is omitted, no data about this action is retrieved from the game's
+     * files. This can be useful for "fake" actions that are just used
+     * to group multiple related actions using the action's `children`.
      */
-    id?: number;
+    id?: integer;
     /**
      * Can be used to override the name of the action.
      * Note that the action name is automatically retrieved from game data
@@ -315,6 +310,10 @@ export interface ProcessedTimelineItem extends UnprocessedTimelineItem {
     count: integer;
 }
 
+export interface ProcessedChildItem extends ProcessedTimelineItem {
+    level: integer;
+}
+
 export enum MitigationMode {
     /** Combines both damage instances. */
     Combine = 'combine',
@@ -336,7 +335,12 @@ export enum Timing {
      * interacts with a part of the arena in a specific way, and may therefore
      * vary.
      */
-    Player = 'player'
+    Player = 'player',
+    /** 
+     * Indicates that the action is skippable if certain conditions are met,
+     * such as reducing the boss below a certain health threshold.
+     */
+    Skippable = 'skippable'
 }
 
 export interface BaseTimelineItem {
@@ -359,7 +363,7 @@ export interface BaseTimelineItem {
      *
      * If the boss can cast different variations of this mechanic, use `link: or`.
      */
-    id: integer | string;
+    id: string;
     /**
      * A description of the action as it happens at this point in the timeline.
      * If not supplied, will default to the first line in the description of the referenced action.
@@ -407,7 +411,7 @@ export interface BaseTimelineItem {
      */
     count?: integer;
     /** 
-     * The number of players damaged by this action. Should only be specified if the
+     * The number of players damaged by this action. Should only be specified if
      * this timeline item's player count differs from the player count defined within
      * the action itself.
      */
@@ -505,13 +509,16 @@ export interface RaidData extends Omit<UnprocessedRaidData, 'actions' | 'timelin
     name: string;
     suffix: string;
     requiredDPS: integer;
-    wip: boolean;
+    wip: WipKind[];
     status: Record<string | integer, StatusEffect>;
     actions: Record<string | integer, Action>;
     timeline: TimelineItem[];
+    phases?: RaidDataPhase[];
     macros: Macro[];
     spoiler: boolean;
 }
+
+export type ContributorRole = 'author' | 'editor' | 'helper';
 
 export interface Contributor {
     /**
@@ -529,8 +536,16 @@ export interface Contributor {
      * * Helpers help research the internals of the fight's mechanics but
      *   are otherwise not involved in the writing process.
      */
-    role: 'author' | 'editor' | 'helper';
+    role: ContributorRole;
 }
+
+export interface RaidDataPhase {
+    name: string;
+    actions: Set<string | integer>;
+    status: Set<string | integer>;
+}
+
+export type WipKind = 'timeline' | 'guide' | 'damage' | 'diagrams';
 
 /**
  * Timeline data for a specific encounter.
@@ -578,6 +593,12 @@ export interface UnprocessedRaidData {
     tier?: string;
     /** The English name of the main boss that is fought in this encounter. */
     boss: string;
+    /** A shortened version of the name, used as a caption in the top bar dialog. */
+    short?: string;
+    /** 
+     * A list of aliases. These are alternative URLs that will redirect to this page.
+     */
+    alias?: string[];
     /**
      * Can be used to override the name of the encounter.
      * Note that the encounter name is automatically retrieved from the API,
@@ -615,6 +636,8 @@ export interface UnprocessedRaidData {
         shape?: ShapeType;
         /** What damage type the auto-attacks use. Must be one of the values from `damage-types.yaml`. */
         type: DamageType;
+        /** The average damage per auto-attack. If there are multiple types of auto-attacks, leave this blank. */
+        damage?: number;
     };
     /**
      * A brief description of the encounter that will be displayed at the top of
@@ -623,24 +646,35 @@ export interface UnprocessedRaidData {
     description: string;
     /**
      * If set, this encounter will be included in encounter lists, but the actual
-     * encounter page will be replaced by a generic page informing users that
-     * the encounter guide is still a work-in-progress.
+     * encounter page will be modified based on the type of value:
+     * 
+     * * `full` or `timeline`: The page is replaced by a generic page informing
+     *   readers that the page is still a work-in-progress.
+     * * `guide`: Only displays the first three columns (Hit, Ability, Type)
+     *   while hiding the Description column.
+     * * `damage`: Hides all damage values.
+     * * `diagrams`: Hides all diagrams.
+     * 
+     * A banner is also displayed at the top that explains what kind of work
+     * is still left, along with information on how to help.
      */
-    wip?: boolean;
+    wip?: 'full' | WipKind[];
     /**
-     * The status effects that appear in this encounter. Each status effect
-     * is either its game data ID or (if there is no game data entry for it) a
-     * unique string representing the status effect, and a data object
-     * further describing it.
+     * The status effects that appear in this encounter.
+     * 
+     * Each status effect's key should be a unique but otherwise arbitrary
+     * string that can be used to refer back to this status in timeline items
+     * and in-text references.
      */
-    status?: Record<string | number, UnprocessedStatusEffect>;
+    status?: Record<string, UnprocessedStatusEffect>;
     /**
-     * The actions (mechanics) that appear in this encounter. Each action
-     * is either its game data ID or (if there is no game data entry for it) a
-     * unique string representing the action, and a data object
-     * further describing it.
+     * The actions that appear in this encounter.
+     * 
+     * Each action's key should be a unique but otherwise arbitrary
+     * string that can be used to refer back to this action in timeline items
+     * and in-text references.
      */
-    actions?: Record<string | number, UnprocessedAction>;
+    actions?: Record<string, UnprocessedAction>;
     /** The entire timeline of the fight, referencing actions from `actions`. */
     timeline?: (UnprocessedTimelineItem | SpecialTimelineItem)[];
     /**
