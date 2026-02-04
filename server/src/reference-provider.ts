@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { getAction, getKeyValueAt, getRange, getStatus, getSymbolAt, KEY_REGEX, perPrefix, TextRange } from './util';
+import { findPlaceholders, getAction, getKeyValueAt, getRange, getStatus, getSymbolAt, KEY_REGEX, perPrefix, TextRange } from './util';
 
 function escapeRegExp(string: string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
@@ -97,16 +97,12 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
             }
         });
 
-        let index = -1;
-
-        do {
-            index = documentText.indexOf(textKey, index + 1);
-            const nextCharacter = documentText[index + textKey.length];
-
-            if (index !== -1 && (nextCharacter === ':' || nextCharacter === ']' || nextCharacter === ')')) {
-                locations.push(makeLocation(textDocument, [index, index + textKey.length, index + textKey.length]));
-            }
-        } while (index > 0);
+        for (const placeholder of findPlaceholders(textDocument, textKey)) {
+            locations.push({
+                uri: textDocument.uri,
+                range: placeholder
+            });
+        }
 
         return locations;
     };

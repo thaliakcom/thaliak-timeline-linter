@@ -145,7 +145,21 @@ export function getIfType<T extends (node: unknown) => boolean>(node: yaml.YAMLM
     return null;
 }
 
-type SymbolRange = TextRange & Partial<PlaceholderRange>;
+export type SymbolRange = TextRange & Partial<PlaceholderRange>;
+
+export function* findPlaceholders(textDocument: TextDocument, key: string): Generator<Range> {
+    const documentText = textDocument.getText();
+    let index = -1;
+
+    do {
+        index = documentText.indexOf(key, index + 1);
+        const nextCharacter = documentText[index + key.length];
+
+        if (index !== -1 && (nextCharacter === ':' || nextCharacter === ']' || nextCharacter === ')')) {
+            yield getRange(textDocument, [index, index + key.length, index + key.length]);
+        }
+    } while (index > 0);
+}
 
 export function getSymbolAt(document: yaml.Document, textDocument: TextDocument, position: Position, allowIncomplete: boolean = false): SymbolRange | null {
     const placeholder = getPlaceholderAt(textDocument, position, allowIncomplete);
