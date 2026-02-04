@@ -27,7 +27,7 @@ import hoverProvider from './hover-provider';
 import { lintDocument } from './linter';
 import { getParserCache } from './parser-cache';
 import referenceProvider from './reference-provider';
-import renameProvider from './rename-provider';
+import { renameProvider, prepareRenameProvider } from './rename-provider';
 import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
 import documentColorProvider from './document-color-provider';
 import colorPresentationProvider from './color-presentation-provider';
@@ -64,7 +64,7 @@ connection.onInitialize((params: InitializeParams) => {
             hoverProvider: true,
             definitionProvider: true,
             referencesProvider: true,
-            renameProvider: true,
+            renameProvider: { prepareProvider: true },
             codeActionProvider: {
                 codeActionKinds: [CodeActionKind.QuickFix]
             },
@@ -218,6 +218,7 @@ connection.onHover(hoverProvider(documents, documentCache, globalSettings));
 connection.onDefinition(definitionProvider(documents, documentCache, globalSettings));
 connection.onReferences(referenceProvider(documents, documentCache, globalSettings));
 connection.onRenameRequest(renameProvider(documents, documentCache, globalSettings));
+connection.onPrepareRename(prepareRenameProvider(documents, documentCache, globalSettings));
 connection.onCodeAction(codeActionProvider(documents, documentCache, globalSettings));
 connection.onDocumentColor(documentColorProvider(documents, documentCache, globalSettings));
 connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));
