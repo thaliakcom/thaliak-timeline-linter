@@ -2,8 +2,8 @@ import { Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, TextEdit 
 import * as yaml from 'yaml';
 import { LinterInput } from './linter';
 import { fixableDiagnostics, LinterOptions, PropertyOrder } from './server';
-import { UnprocessedRaidData } from './types/raids';
-import { getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { RaidData, UnprocessedRaidData, WipKind } from './types/raids';
+import { getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, getRangeOrStart, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 import { Range, TextDocument } from 'vscode-languageserver-textdocument';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
@@ -522,6 +522,16 @@ export function mustSpecifyPartyHP({ diagnostics, textDocument, document, option
         });
     }
 }
+
+export function mustSpecifyAutoAttacks({ diagnostics, textDocument, document, options }: LinterInput): void {
+    const [wip, wipRange] = isWip(document, 'damage');
+
+    if (!wip && !document.has('autos')) {
+        addDiagnostic(diagnostics, options, {
+            code: 'missing-auto-attacks',
+            severity: DiagnosticSeverity.Error,
+            message: `Field 'autos' is required in timeline files without the "damage" work-in-progress kind.`,
+            range: getRangeOrStart(textDocument, wipRange)
         });
     }
 }
