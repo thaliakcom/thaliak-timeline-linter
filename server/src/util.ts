@@ -71,6 +71,7 @@ export function getPlaceholderAt(textDocument: TextDocument, position: Position,
     const keyBefore = lineBefore.slice(startIndex + 1);
     const keyAfter = lineAfter.slice(0, endIndex);
     const rawKey = keyBefore + keyAfter;
+    SUFFIX_REGEX.lastIndex = 0;
     const suffixMatch = SUFFIX_REGEX.exec(rawKey);
     const key = suffixMatch != null
         ? rawKey.slice(0, suffixMatch[0].length - suffixMatch[1].length)
