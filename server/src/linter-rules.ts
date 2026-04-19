@@ -710,7 +710,22 @@ export function validateTimeline({ diagnostics, textDocument, document, options 
     }
 }
 
-const SPECIAL_ELEMENT_KEYS = [
+const DEFAULT_GRAPHICS_KEYS = new Set([
+    'boss',
+    'arena',
+    'enemy',
+    'cast',
+    'hint',
+    'marker-a',
+    'marker-1',
+    'marker-b',
+    'marker-2',
+    'marker-c',
+    'marker-3',
+    'marker-d',
+    'marker-4'
+]);
+const SPECIAL_ELEMENT_KEYS = new Set([
     'players',
     'DPS',
     'tanks',
@@ -724,20 +739,8 @@ const SPECIAL_ELEMENT_KEYS = [
     'M2',
     'R1',
     'R2',
-    'boss',
-    'arena',
-    'enemy',
-    'cast',
-    'tower',
-    'marker-a',
-    'marker-1',
-    'marker-b',
-    'marker-2',
-    'marker-c',
-    'marker-3',
-    'marker-d',
-    'marker-4',
-];
+    ...DEFAULT_GRAPHICS_KEYS
+]);
 const KEY_REGEX = /([^#]+)(?:#(?:(?:(\d+)\.\.(\d+))|(.+)))?/;
 const SUBKEY_REGEX = /\[([^[\]]+)\]/g;
 const RANGE_REGEX = /(?:(\d+)\.\.(\d+))/;
@@ -749,7 +752,7 @@ interface KeyResolverResult {
 }
 
 function resolveKey(key: string, elements: Set<string>): KeyResolverResult {
-    if (SPECIAL_ELEMENT_KEYS.includes(key)) {
+    if (SPECIAL_ELEMENT_KEYS.has(key)) {
         return { definition: key, elements: unwrapSpecialKey(key), wildcard: false };
     }
 
@@ -881,7 +884,18 @@ export function validateGraphingItems({ diagnostics, textDocument, document, opt
 
             for (const item of elements.items) {
                 if (yaml.isScalar(item.key) && typeof item.key.value === 'string') {
-                    resolvedElements.add(item.key.value);
+                    if (SPECIAL_ELEMENT_KEYS.has(item.key.value)) {
+                        if (!addDiagnostic(diagnostics, options, {
+                            code: 'reserved-graphing-element',
+                            severity: DiagnosticSeverity.Error,
+                            message: `'${item.key.value}' is a reserved element.`,
+                            range: getRange(textDocument, (item.key as yaml.Node).range!)
+                        })) {
+                            return;
+                        }
+                    } else {
+                        resolvedElements.add(item.key.value);
+                    }
                 }
             }
 
@@ -925,7 +939,7 @@ export function validateGraphingItems({ diagnostics, textDocument, document, opt
                                 const definitions = result.definition != null ? [result.definition] : result.elements;
 
                                 for (const definition of definitions) {
-                                    if (!resolvedElements.has(definition) && !SPECIAL_ELEMENT_KEYS.includes(definition)) {
+                                    if (!resolvedElements.has(definition) && !SPECIAL_ELEMENT_KEYS.has(definition)) {
                                         if (!addDiagnostic(diagnostics, options, {
                                             code: 'unresolved-graphing-element',
                                             severity: DiagnosticSeverity.Error,
@@ -938,6 +952,10 @@ export function validateGraphingItems({ diagnostics, textDocument, document, opt
                                 }
 
                                 for (const element of result.elements) {
+                                    if (DEFAULT_GRAPHICS_KEYS.has(element)) {
+                                        continue;
+                                    }
+
                                     if (first) {
                                         firstStepElements.add(element);
                                     } else if (!firstStepElements.has(element)) {
