@@ -205,10 +205,17 @@ export interface UnprocessedAction {
      */
     description: string;
     /** 
-     * Marks the action as a major mechanic. These actions are highlighted in the,
-     * making it easier to find the major actions at a glance.
+     * Changes the way this action is emphasized in the timeline.
+     * 
+     * Possible values:
+     * 
+     * * `'more'`: The action is emphasized in the timeline view (generally by being
+     * boldened).
+     * * `'less'`: The action is deemphasized in the timeline view (either by being
+     * rendered in a smaller font size or by being omitted entirely, depending on
+     * user preference).
      */
-    major?: true;
+    emphasis?: 'more' | 'less';
     /**
      * The cast time in milliseconds.
      *
@@ -304,6 +311,7 @@ export interface UnprocessedAction {
 }
 
 export interface ProcessedTimelineItem extends UnprocessedTimelineItem {
+    name?: string;
     at: integer;
     phaseAt: integer;
     expandable: boolean;
@@ -484,11 +492,12 @@ export interface PhaseShiftItem extends Pick<BaseTimelineItem, 'at' | 'timing'> 
     maxhp?: number;
 }
 
-export interface TargetableItem extends Pick<BaseTimelineItem, 'at'> {
+export interface TargetableItem extends Pick<BaseTimelineItem, 'at' | 'description' | 'timing' | 'link'> {
     id: '<targetable>' | '<untargetable>';
+    target?: string;
 }
 
-export interface StatusTimelineItem extends Omit<BaseTimelineItem, 'resolve' | 'mitigation' | 'id' | 'link'> {
+export interface StatusTimelineItem extends Omit<BaseTimelineItem, 'resolve' | 'mitigation' | 'id' | 'timing' | 'link'> {
     id: '<addstatus>' | '<removestatus>';
     status: string | string[];
 }

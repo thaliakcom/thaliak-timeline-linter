@@ -41,7 +41,11 @@ export interface DamageTypes {
  * @title Mechanic shapes
  */
 export interface MechanicShapes {
-    [k: string]: NamedDescription;
+    [k: string]: MechanicShape;
+}
+
+interface MechanicShape extends NamedDescription {
+    icon?: string;
 }
 
 interface MechanicType extends NamedDescription {
@@ -65,13 +69,22 @@ export interface MechanicTypes {
     [k: string]: MechanicType;
 }
 
+interface StatusType extends NamedDescription {
+    /** 
+     * Whether this status effect type is a buff or debuff.
+     * If not specified, assumes that it's a buff if the effect is on an enemy
+     * and a debuff if the effect is on a player.
+     */
+    type?: 'buff' | 'debuff';
+}
+
 /** 
  * A list of status effect types and what they mean.
  * 
  * @title Status types
  */
 export interface StatusTypes {
-    [k: string]: NamedDescription;
+    [k: string]: StatusType;
 }
 
 /** 

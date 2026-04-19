@@ -61,6 +61,8 @@ interface SharedElementData extends BaseElementData {
      * property, otherwise animations won't work.
      */
     size?: PositiveNumber | PositivePoint;
+    /** Sets the CSS `filter` property on this element. */
+    filter?: string;
 }
 
 export interface DefinitionElementData extends SharedElementData {
@@ -129,13 +131,11 @@ export interface StepElementData extends SharedElementData {
     /** If you only need to supply a new scale for the height, not the width, you can use this field instead of `scale`. */
     h?: RelativeNumber;
     /** A list of status effect IDs to show. */
-    status?: (string | number | SpecialStatus | StatusInfo)[];
+    status?: (number | string | SpecialStatus | StatusInfo)[];
     /** Allows you to add some text on top of the element itself. */
     text?: string;
     /** Sets the CSS `transform` property on this element during this step. */
     transform?: string;
-    /** Sets the CSS `filter` property on this element during this step. */
-    filter?: string;
 }
 
 export interface DonutDefinition extends DefinitionElementData, Colored {
@@ -163,6 +163,10 @@ export interface ImageDefinition extends DefinitionElementData {
     image: string;
     /** Whether the image should be rendered in full (`rectangle`) or only as a circular cutout. */
     shape?: 'circle' | 'rectangle';
+    /** The source of a `<mask>` element to apply to this image. See https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Element/mask. */
+    mask?: string;
+    /** A `clip-path` to apply to this image. See https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Attribute/clip-path. */
+    clipPath?: string;
 }
 
 export interface RectangleDefinition extends DefinitionElementData, Colored {
@@ -194,6 +198,8 @@ export interface ConeDelta extends StepElementData, Colored {
 
 export interface ImageDelta extends StepElementData {
     image?: string;
+    shape?: 'circle' | 'rectangle';
+    mask?: string;
 }
 
 export interface EnemyDelta extends StepElementData {
@@ -218,11 +224,21 @@ export interface Cast {
     visible?: boolean;
 }
 
-export type ElementDelta = DonutDelta | EllipseDelta | ConeDelta | ImageDelta | EnemyDelta | RectangleDelta | LinkDelta | Point | CoordinateSystemPoint | RotatedPoint;
+export interface Hint {
+    text?: string;
+    alignment?: 'top-left' | 'top-right' | 'bottom-right' | 'bottom-left';
+    fontSize?: string;
+    padding?: string;
+    background?: string;
+}
+
+export type ElementDelta = DonutDelta | EllipseDelta | ConeDelta | ImageDelta | EnemyDelta | RectangleDelta | LinkDelta | Point | CoordinateSystemPoint | RotatedPoint | SpecialElementStep[keyof SpecialElementStep];
 
 interface SpecialElementStep {
     /** Allows you to specify a castbar. */
     cast?: Cast;
+    /** Allows you to specify a hint. */
+    hint?: Hint | string;
 }
 
 interface ElementGraphStep {
@@ -263,7 +279,7 @@ export type GraphStep = ElementGraphStep & SpecialElementStep;
 
 export type CoordinateSystem = 'polar' | 'cartesian';
 
-export type Def = `linear-gradient(${string})` | `radial-gradient(${string})`;
+export type Def = `linear-gradient(${string})` | `radial-gradient(${string})` | `rectangle-gradient(${string})` | `image(${string})` | `image-cone(${string})`;
 
 type SpecialElements = {
     boss?: DefinitionElementData;
