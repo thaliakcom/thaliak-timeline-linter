@@ -741,6 +741,7 @@ const SPECIAL_ELEMENT_KEYS = new Set([
     'R2',
     ...DEFAULT_GRAPHICS_KEYS
 ]);
+const RESERVED_ELEMENTS = new Set(SPECIAL_ELEMENT_KEYS[Symbol.iterator]().filter(x => x !== 'boss' && x !== 'enemy' && x !== 'arena'));
 const KEY_REGEX = /([^#]+)(?:#(?:(?:(\d+)\.\.(\d+))|(.+)))?/;
 const SUBKEY_REGEX = /\[([^[\]]+)\]/g;
 const RANGE_REGEX = /(?:(\d+)\.\.(\d+))/;
@@ -884,7 +885,7 @@ export function validateGraphingItems({ diagnostics, textDocument, document, opt
 
             for (const item of elements.items) {
                 if (yaml.isScalar(item.key) && typeof item.key.value === 'string') {
-                    if (SPECIAL_ELEMENT_KEYS.has(item.key.value)) {
+                    if (RESERVED_ELEMENTS.has(item.key.value)) {
                         if (!addDiagnostic(diagnostics, options, {
                             code: 'reserved-graphing-element',
                             severity: DiagnosticSeverity.Error,
