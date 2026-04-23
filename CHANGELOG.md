@@ -1,6 +1,17 @@
 # Changelog
 
-## 0.2.0 (2026-02-05)
+## 0.2.3 (2026-04-23)
+
+* **Fixed**: special elements being marked as "reserved" even when they're not
+  reserved elements (704980e22eb7d7a547dbdd706136043bc7883e79)
+
+## 0.2.2 (2026-04-20)
+
+* **Added**: support for new 'hint' special element (11337c51fa9a2d492c0de8385392ee02b0f302ab)
+* **Added**: don't require special elements to be initialized in the first step (11337c51fa9a2d492c0de8385392ee02b0f302ab)
+* **Added**: add diagnostic for when a reserved element is defined under elements (11337c51fa9a2d492c0de8385392ee02b0f302ab)
+
+## 0.2.1 (2026-02-05)
 
 * **Fixed**: certain placeholders not being correctly parsed (fbc17f59e39931b4f899a7999098cd19f14deaf8)
 
