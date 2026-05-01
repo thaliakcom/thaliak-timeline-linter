@@ -424,3 +424,27 @@ export function perPrefix<T>(key: string, prefixes: Prefixes<T>): T | null {
 
     return prefixes.else?.(key) ?? null;
 }
+
+export function getNodeAt(node: yaml.Node, textDocument: TextDocument, position: Position): yaml.Scalar | null {
+    if (yaml.isMap(node)) {
+        for (const item of node.items) {
+            if (yaml.isNode(item.key) && isPositionInYamlRange(textDocument, position, item.key.range)) {
+                return getNodeAt(item.key, textDocument, position);
+            }
+
+            if (yaml.isNode(item.value) && isPositionInYamlRange(textDocument, position, item.value.range)) {
+                return getNodeAt(item.value, textDocument, position);
+            }
+        }
+    } else if (yaml.isSeq(node)) {
+        for (const item of node.items) {
+            if (yaml.isNode(item) && isPositionInYamlRange(textDocument, position, item.range)) {
+                return getNodeAt(item, textDocument, position);
+            }
+        }
+    } else if (yaml.isScalar(node) && isPositionInYamlRange(textDocument, position, node.range)) {
+        return node;
+    }
+
+    return null;
+}

@@ -3,14 +3,21 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getSymbolAt, ICONS, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
+import { getNodeAt, getSymbolAt, ICONS, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
+import * as yaml from 'yaml';
 
 export default function completionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CompletionParams) => CompletionItem[] {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
         const document = documentCache.get(textDocument);
 
-        if (document == null) {
+        if (document?.contents == null) {
+            return [];
+        }
+
+        const node = getNodeAt(document.contents, textDocument, params.position);
+
+        if (!yaml.isScalar(node) || typeof node.value !== 'string') {
             return [];
         }
 
