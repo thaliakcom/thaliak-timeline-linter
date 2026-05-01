@@ -1,6 +1,6 @@
 export type Point = readonly [x: number, y: number];
 export type PositivePoint = readonly [x: PositiveNumber, y: PositiveNumber];
-export type Origin = readonly [x: RelativeNumber, y: RelativeNumber];
+export type Origin = readonly [x: number, y: number];
 export type RotatedPoint = readonly [x: number, y: number, rotation: degrees];
 export type CoordinateSystemPoint = readonly [x: number, y: number, coordinateSystem: CoordinateSystem];
 
@@ -79,6 +79,8 @@ export interface DefinitionElementData extends SharedElementData {
     planar?: boolean;
     /** Whether the element should drop a shadow. */
     shadow?: boolean;
+    /** Whether the element should repeatedly fade in and out. */
+    blink?: boolean;
 }
 
 export const SpecialStatuses = {
@@ -127,9 +129,9 @@ export interface StepElementData extends SharedElementData {
     /** Allows you to override the coordinate system used for this step only. */
     'coordinate-system'?: CoordinateSystem;
     /** If you only need to supply a new scale for the width, not the height, you can use this field instead of `scale`. */
-    w?: RelativeNumber;
+    w?: number;
     /** If you only need to supply a new scale for the height, not the width, you can use this field instead of `scale`. */
-    h?: RelativeNumber;
+    h?: number;
     /** A list of status effect IDs to show. */
     status?: (number | string | SpecialStatus | StatusInfo)[];
     /** Allows you to add some text on top of the element itself. */
