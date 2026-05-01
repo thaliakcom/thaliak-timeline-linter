@@ -135,7 +135,27 @@ export function isInRange(textDocument: TextDocument, textRange: Range, yamlRang
 
 type GuardedType<T> = T extends (node: unknown) => node is infer U ? U : never;
 
-export function getIfType<T extends (node: unknown) => boolean>(node: yaml.YAMLMap | yaml.Document, key: string, typeFn: T): GuardedType<T> | null {
+export function getAtPathIfType<T extends (node: unknown) => boolean>(node: yaml.YAMLMap | yaml.Document | undefined | null, path: string, typeFn: T): GuardedType<T> | null {
+    const segments = path.split('.');
+    let currentMap = node;
+
+    for (let i: number = 0; i < segments.length - 1; i++) {
+        const segment = segments[i];
+        currentMap = getIfType(currentMap, segment, yaml.isMap);
+
+        if (currentMap == null) {
+            return null;
+        }
+    }
+
+    return getIfType(currentMap, segments[segments.length - 1], typeFn);
+}
+
+export function getIfType<T extends (node: unknown) => boolean>(node: yaml.YAMLMap | yaml.Document | undefined | null, key: string, typeFn: T): GuardedType<T> | null {
+    if (node == null) {
+        return null;
+    }
+
     const item = node.get(key, true);
 
     if (typeFn(item)) {
@@ -268,7 +288,11 @@ export function getSymbolAt(document: yaml.Document, textDocument: TextDocument,
     return null;
 }
 
-export function isPositionInYamlRange(textDocument: TextDocument, position: Position, range: yaml.Range): boolean {
+export function isPositionInYamlRange(textDocument: TextDocument, position: Position, range: yaml.Range | undefined | null): range is yaml.Range {
+    if (range == null) {
+        return false;
+    }
+
     const offset = textDocument.offsetAt(position);
 
     return range[0] <= offset && range[1] > offset;
@@ -333,9 +357,9 @@ export function getEntry(map: yaml.YAMLMap, key: string): yaml.Pair<yaml.Scalar<
 }
 
 export function getAction(document: yaml.Document | undefined, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | null {
-    const actions = document?.get('actions');
+    const actions = getIfType(document, 'actions', yaml.isMap);
 
-    if (actions != null && yaml.isMap(actions)) {
+    if (actions != null) {
         const action = getEntry(actions, key);
 
         if (action != null) {
@@ -347,13 +371,31 @@ export function getAction(document: yaml.Document | undefined, key: string): yam
 }
 
 export function getStatus(document: yaml.Document | undefined, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | null {
-    const statusEffects = document?.get('status');
+    const statusEffects = getIfType(document, 'status', yaml.isMap);
 
-    if (statusEffects != null && yaml.isMap(statusEffects)) {
+    if (statusEffects != null) {
         const status = getEntry(statusEffects, key);
 
         if (status != null) {
             return status as yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>>;
+        }
+    }
+
+    return null;
+}
+
+export function getGraphingElement(document: yaml.Document | undefined, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | null {
+    const graphing = getIfType(document, 'graphing', yaml.isMap);
+
+    if (graphing != null) {
+        const elements = getIfType(document, 'elements', yaml.isMap);
+
+        if (elements != null) {
+            const element = getEntry(elements, key);
+
+            if (element != null) {
+                return element as yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>>;
+            }
         }
     }
 
