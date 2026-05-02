@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.2.4 (2026-05-02)
+## 0.2.5 (2026-05-02)
+
+* **Fixed**: an issue wherein auto completion would not show up under all circumstances
+  within graph steps (41d0ffe9750d59e956d928ce94f48ad4f4a746d1)
+
+## 0.2.4 (2026-05-01)
 
 * **Added**: "go to definition" action on initial graph step elements, which goes
   to the element definition of that element (14172ab10b13dc5b525ce8c1b96c8d62cf1d2abe)
