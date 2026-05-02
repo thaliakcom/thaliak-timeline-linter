@@ -425,25 +425,42 @@ export function perPrefix<T>(key: string, prefixes: Prefixes<T>): T | null {
     return prefixes.else?.(key) ?? null;
 }
 
-export function getNodeAt(node: yaml.Node, textDocument: TextDocument, position: Position): yaml.Scalar | null {
-    if (yaml.isMap(node)) {
-        for (const item of node.items) {
+export interface NodeAtResult<T extends yaml.Node | yaml.Pair = yaml.Node | yaml.Pair> {
+    node: T;
+    parent?: NodeAtResult;
+}
+
+export function getNodeAt(document: yaml.Document, textDocument: TextDocument, position: Position): NodeAtResult | null {
+    if (document.contents == null) {
+        return null;
+    }
+
+    return getInnerNodeAt({ node: document.contents }, textDocument, position);
+}
+
+function getInnerNodeAt(result: NodeAtResult, textDocument: TextDocument, position: Position): NodeAtResult | null {
+    if (yaml.isMap(result.node)) {
+        for (const item of result.node.items) {
             if (yaml.isNode(item.key) && isPositionInYamlRange(textDocument, position, item.key.range)) {
-                return getNodeAt(item.key, textDocument, position);
+                return getInnerNodeAt({ node: item.key, parent: { node: item, parent: result } }, textDocument, position);
             }
 
             if (yaml.isNode(item.value) && isPositionInYamlRange(textDocument, position, item.value.range)) {
-                return getNodeAt(item.value, textDocument, position);
+                return getInnerNodeAt({ node: item.value, parent: { node: item, parent: result } }, textDocument, position);
             }
         }
-    } else if (yaml.isSeq(node)) {
-        for (const item of node.items) {
+
+        return result;
+    } else if (yaml.isSeq(result.node)) {
+        for (const item of result.node.items) {
             if (yaml.isNode(item) && isPositionInYamlRange(textDocument, position, item.range)) {
-                return getNodeAt(item, textDocument, position);
+                return getInnerNodeAt({ node: item, parent: result }, textDocument, position);
             }
         }
-    } else if (yaml.isScalar(node) && isPositionInYamlRange(textDocument, position, node.range)) {
-        return node;
+
+        return result;
+    } else if (yaml.isScalar(result.node) && isPositionInYamlRange(textDocument, position, result.node.range)) {
+        return result;
     }
 
     return null;
