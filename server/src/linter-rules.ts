@@ -6,6 +6,7 @@ import { RaidData, UnprocessedRaidData, WipKind } from './types/raids';
 import { getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, getRangeOrStart, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 import { Range, TextDocument } from 'vscode-languageserver-textdocument';
 import { DEFAULT_GRAPHICS_KEYS, KeyResolverResult, RESERVED_ELEMENTS, resolveKey, SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
+import { SpecialStatuses } from './types/graphing';
 
 function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
     diagnostic.source = 'thaliak';
@@ -805,6 +806,31 @@ export function validateGraphingItems({ diagnostics, textDocument, document, opt
                                             range: getRange(textDocument, (item.key as yaml.Node).range!)
                                         })) {
                                             return;
+                                        }
+                                    }
+                                }
+
+                                if (yaml.isMap(item.value)) {
+                                    const status = getIfType(item.value, 'status', yaml.isSeq);
+
+                                    if (status != null) {
+                                        const json = document.toJS();
+
+                                        for (const id of status.items) {
+                                            if (yaml.isScalar(id) && typeof id.value === 'string') {
+                                                const exists = (json.status != null && id.value in json.status) || (options.enums.common != null && id.value in options.enums.common.yaml.status) || id.value in SpecialStatuses;
+
+                                                if (!exists) {
+                                                    if (!addDiagnostic(diagnostics, options, {
+                                                        code: 'invalid-id',
+                                                        severity: DiagnosticSeverity.Error,
+                                                        message: `Unresolved status effect ${id.value}. Did you forget to define it?`,
+                                                        range: getRange(textDocument, id.range ?? item.value.range ?? [0, 0, 0])
+                                                    })) {
+                                                        return;
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
