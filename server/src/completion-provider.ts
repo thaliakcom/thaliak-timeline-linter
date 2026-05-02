@@ -3,9 +3,14 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getKeyValueAt, getNodeAt, getSymbolAt, ICONS, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
+import { getAtPathIfType, getKeyValueAt, getNodeAt, getSymbolAt, ICONS, isPositionInYamlRange, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 import * as yaml from 'yaml';
-import { SpecialStatus, SpecialStatuses } from './types/graphing';
+import { ElementDefinition, SpecialStatus, SpecialStatuses } from './types/graphing';
+import { SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
+
+const base = {
+    kind: CompletionItemKind.EnumMember
+};
 
 export default function completionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CompletionParams) => CompletionItem[] {
     return (params) => {
@@ -22,6 +27,43 @@ export default function completionProvider(documents: TextDocuments<TextDocument
 
         if (result == null) {
             return [];
+        }
+
+        if (yaml.isScalar(result.node) && typeof result.node.value === 'string' && yaml.isPair(result.parent?.node) && result.parent.node.key === result.node) {
+            const expectedGraphsKeyPair = result.parent?.parent?.parent?.parent?.parent?.parent;
+
+            if (yaml.isPair(expectedGraphsKeyPair?.node) && yaml.isScalar(expectedGraphsKeyPair.node.key) && expectedGraphsKeyPair.node.key.value === 'graphs') {
+                const steps = result.parent?.parent?.parent;
+
+                if (yaml.isSeq(steps?.node) && yaml.isMap(steps.node.items[0])) {
+                    const eligibleKeys = new Set<string>(SPECIAL_ELEMENT_KEYS);
+
+                    if (isPositionInYamlRange(textDocument, params.position, steps.node.items[0].range)) {
+                        const js = document.toJS();
+                        const elements = js.graphing.elements as Record<string, ElementDefinition>;
+
+                        for (const key in elements) {
+                            eligibleKeys.add(key);
+                        }
+                    } else {
+                        const firstStepKeys = new Set<string>();
+
+                        for (const item of steps.node.items[0].items) {
+                            if (yaml.isScalar(item.key) && typeof item.key.value === 'string') {
+                                const definitionKey = item.key.value.split('#')[0] ?? item.key.value;
+
+                                firstStepKeys.add(definitionKey);
+                            }
+                        }
+
+                        for (const key of firstStepKeys) {
+                            eligibleKeys.add(key);
+                        }
+                    }
+
+                    return eligibleKeys[Symbol.iterator]().map(x => ({ label: x, ...base })).toArray();
+                }
+            }
         }
 
         const keyValue = getKeyValueAt(textDocument, params.position, 'id');
@@ -89,10 +131,6 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                 }
             });
         }
-    
-        const base = {
-            kind: CompletionItemKind.EnumMember
-        };
     
         const items: CompletionItem[] = [];
 

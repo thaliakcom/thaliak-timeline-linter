@@ -425,28 +425,57 @@ export function perPrefix<T>(key: string, prefixes: Prefixes<T>): T | null {
     return prefixes.else?.(key) ?? null;
 }
 
-export interface NodeAtResult<T extends yaml.Node | yaml.Pair = yaml.Node | yaml.Pair> {
-    node: T;
-    parent?: NodeAtResult;
+export class NodeWrapper<T extends yaml.Node | yaml.Pair = yaml.Node | yaml.Pair> {
+    public readonly node: T;
+    public readonly parent?: NodeWrapper;
+
+    public constructor(node: T, parent?: NodeWrapper) {
+        this.node = node;
+        this.parent = parent;
+    }
+
+    public getAncestor<T extends yaml.Node | yaml.Pair>(predicate: (x: yaml.Node | yaml.Pair) => x is T): NodeWrapper<T> | null;
+    public getAncestor(predicate: (x: yaml.Node | yaml.Pair) => boolean): NodeWrapper | null;
+    public getAncestor(predicate: (x: yaml.Node | yaml.Pair) => boolean): NodeWrapper | null {
+        let current = this.parent;
+
+        if (current == null) {
+            return null;
+        }
+
+        while (!predicate(current.node)) {
+            current = current.parent;
+
+            if (current == null) {
+                return null;
+            }
+        }
+
+        return current;
+    }
+
+    public hasAncestor(predicate: (x: yaml.Node | yaml.Pair) => boolean): boolean {
+        return this.getAncestor(predicate) != null;
+    }
 }
 
-export function getNodeAt(document: yaml.Document, textDocument: TextDocument, position: Position): NodeAtResult | null {
+export function getNodeAt(document: yaml.Document, textDocument: TextDocument, position: Position): NodeWrapper | null {
     if (document.contents == null) {
         return null;
     }
 
-    return getInnerNodeAt({ node: document.contents }, textDocument, position);
+    return getInnerNodeAt(new NodeWrapper(document.contents), textDocument, position);
 }
 
-function getInnerNodeAt(result: NodeAtResult, textDocument: TextDocument, position: Position): NodeAtResult | null {
+function getInnerNodeAt(result: NodeWrapper, textDocument: TextDocument, position: Position): NodeWrapper | null {
     if (yaml.isMap(result.node)) {
         for (const item of result.node.items) {
             if (yaml.isNode(item.key) && isPositionInYamlRange(textDocument, position, item.key.range)) {
-                return getInnerNodeAt({ node: item.key, parent: { node: item, parent: result } }, textDocument, position);
+                return getInnerNodeAt(new NodeWrapper(item.key, new NodeWrapper(item, result)), textDocument, position);
             }
 
             if (yaml.isNode(item.value) && isPositionInYamlRange(textDocument, position, item.value.range)) {
-                return getInnerNodeAt({ node: item.value, parent: { node: item, parent: result } }, textDocument, position);
+                return getInnerNodeAt(new NodeWrapper(item.value, new NodeWrapper(item, result)), textDocument, position);
             }
         }
 
@@ -454,7 +483,7 @@ function getInnerNodeAt(result: NodeAtResult, textDocument: TextDocument, positi
     } else if (yaml.isSeq(result.node)) {
         for (const item of result.node.items) {
             if (yaml.isNode(item) && isPositionInYamlRange(textDocument, position, item.range)) {
-                return getInnerNodeAt({ node: item, parent: result }, textDocument, position);
+                return getInnerNodeAt(new NodeWrapper(item, result), textDocument, position);
             }
         }
 
