@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.4 (2026-05-02)
+
+* **Added**: "go to definition" action on initial graph step elements, which goes
+  to the element definition of that element (14172ab10b13dc5b525ce8c1b96c8d62cf1d2abe)
+* **Added**: "go to definition" action on subsequent graph step elements, which
+  goes to the initial graph step element of that kind (14172ab10b13dc5b525ce8c1b96c8d62cf1d2abe)
+* **Added**: auto completion for graph step keys (0a3c85fa43344ca029904ff5b49f21f263ae7545)
+* **Added**: validation for status effects within graph steps (2e6b6e5bb8e693a80be9449fd50edd92546949ae)
+* **Fixed**: auto completion for status effects within graph steps (3de6425895caa8acaf96cb5e5bbca4c4682b9ffa)
+* **Fixed**: placeholder auto completion taking effect outside of strings (97bb43fe188199ad7c6e0b5cfee3bfa6af2af912)
+
 ## 0.2.3 (2026-04-23)
 
 * **Fixed**: special elements being marked as "reserved" even when they're not
