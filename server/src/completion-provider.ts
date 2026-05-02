@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getAtPathIfType, getKeyValueAt, getNodeAt, getSymbolAt, ICONS, isPositionInYamlRange, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
+import { getAtPathIfType, getKeyValueAt, getLineAt, getNodeAt, getSymbolAt, ICONS, isPositionInYamlRange, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 import * as yaml from 'yaml';
 import { ElementDefinition, SpecialStatus, SpecialStatuses } from './types/graphing';
 import { SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
@@ -29,11 +29,19 @@ export default function completionProvider(documents: TextDocuments<TextDocument
             return [];
         }
 
-        if (yaml.isScalar(result.node) && typeof result.node.value === 'string' && yaml.isPair(result.parent?.node) && result.parent.node.key === result.node) {
-            const expectedGraphsKeyPair = result.parent?.parent?.parent?.parent?.parent?.parent;
+        console.log(result.node, JSON.stringify(result.node));
 
-            if (yaml.isPair(expectedGraphsKeyPair?.node) && yaml.isScalar(expectedGraphsKeyPair.node.key) && expectedGraphsKeyPair.node.key.value === 'graphs') {
-                const steps = result.parent?.parent?.parent;
+        if ((yaml.isScalar(result.node) && typeof result.node.value === 'string' && yaml.isPair(result.parent?.node) && result.parent.node.key === result.node)
+         || (yaml.isMap(result.node) && getLineAt(textDocument, params.position).lineBefore.trim().length === 0)) {
+            const isScalar = yaml.isScalar(result.node);
+            const possibleGraphsKeys = isScalar ? [result.parent?.parent?.parent?.parent?.parent?.parent] : [
+                    result.parent?.parent?.parent?.parent?.parent?.parent,
+                    result.parent?.parent?.parent?.parent
+                ];
+            const graphsKeyPair = possibleGraphsKeys.findIndex(x => yaml.isPair(x?.node) && yaml.isScalar(x.node.key) && x.node.key.value === 'graphs');
+
+            if (graphsKeyPair !== -1) {
+                const steps = graphsKeyPair === 0 ? result.parent?.parent?.parent : result.parent;
 
                 if (yaml.isSeq(steps?.node) && yaml.isMap(steps.node.items[0])) {
                     const eligibleKeys = new Set<string>(SPECIAL_ELEMENT_KEYS);

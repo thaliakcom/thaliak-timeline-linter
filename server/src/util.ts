@@ -289,13 +289,17 @@ export function getSymbolAt(document: yaml.Document, textDocument: TextDocument,
 }
 
 export function isPositionInYamlRange(textDocument: TextDocument, position: Position, range: yaml.Range | undefined | null): range is yaml.Range {
+    const offset = textDocument.offsetAt(position);
+
+    return isOffsetInYamlRange(offset, range);
+}
+
+export function isOffsetInYamlRange(offset: number, range: yaml.Range | undefined | null): range is yaml.Range {
     if (range == null) {
         return false;
     }
 
-    const offset = textDocument.offsetAt(position);
-
-    return range[0] <= offset && range[1] > offset;
+    return range[0] <= offset && range[1] >= offset;
 }
 
 export function isOffsetInRange(textDocument: TextDocument, offset: number, range: Range): boolean {
@@ -464,33 +468,107 @@ export function getNodeAt(document: yaml.Document, textDocument: TextDocument, p
         return null;
     }
 
-    return getInnerNodeAt(new NodeWrapper(document.contents), textDocument, position);
+    const offset = textDocument.offsetAt(position);
+    const innerNode = getInnerNodeAt(new NodeWrapper(document.contents), textDocument, offset);
+
+    if (innerNode?.node === document.contents) {
+        const lastItem = yaml.isMap(document.contents) ? document.contents.items[document.contents.items.length - 1] : null;
+
+        if (lastItem != null && yaml.isNode(lastItem.value)) {
+            return getInnerNodeAt(new NodeWrapper(document.contents), textDocument, lastItem.value.range![1]);
+        }
+    }
+
+    return innerNode;
 }
 
-function getInnerNodeAt(result: NodeWrapper, textDocument: TextDocument, position: Position): NodeWrapper | null {
+function getInnerNodeAt(result: NodeWrapper, textDocument: TextDocument, offset: number): NodeWrapper | null {
     if (yaml.isMap(result.node)) {
-        for (const item of result.node.items) {
-            if (yaml.isNode(item.key) && isPositionInYamlRange(textDocument, position, item.key.range)) {
-                return getInnerNodeAt(new NodeWrapper(item.key, new NodeWrapper(item, result)), textDocument, position);
+        const items = getTrueNodeRanges(result.node);
+
+        for (const keyPair of items) {
+            if (yaml.isNode(keyPair.key.node) && isOffsetInYamlRange(offset, keyPair.key.range)) {
+                return getInnerNodeAt(new NodeWrapper(keyPair.key.node, new NodeWrapper(keyPair.pair, result)), textDocument, offset);
             }
 
-            if (yaml.isNode(item.value) && isPositionInYamlRange(textDocument, position, item.value.range)) {
-                return getInnerNodeAt(new NodeWrapper(item.value, new NodeWrapper(item, result)), textDocument, position);
+            if (yaml.isNode(keyPair.value?.node) && isOffsetInYamlRange(offset, keyPair.value.range)) {
+                return getInnerNodeAt(new NodeWrapper(keyPair.value.node, new NodeWrapper(keyPair.pair, result)), textDocument, offset);
             }
         }
 
         return result;
     } else if (yaml.isSeq(result.node)) {
-        for (const item of result.node.items) {
-            if (yaml.isNode(item) && isPositionInYamlRange(textDocument, position, item.range)) {
-                return getInnerNodeAt(new NodeWrapper(item, result), textDocument, position);
+        const items = getTrueNodeRanges(result.node);
+
+        for (const nodeRange of items) {
+            if (yaml.isNode(nodeRange.node) && isOffsetInYamlRange(offset, nodeRange.range)) {
+                return getInnerNodeAt(new NodeWrapper(nodeRange.node, result), textDocument, offset);
             }
         }
 
         return result;
-    } else if (yaml.isScalar(result.node) && isPositionInYamlRange(textDocument, position, result.node.range)) {
+    } else if (yaml.isScalar(result.node) && isOffsetInYamlRange(offset, result.node.range)) {
         return result;
     }
 
     return null;
+}
+
+interface NodeRange {
+    node: yaml.Node;
+    range: yaml.Range;
+}
+
+interface KeyPairNodeRange {
+    pair: yaml.Pair;
+    key: NodeRange;
+    value: NodeRange | null;
+}
+
+/** 
+ * When a map or seq has blank lines in between items,
+ * there will be a gap in the ranges between items A and B
+ * as well. This function eliminates this gap, rendering
+ * all node ranges congruous.
+ */
+function getTrueNodeRanges(object: yaml.YAMLMap): KeyPairNodeRange[];
+function getTrueNodeRanges(object: yaml.YAMLSeq): NodeRange[];
+function getTrueNodeRanges(object: yaml.YAMLMap | yaml.YAMLSeq): NodeRange[] | KeyPairNodeRange[] {
+    const ranges: NodeRange[] | KeyPairNodeRange[] = [];
+    const objectRange = object.range!;
+    const last = object.items.length - 1;
+
+    for (let i: number = 0; i < object.items.length; i++) {
+        const item = object.items[i];
+        const next = object.items[i + 1];
+
+        if (yaml.isPair(item) && yaml.isNode(item.key) && (yaml.isNode(item.value) || item.value == null)) {
+            const start = i === 0 ? objectRange[0] : item.key.range![0];
+            const end = i !== last && yaml.isPair(next) && yaml.isNode(next.key) ? next.key.range![0] - 1 : objectRange[1];
+
+            if (item.value != null) {
+                const keyEnd = item.value.range![0] - 1;
+                const valueStart = item.value.range![0];
+
+                ranges.push({
+                    pair: item,
+                    key: { node: item.key, range: [start, keyEnd, keyEnd] },
+                    value: { node: item.value, range: [valueStart, end, end] }
+                } as any);
+            } else {
+                ranges.push({
+                    pair: item,
+                    key: { node: item.key, range: [start, end, end] },
+                    value: null
+                } as any);
+            }
+        } else if (yaml.isNode(item)) {
+            const start = i === 0 ? objectRange[0] : item.range![0];
+            const end = i !== last && yaml.isNode(next) ? next.range![0] - 1 : objectRange[1];
+
+            ranges.push({ node: item, range: [start, end, end] } as any);
+        }
+    }
+
+    return ranges;
 }
