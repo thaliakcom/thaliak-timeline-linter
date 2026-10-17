@@ -138,6 +138,16 @@ export interface UnprocessedAction {
      */
     name?: string;
     /**
+     * A sort of "caption" or suffix for the action that can be used to disambiguate
+     * multiple actions with the same name but different effects.
+     * 
+     * For example, The Weapon's Refrain (Ultimate) features two actions called Mistral
+     * Song, but one is a wide Wild Charge targeting a specific player via headmarker
+     * and the other a simple conal attack originating from Garuda during Ultimate
+     * Suppression.
+     */
+    caption?: string;
+    /**
      * What kind of a mechanic it is. Must be one of the values from
      * `attack-types.yaml`.
      *
@@ -298,6 +308,13 @@ export interface UnprocessedAction {
      * specify the number of damage instances, use `count`.
      */
     players?: number;
+    /** 
+     * If set, this action is always expanded by default in the timeline view.
+     * Such actions can still be manually collapsed by the user.
+     * 
+     * Can be overridden on a per-timeline item basis.
+     */
+    expanded?: boolean;
     /**
      * The ID of the action icon. This is primarily meant for player actions and is
      * automatically filled from game data in that case. Monster actions do not have icons.
@@ -372,6 +389,8 @@ export interface BaseTimelineItem {
      * If the boss can cast different variations of this mechanic, use `link: or`.
      */
     id: string;
+    /** Can be used to add or override a caption on a per-timeline-item basis. */
+    caption?: string;
     /**
      * A description of the action as it happens at this point in the timeline.
      * If not supplied, will default to the first line in the description of the referenced action.
@@ -426,14 +445,23 @@ export interface BaseTimelineItem {
     players?: number;
     /** Allows specifying additional information about the timing of the action. */
     timing?: Timing;
-    /** 
-     * If true, completely hides the element from the timeline and instead
-     * only prints its children.
-     * Can be used to group a sequence of consecutive actions together that appear
-     * in this sequence multiple times in the fight, avoiding the need to write
-     * them out each time.
+    /**
+     * Can be used to change how a timeline item with children appears in the timeline.
+     * 
+     * Possible values:
+     * * `false` (default): The element's children are indented and are not rearranged
+     *   in any way. All children of an element appear directly underneath that element,
+     *   but this may cause the children not to appear in the timeline in chronological
+     *   order.
+     * * `true`: Detaches the element's descendants from their parent element and
+     *   rearranges them in chronological order. This is useful when the exact order of
+     *   mechanics is crucial information for resolving the mechanic in-game.
+     * * `omit-parent`: Same as `true`, but this element (the parent element) is hidden
+     *   from the timeline in the process. This is useful when the parent element doesn't
+     *   represent a real mechanic and is only used to group several related mechanics.
+     * * `omit-children`: Hides the element's children completely.
      */
-    flatten?: boolean;
+    flatten?: boolean | 'omit-parent' | 'omit-children';
 }
 
 export interface Phase {
@@ -457,6 +485,11 @@ export interface UnprocessedTimelineItem extends BaseTimelineItem {
      * both have their own description, or when the timeline references strategies to show.
      */
     expandable?: boolean;
+    /** 
+     * If set, this timeline item is always expanded by default.
+     * Such timeline items can still be manually collapsed by the user.
+     */
+    expanded?: boolean;
 }
 
 export interface Macro {
@@ -518,6 +551,7 @@ export interface RaidData extends Omit<UnprocessedRaidData, 'actions' | 'timelin
     name: string;
     suffix: string;
     requiredDPS: integer;
+    level: number;
     wip: WipKind[];
     status: Record<string | integer, StatusEffect>;
     actions: Record<string | integer, Action>;
@@ -554,7 +588,7 @@ export interface RaidDataPhase {
     status: Set<string | integer>;
 }
 
-export type WipKind = 'timeline' | 'guide' | 'damage' | 'diagrams';
+export type WipKind = 'timeline' | 'guide' | 'damage' | 'diagrams' | 'in-progress';
 
 /**
  * Timeline data for a specific encounter.

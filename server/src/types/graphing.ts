@@ -63,6 +63,8 @@ interface SharedElementData extends BaseElementData {
     size?: PositiveNumber | PositivePoint;
     /** Sets the CSS `filter` property on this element. */
     filter?: string;
+    /** Whether the element should repeatedly fade in and out. */
+    blink?: boolean;
 }
 
 export interface DefinitionElementData extends SharedElementData {
@@ -79,8 +81,6 @@ export interface DefinitionElementData extends SharedElementData {
     planar?: boolean;
     /** Whether the element should drop a shadow. */
     shadow?: boolean;
-    /** Whether the element should repeatedly fade in and out. */
-    blink?: boolean;
 }
 
 export const SpecialStatuses = {
