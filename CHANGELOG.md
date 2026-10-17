@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.6 (2026-10-17)
+
+* **Fixed**: an issue that would cause an autocompletion on something like `[a:`
+  to turn into `[a:a:myaction` (12ba93ffd9e1325889217e32e237a6195cf5776c)
+
 ## 0.2.5 (2026-05-02)
 
 * **Fixed**: an issue wherein auto completion would not show up under all circumstances
