@@ -1,4 +1,4 @@
-import { CompletionItem, CompletionItemKind, CompletionParams, TextDocuments } from 'vscode-languageserver';
+import { CompletionItem, CompletionItemKind, CompletionParams, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
@@ -297,6 +297,17 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                     sortText: `AAAA${key}`,
                     ...base
                 });
+            }
+        }
+
+        // Replace the placeholder text typed so far explicitly; otherwise VS Code
+        // falls back to the YAML wordPattern, which doesn't treat a trailing
+        // `a:` as a word and would insert `a:a:<id>`.
+        if (symbol != null) {
+            const range = { start: symbol.range.start, end: params.position };
+
+            for (const item of items) {
+                item.textEdit ??= TextEdit.replace(range, item.insertText ?? item.label);
             }
         }
 
