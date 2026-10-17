@@ -5,7 +5,6 @@ import * as linterRules from './linter-rules';
 import { fixableDiagnostics, LinterOptions } from './server';
 
 export interface LinterInput {
-    diagnostics: Diagnostic[];
     textDocument: TextDocument;
     document: yaml.Document;
     options: LinterOptions;
@@ -13,7 +12,6 @@ export interface LinterInput {
 
 export function lintDocument(textDocument: TextDocument, document: yaml.Document, settings: LinterOptions): Diagnostic[] {
     const input: LinterInput = {
-        diagnostics: [],
         textDocument,
         document,
         options: settings
@@ -21,15 +19,22 @@ export function lintDocument(textDocument: TextDocument, document: yaml.Document
 
     settings.propOrder.clear();
     fixableDiagnostics.length = 0;
+    const diagnostics: Diagnostic[] = [];
 
     for (const rule of Object.values(linterRules)) {
-        rule(input);
+        for (const diagnostic of rule(input)) {
+            if (diagnostic.data != null && diagnostic.data.textEdits != null) {
+                fixableDiagnostics.push(diagnostic);
+            }
 
-        if (input.diagnostics.length >= settings.maxNumberOfProblems) {
+            diagnostics.push(diagnostic);
+        }
+
+        if (diagnostics.length >= settings.maxNumberOfProblems) {
             console.log(`Aborting lint as diagnostics exceed ${settings.maxNumberOfProblems}`);
             break;
         }
     }
 
-    return input.diagnostics;
+    return diagnostics;
 }

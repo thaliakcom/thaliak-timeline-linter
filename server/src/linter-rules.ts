@@ -1,21 +1,21 @@
 import { Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, TextEdit } from 'vscode-languageserver';
-import * as yaml from 'yaml';
-import { LinterInput } from './linter';
-import { fixableDiagnostics, LinterOptions, PropertyOrder } from './server';
-import { RaidData, UnprocessedRaidData, WipKind } from './types/raids';
-import { getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, getRangeOrStart, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 import { Range, TextDocument } from 'vscode-languageserver-textdocument';
+import * as yaml from 'yaml';
 import { DEFAULT_GRAPHICS_KEYS, KeyResolverResult, RESERVED_ELEMENTS, resolveKey, SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
+import { LinterInput } from './linter';
+import { LinterOptions, PropertyOrder } from './server';
 import { SpecialStatuses } from './types/graphing';
+import { UnprocessedRaidData, WipKind } from './types/raids';
+import { getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, getRangeOrStart, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 
-function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagnostic: Diagnostic): boolean {
+function* diagnostics(diagnostic: Diagnostic): Generator<Diagnostic> {
     diagnostic.source = 'thaliak';
 
-    diagnostics.push(diagnostic);
+    yield diagnostic;
 
     if (diagnostic.relatedInformation != null) {
         for (const relatedInformation of diagnostic.relatedInformation) {
-            diagnostics.push({
+            yield {
                 severity: DiagnosticSeverity.Hint,
                 message: relatedInformation.message,
                 range: relatedInformation.location.range,
@@ -23,37 +23,31 @@ function addDiagnostic(diagnostics: Diagnostic[], settings: LinterOptions, diagn
                     message: 'The original problem comes from here.',
                     location: { uri: relatedInformation.location.uri, range: diagnostic.range }
                 }]
-            });
+            };
         }
     }
-
-    if (diagnostic.data != null && diagnostic.data.textEdits != null) {
-        fixableDiagnostics.push(diagnostic);
-    }
-
-    return diagnostics.length < settings.maxNumberOfProblems;
 }
 
-function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, document: yaml.Document, diagnostics: Diagnostic[], options: LinterOptions): boolean {
+function* validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, document: yaml.Document, options: LinterOptions): Generator<Diagnostic> {
     let lastAt: number = 0;
     let lastAtRange: yaml.Range | undefined;
 
-    const actions = (document.toJS() as UnprocessedRaidData).actions;
+    const js = document.toJS() as UnprocessedRaidData;
+    const actions = js.actions;
 
     for (const item of items.items) {
         if (!yaml.isMap(item)) {
             continue;
         }
 
-        if (!validatePropertyOrder(item, 'timeline item', false, textDocument, document, diagnostics, options)) {
-            return false;
-        }
+        yield* validatePropertyOrder(item, 'timeline item', false, textDocument, options);
 
         const at = item.get('at', true);
+        const actionId = item.get('id') as string;
 
         if (at != null && typeof at.value === 'number') {
             if (lastAtRange != null && lastAt > at.value) {
-                if (!addDiagnostic(diagnostics, options, {
+                yield* diagnostics({
                     code: 'timeline-order',
                     severity: DiagnosticSeverity.Error,
                     message: `All timeline items must be in order, but this item (at ${at.value}ms) comes before the last item (at ${lastAt}ms).`,
@@ -64,30 +58,66 @@ function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, 
                             message: `Item should be placed before this one.`
                         }
                     ]
-                })) {
-                    return false;
-                }
+                });
             }
-    
+
             lastAt = at.value;
             lastAtRange = at.range!;
         }
 
+        if (actionId === '<addstatus>' || actionId === '<removestatus>') {
+            const status: yaml.Scalar[] = [];
+            const statusProperty = item.get('status', true) as yaml.Node | undefined;
+
+            if (yaml.isScalar(statusProperty)) {
+                status.push(statusProperty);
+            } else if (yaml.isSeq(statusProperty)) {
+                for (const item of statusProperty.items) {
+                    if (yaml.isScalar(item)) {
+                        status.push(item);
+                    }
+                }
+            }
+
+            if (status.length === 0) {
+                yield* diagnostics({
+                    code: 'missing-status',
+                    severity: DiagnosticSeverity.Error,
+                    message: `The special timeline items <addstatus> and <removestatus> require at least one status effect to be specified.`,
+                    range: getRange(textDocument, item.get('id', true)!.range ?? [0, 0, 0])
+                });
+            } else if (status != null) {
+                const json = document.toJS();
+
+                for (const id of status) {
+                    if (typeof id.value === 'string') {
+                        const exists = (json.status != null && id.value in json.status) || (options.enums.common != null && id.value in options.enums.common.yaml.status) || id.value in SpecialStatuses;
+
+                        if (!exists) {
+                            yield* diagnostics({
+                                code: 'invalid-id',
+                                severity: DiagnosticSeverity.Error,
+                                message: `Unresolved status effect ${id.value}. Did you forget to define it?`,
+                                range: getRange(textDocument, id.range ?? [0, 0, 0])
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         if (actions != null) {
-            const actionId = item.get('id') as string;
             const action = actions[actionId];
 
             if (action != null) {
                 const count = item.get('count', true);
                 if (count != null && count.value === action.count) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'redundant-count',
                         severity: DiagnosticSeverity.Error,
                         message: `This value can be inferred from '${actionId}' and should be omitted.`,
                         range: getRange(textDocument, count.range!)
-                    })) {
-                        return false;
-                    }
+                    });
                 }
 
                 const players = item.get('players', true);
@@ -101,14 +131,12 @@ function validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, 
                             : null;
 
                     if (type != null) {
-                        if (!addDiagnostic(diagnostics, options, {
+                        yield* diagnostics({
                             code: 'redundant-players',
                             severity: DiagnosticSeverity.Error,
                             message: `This value can be inferred from '${type}' and should be omitted.`,
                             range: getRange(textDocument, players.range!)
-                        })) {
-                            return false;
-                        }
+                        });
                     }
                 }
             }
@@ -185,7 +213,7 @@ function updateOrderItem(order: Map<string, PropertyOrder>, orderItem: PropertyO
     }
 }
 
-function validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: boolean, textDocument: TextDocument, document: yaml.Document, diagnostics: Diagnostic[], options: LinterOptions): boolean {
+function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: boolean, textDocument: TextDocument, options: LinterOptions): Generator<Diagnostic> {
     const order = getOrSet(options.propOrder, itemKind, emptyMap);
     const keysBefore: string[] = [];
 
@@ -250,7 +278,7 @@ function validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: 
                     uniqueness: map.range?.toString()
                 } : undefined;
 
-                if (!addDiagnostic(diagnostics, options, {
+                yield* diagnostics({
                     code: `inconsistent-prop-order/${itemKind.replaceAll(' ', '-')}`,
                     severity: DiagnosticSeverity.Warning,
                     message: `The order of this '${value}' is inconsistent.`,
@@ -263,9 +291,7 @@ function validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: 
                         }
                     ],
                     data: codeActionData
-                })) {
-                    return false;
-                }
+                });
             } else {
                 updateOrderItem(order, orderItem, after?.value, before?.value, range);
             }
@@ -277,7 +303,7 @@ function validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: 
     return true;
 }
 
-export function validateAction({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function* validateAction({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
     if (options.enums['mechanic-types'] == null) {
         return;
     }
@@ -287,9 +313,7 @@ export function validateAction({ diagnostics, textDocument, document, options }:
     if (yaml.isMap(actions)) {
         for (const action of actions.items) {
             if (yaml.isScalar(action.key) && action.key.range != null && yaml.isMap(action.value)) {
-                if (!validatePropertyOrder(action.value, 'action', true, textDocument, document, diagnostics, options)) {
-                    return;
-                }
+                yield* validatePropertyOrder(action.value, 'action', true, textDocument, options);
 
                 const mechanic = action.value.get('mechanic', true);
                 const damage = getEntry(action.value, 'damage');
@@ -298,57 +322,47 @@ export function validateAction({ diagnostics, textDocument, document, options }:
                 const children = action.value.get('children');
 
                 if (yaml.isSeq(children)) {
-                    if (!validateTimelineItems(children, textDocument, document, diagnostics, options)) {
-                        return;
-                    }
+                    yield* validateTimelineItems(children, textDocument, document, options);
                 }
 
                 if (mechanic == null) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'missing-mechanic',
                         severity: DiagnosticSeverity.Error,
                         message: `Every action must specify the 'mechanic' field.\nIf no suitable mechanic type exists, add one to 'enums/mechanic-types.yaml'.`,
                         range: getRange(textDocument, action.key.range)
-                    })) {
-                        return;
-                    }
+                    });
                 }
 
                 if (!action.value.has('id') && !action.value.has('name')) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'missing-name',
                         severity: DiagnosticSeverity.Error,
                         message: `An action must set either a valid 'id' or a custom 'name'.`,
                         range: getRange(textDocument, action.key.range)
-                    })) {
-                        return;
-                    }
+                    });
                 }
 
                 const shape = action.value.get('shape', true);
 
                 if (shape != null && options.enums['mechanic-shapes'] != null && options.enums['mechanic-shapes'].yaml[shape.value as string] == null) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'invalid-shape',
                         severity: DiagnosticSeverity.Error,
                         message: `The 'shape' field must be one of the following values: '${Object.keys(options.enums['mechanic-shapes'].yaml).join('\', \'')}'`,
                         range: getRange(textDocument, shape.range!)
-                    })) {
-                        return;
-                    }
+                    });
                 }
 
                 const damageType = action.value.get('type', true);
 
                 if (damageType != null && options.enums['damage-types'] != null && options.enums['damage-types'].yaml[damageType.value as string] == null) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'invalid-damage-type',
                         severity: DiagnosticSeverity.Error,
                         message: `The 'type' field must be one of the following values: '${Object.keys(options.enums['damage-types'].yaml).join('\', \'')}'`,
                         range: getRange(textDocument, damageType.range!)
-                    })) {
-                        return;
-                    }
+                    });
                 }
 
                 if (!yaml.isScalar(mechanic)) {
@@ -358,20 +372,18 @@ export function validateAction({ diagnostics, textDocument, document, options }:
                 const mechanicType = options.enums['mechanic-types'].yaml[mechanic.value as string];
 
                 if (mechanicType == null) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'invalid-mechanic',
                         severity: DiagnosticSeverity.Error,
                         message: `The 'mechanic' field must be one of the following values: '${Object.keys(options.enums['mechanic-types'].yaml).join('\', \'')}'`,
                         range: getRange(textDocument, mechanic.range!)
-                    })) {
-                        return;
-                    }
+                    });
 
                     continue;
                 }
 
                 if (mechanicType.players == null && hasDamage && !action.value.has('players')) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'missing-players',
                         severity: DiagnosticSeverity.Error,
                         message: `The 'players' field must be set for mechanic type '${mechanic.value}'`,
@@ -382,67 +394,57 @@ export function validateAction({ diagnostics, textDocument, document, options }:
                                 message: `Or remove this 'damage' field to avoid having to set 'players'.`
                             }
                         ]
-                    })) {
-                        return;
-                    }
+                    });
                 }
                 
                 const count = action.value.get('count') as number ?? 1;
                 const players = action.value.get('players', true);
 
                 if (mechanicType.players != null && players?.value === mechanicType.players && (mechanicType.players * count) <= 8) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'redundant-players',
                         severity: DiagnosticSeverity.Warning,
                         message: `This value can be inferred from '${mechanic.value}' and should be omitted.`,
                         range: getRange(textDocument, players.range!)
-                    })) {
-                        return;
-                    }
+                    });
                 }
 
                 if (mechanicType.shapeful === true && shape == null) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'missing-shape',
                         severity: DiagnosticSeverity.Error,
                         message: `The 'shape' field must be set for mechanic type '${mechanic.value}'`,
                         range: getRange(textDocument, action.key.range)
-                    })) {
-                        return;
-                    }
+                    });
                 }
 
                 if (!action.value.has('players') && mechanicType.players != null) {
                     const totalPlayersHit = mechanicType.players * count;
     
                     if (totalPlayersHit > 8) {
-                        if (!addDiagnostic(diagnostics, options, {
+                        yield* diagnostics({
                             code: 'too-many-players-hit',
                             severity: DiagnosticSeverity.Warning,
                             message: `With ${count} instances of this mechanic and a 'players' value of ${mechanicType.players}, this mechanic targets more players than fit in a full party! Explicitly set the 'players' field to silence this warning.`,
                             range: getRange(textDocument, action.key.range)
-                        })) {
-                            return;
-                        }
+                        });
                     }
                 }
 
                 if ((players != null || mechanicType.players != null) && !action.value.has('damage') && mechanic.value !== 'raidwide.sethp' && !action.value.has('children')) {
-                    if (!addDiagnostic(diagnostics, options, {
+                    yield* diagnostics({
                         code: 'missing-damage',
                         severity: DiagnosticSeverity.Error,
                         message: `This action specifies that ${players ?? mechanicType.players} players take damage, but the 'damage' field is missing.`,
                         range: getRange(textDocument, action.key.range)
-                    })) {
-                        return;
-                    }
+                    });
                 }
             }
         }
     }
 }
 
-export function validateStatus({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function* validateStatus({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
     const statusEffects = document.get('status');
     
     if (yaml.isMap(statusEffects)) {
@@ -451,45 +453,37 @@ export function validateStatus({ diagnostics, textDocument, document, options }:
                 continue;
             }
 
-            if (!validatePropertyOrder(status.value, 'status effect', true, textDocument, document, diagnostics, options)) {
-                return;
-            }
+            yield* validatePropertyOrder(status.value, 'status effect', true, textDocument, options);
 
             const type = status.value.get('type', true);
 
             if (type == null) {
-                if (!addDiagnostic(diagnostics, options, {
+                yield* diagnostics({
                     code: 'missing-status-type',
                     severity: DiagnosticSeverity.Error,
                     message: `Every status must specify the 'type' field.\nIf no suitable status type exists, add one to 'enums/status-types.yaml'.`,
                     range: getRange(textDocument, status.key.range)
-                })) {
-                    return;
-                }
+                });
 
                 continue;
             }
 
             if (options.enums['status-types'] != null && options.enums['status-types'].yaml[type.value as string] == null) {
-                if (!addDiagnostic(diagnostics, options, {
+                yield* diagnostics({
                     code: 'invalid-mechanic',
                     severity: DiagnosticSeverity.Error,
                     message: `The 'type' field must be one of the following values: '${Object.keys(options.enums['status-types'].yaml).join('\', \'')}'`,
                     range: getRange(textDocument, type.range!)
-                })) {
-                    return;
-                }
+                });
             }
 
             if (type.value === 'dot' && !status.value.has('tick')) {
-                if (!addDiagnostic(diagnostics, options, {
+                yield* diagnostics({
                     code: 'missing-tick',
                     severity: DiagnosticSeverity.Error,
                     message: `Damage-over-time status effects must define the tick damage (via 'tick').`,
                     range: getRange(textDocument, type.range!)
-                })) {
-                    return;
-                }
+                });
             }
         }
     }
@@ -512,11 +506,11 @@ function isWip(document: yaml.Document, kind: WipKind): [boolean, yaml.Range | u
     ];
 }
 
-export function mustSpecifyPartyHP({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function* mustSpecifyPartyHP({ textDocument, document }: LinterInput): Generator<Diagnostic> {
     const [wip, wipRange] = isWip(document, 'damage');
 
     if (!wip && !document.has('party_hp')) {
-        addDiagnostic(diagnostics, options, {
+        yield* diagnostics({
             code: 'missing-party-hp',
             severity: DiagnosticSeverity.Error,
             message: `Field 'party_hp' is required in timeline files without the "damage" work-in-progress kind.`,
@@ -525,11 +519,11 @@ export function mustSpecifyPartyHP({ diagnostics, textDocument, document, option
     }
 }
 
-export function mustSpecifyAutoAttacks({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function* mustSpecifyAutoAttacks({ textDocument, document }: LinterInput): Generator<Diagnostic> {
     const [wip, wipRange] = isWip(document, 'damage');
 
     if (!wip && !document.has('autos')) {
-        addDiagnostic(diagnostics, options, {
+        yield* diagnostics({
             code: 'missing-auto-attacks',
             severity: DiagnosticSeverity.Error,
             message: `Field 'autos' is required in timeline files without the "damage" work-in-progress kind.`,
@@ -538,11 +532,11 @@ export function mustSpecifyAutoAttacks({ diagnostics, textDocument, document, op
     }
 }
 
-export function mustHaveAtLeastOneAuthor({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function* mustHaveAtLeastOneAuthor({ textDocument, document }: LinterInput): Generator<Diagnostic> {
     const by = getEntry(document.contents as yaml.YAMLMap, 'by');
 
     if (by != null && ((yaml.isSeq(by.value) && !by.value.items.some(x => !yaml.isMap(x) || x.get('role') === 'author')) || yaml.isMap(by.value) && by.value.get('role') !== 'author')) {
-        addDiagnostic(diagnostics, options, {
+        yield* diagnostics({
             code: 'missing-author',
             severity: DiagnosticSeverity.Error,
             message: `Field 'by' must contain at least one contributor with the 'author' role.`,
@@ -581,7 +575,7 @@ function *traverseTimelineItems(document: yaml.Document): Generator<yaml.YAMLMap
     }
 }
 
-export function idMustBeValid({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function* idMustBeValid({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
     const matches: { text: string, range: [number, number, number?] }[] = [];
 
     for (const match of textDocument.getText().matchAll(PLACEHOLDER_REGEX)) {
@@ -612,7 +606,7 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
         });
 
         if (!isValid) {
-            if (!addDiagnostic(diagnostics, options, {
+            yield* diagnostics({
                 code: 'invalid-id',
                 severity: DiagnosticSeverity.Error,
                 message: `Unresolved ${perPrefix(match.text, {
@@ -625,14 +619,12 @@ export function idMustBeValid({ diagnostics, textDocument, document, options }: 
                     'i:': key => `icon ${key}`
                 })}. Did you forget to define it?`,
                 range: getRange(textDocument, [match.range[0], match.range[1], match.range[2] ?? match.range[1]])
-            })) {
-                return;
-            }
+            });
         }
     }
 }
 
-export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function* mustNotHaveRecursiveChildren({ textDocument, document }: LinterInput): Generator<Diagnostic> {
     const graph: yaml.Scalar[] = [];
     const recursiveGraphs: string[] = [];
 
@@ -640,11 +632,11 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
 
     if (actions != null && yaml.isMap(actions)) {
         for (const item of actions.items) {
-            checkAction(item);
+            yield* checkAction(item);
         }
     }
 
-    function checkAction(action: yaml.Pair): void {
+    function* checkAction(action: yaml.Pair): Generator<Diagnostic> {
         if (!yaml.isScalar(action.key) || !yaml.isMap(action.value)) {
             return;
         }
@@ -676,7 +668,7 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
                     continue;
                 }
 
-                if (!addDiagnostic(diagnostics, options, {
+                yield* diagnostics({
                     code: 'recursion',
                     severity: DiagnosticSeverity.Error,
                     message: `This child is contained in itself: ${recursiveGraph}`,
@@ -685,10 +677,8 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
                         location: { uri: textDocument.uri, range: getRange(textDocument, x.range!) },
                         message: `This action is part of the recursion graph.`
                     }))
-                })) {
-                    recursiveGraphs.push(recursiveGraph);
-                    return;
-                }
+                });
+
                 recursiveGraphs.push(recursiveGraph);
                 continue;
             }
@@ -696,7 +686,7 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
             const childAction = (actions as yaml.YAMLMap).items.find(x => yaml.isScalar(x.key) && x.key.value === id.value);
 
             if (childAction != null) {
-                checkAction(childAction);
+                yield* checkAction(childAction);
             }
         }
 
@@ -704,15 +694,15 @@ export function mustNotHaveRecursiveChildren({ diagnostics, textDocument, docume
     }
 }
 
-export function validateTimeline({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function* validateTimeline({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
     const timeline = getIfType(document, 'timeline', yaml.isSeq);
 
     if (timeline != null) {
-        validateTimelineItems(timeline, textDocument, document, diagnostics, options);
+        yield* validateTimelineItems(timeline, textDocument, document, options);
     }
 }
 
-export function validateGraphingItems({ diagnostics, textDocument, document, options }: LinterInput): void {
+export function* validateGraphingItems({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
     const graphing = getIfType(document, 'graphing', yaml.isMap);
 
     if (graphing != null) {
@@ -725,14 +715,12 @@ export function validateGraphingItems({ diagnostics, textDocument, document, opt
             for (const item of elements.items) {
                 if (yaml.isScalar(item.key) && typeof item.key.value === 'string') {
                     if (RESERVED_ELEMENTS.has(item.key.value)) {
-                        if (!addDiagnostic(diagnostics, options, {
+                        yield* diagnostics({
                             code: 'reserved-graphing-element',
                             severity: DiagnosticSeverity.Error,
                             message: `'${item.key.value}' is a reserved element.`,
                             range: getRange(textDocument, (item.key as yaml.Node).range!)
-                        })) {
-                            return;
-                        }
+                        });
                     } else {
                         resolvedElements.add(item.key.value);
                     }
@@ -753,41 +741,35 @@ export function validateGraphingItems({ diagnostics, textDocument, document, opt
                                 try {
                                     result = resolveKey(key, firstStepElements);
                                 } catch (e) {
-                                    if (!addDiagnostic(diagnostics, options, {
+                                    yield* diagnostics({
                                         code: 'graphing-error',
                                         severity: DiagnosticSeverity.Error,
                                         message: (e as Error).message,
                                         range: getRange(textDocument, (item.key as yaml.Node).range!)
-                                    })) {
-                                        return;
-                                    }
+                                    });
 
                                     continue;
                                 }
 
                                 if (result.wildcard && first) {
-                                    if (!addDiagnostic(diagnostics, options, {
+                                    yield* diagnostics({
                                         code: 'first-step-wildcard',
                                         severity: DiagnosticSeverity.Error,
                                         message: 'Wildcards in element identifiers may only be used in step 2 and onwards.',
                                         range: getRange(textDocument, (item.key as yaml.Node).range!)
-                                    })) {
-                                        return;
-                                    }
+                                    });
                                 }
 
                                 const definitions = result.definition != null ? [result.definition] : result.elements;
 
                                 for (const definition of definitions) {
                                     if (!resolvedElements.has(definition) && !SPECIAL_ELEMENT_KEYS.has(definition)) {
-                                        if (!addDiagnostic(diagnostics, options, {
+                                        yield* diagnostics({
                                             code: 'unresolved-graphing-element',
                                             severity: DiagnosticSeverity.Error,
                                             message: `Failed to resolve '${definition}'. Did you remember to add the element definition to 'elements'?`,
                                             range: getRange(textDocument, (item.key as yaml.Node).range!)
-                                        })) {
-                                            return;
-                                        }
+                                        });
                                     }
                                 }
 
@@ -799,14 +781,12 @@ export function validateGraphingItems({ diagnostics, textDocument, document, opt
                                     if (first) {
                                         firstStepElements.add(element);
                                     } else if (!firstStepElements.has(element)) {
-                                        if (!addDiagnostic(diagnostics, options, {
+                                        yield* diagnostics({
                                             code: 'uninitialized-graphing-element',
                                             severity: DiagnosticSeverity.Error,
                                             message: `Found uninitialized element '${element}'. All elements must be initialized in the first step of a graph.`,
                                             range: getRange(textDocument, (item.key as yaml.Node).range!)
-                                        })) {
-                                            return;
-                                        }
+                                        });
                                     }
                                 }
 
@@ -821,14 +801,12 @@ export function validateGraphingItems({ diagnostics, textDocument, document, opt
                                                 const exists = (json.status != null && id.value in json.status) || (options.enums.common != null && id.value in options.enums.common.yaml.status) || id.value in SpecialStatuses;
 
                                                 if (!exists) {
-                                                    if (!addDiagnostic(diagnostics, options, {
+                                                    yield* diagnostics({
                                                         code: 'invalid-id',
                                                         severity: DiagnosticSeverity.Error,
                                                         message: `Unresolved status effect ${id.value}. Did you forget to define it?`,
                                                         range: getRange(textDocument, id.range ?? item.value.range ?? [0, 0, 0])
-                                                    })) {
-                                                        return;
-                                                    }
+                                                    });
                                                 }
                                             }
                                         }
