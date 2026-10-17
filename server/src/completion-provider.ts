@@ -22,14 +22,12 @@ export default function completionProvider(documents: TextDocuments<TextDocument
         }
 
         const result = getNodeAt(document, textDocument, params.position);
-        let isGraphingStatus = false;
+        let isStatusId = false;
         let isActionId = false;
 
         if (result == null) {
             return [];
         }
-
-        console.log(result.node, JSON.stringify(result.node));
 
         if ((yaml.isScalar(result.node) && typeof result.node.value === 'string' && yaml.isPair(result.parent?.node) && result.parent.node.key === result.node)
          || (yaml.isMap(result.node) && getLineAt(textDocument, params.position).lineBefore.trim().length === 0)) {
@@ -75,22 +73,23 @@ export default function completionProvider(documents: TextDocuments<TextDocument
         }
 
         const keyValue = getKeyValueAt(textDocument, params.position, 'id');
+        const statusKeyValue = getKeyValueAt(textDocument, params.position, 'status');
 
         if (keyValue != null) {
             isActionId = true;
-        } else if (yaml.isSeq(result.node) && yaml.isPair(result.parent?.node) && yaml.isScalar(result.parent.node.key) && result.parent.node.key.value === 'status') {
-            isGraphingStatus = true;
+        } else if (statusKeyValue != null || (yaml.isSeq(result.node) && yaml.isPair(result.parent?.node) && yaml.isScalar(result.parent.node.key) && result.parent.node.key.value === 'status')) {
+            isStatusId = true;
         } else if (!yaml.isScalar(result.node) || typeof result.node.value !== 'string' || (yaml.isPair(result.parent?.node) && result.node === result.parent.node.key)) {
             return [];
         }
 
         const raidData = document.toJS() as UnprocessedRaidData;
-        const symbol = isGraphingStatus || isActionId ? null : getSymbolAt(document, textDocument, params.position, true);
+        const symbol = isStatusId || isActionId ? null : getSymbolAt(document, textDocument, params.position, true);
         const actions = raidData?.actions;
         const accumulatedActions: Set<string> = new Set();
         const accumulatedStatuses: Set<string> = new Set();
 
-        if (symbol == null && !isGraphingStatus && !isActionId) {
+        if (symbol == null && !isStatusId && !isActionId) {
             const lineBefore = textDocument.getText({ start: { line: params.position.line, character: 0 }, end: params.position });
             const colonIndex = lineBefore.indexOf(':');
 
@@ -107,7 +106,7 @@ export default function completionProvider(documents: TextDocuments<TextDocument
         }
 
         let accumulateActions = isActionId;
-        let accumulateStatus = isGraphingStatus;
+        let accumulateStatus = isStatusId;
         let accumulateTerms = false;
         let accumulateMechanicTypes = false;
         let accumulateMechanicShapes = false;
@@ -290,7 +289,7 @@ export default function completionProvider(documents: TextDocuments<TextDocument
             }
         }
 
-        if (isGraphingStatus) {
+        if (isStatusId) {
             for (const key in SpecialStatuses) {
                 items.push({
                     label: key,
