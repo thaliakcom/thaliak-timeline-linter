@@ -1165,3 +1165,117 @@ export function* graphsMustBeUsed({ textDocument, document }: LinterInput): Gene
         }
     }
 }
+
+/** The fields whose text is shown to readers, and is held to the Author's Guide. */
+const PROSE_KEYS = new Set(['description', 'resolve', 'trivia', 'caption', 'tips', 'mistakes']);
+
+/** The damage adjectives of the Author's Guide to use instead of others. */
+const DAMAGE_ADJECTIVES: Record<string, string> = {
+    'light': 'mild',
+    'small': 'mild',
+    'low': 'mild',
+    'little': 'minimal',
+    'minor': 'minimal',
+    'medium': 'moderate',
+    'high': 'heavy',
+    'big': 'heavy',
+    'significant': 'heavy',
+    'considerable': 'heavy',
+    'a lot of': 'heavy',
+    'lots of': 'heavy',
+    'severe': 'massive',
+    'huge': 'massive',
+    'extreme': 'massive',
+    'tons of': 'massive'
+};
+
+interface WordingRule {
+    code: string;
+    regex: RegExp;
+    message: string;
+    /** The replacement for the first capture group, if the problem can be fixed automatically. */
+    replace?: (match: RegExpMatchArray) => string;
+}
+
+/** The wording rules from the Author's Guide (see the data repository's wiki) that can be checked by pattern. */
+const WORDING_RULES: WordingRule[] = [
+    {
+        code: 'wording/damage-amount',
+        // Not followed by words that make "damage" part of another noun (a damage buff).
+        regex: new RegExp(`\\b(${Object.keys(DAMAGE_ADJECTIVES).map(x => x.replace(' ', '\\s+')).join('|')})\\s+damage\\b(?!\\s+(?:buff|up|down|debuff|increase|reduction|taken|bonus))`, 'gi'),
+        message: `Describe amounts of damage as minimal, mild, moderate, heavy, massive or lethal.`,
+        replace: match => DAMAGE_ADJECTIVES[match[1]!.toLowerCase().replace(/\s+/g, ' ')]!
+    },
+    {
+        code: 'wording/deal-damage',
+        regex: /\b(do|does|doing|did|done)\s+(?:\w+\s+)?damage\b/gi,
+        message: `Use "deal damage" instead of "do damage".`,
+        replace: match => ({ do: 'deal', does: 'deals', doing: 'dealing', did: 'dealt', done: 'dealt' })[match[1]!.toLowerCase()]!
+    },
+    {
+        code: 'wording/inflict-status',
+        // Only where a status placeholder follows within a few words; "apply" is fine for other things.
+        regex: /\b(apply|applies|applying|applied)\s+(?:[\w-]+\s+){0,2}(?=\[s:|\[[^\]\n]*\]\(s:)/gi,
+        message: `Use "inflict" for harmful and "grant" for beneficial status effects instead of "apply".`
+    },
+    {
+        code: 'wording/afflicted',
+        // Not fixed automatically: "affected" is right for players hit by an attack.
+        regex: /\b(affected)\s+players?\b/gi,
+        message: `Use "afflicted players" for players under a harmful status effect.`
+    },
+    {
+        code: 'wording/player',
+        regex: /\b(party\s+members?)\b/gi,
+        message: `Use "player" instead of "party member".`,
+        replace: match => /s$/i.test(match[1]!) ? 'players' : 'player'
+    },
+    {
+        code: 'wording/kill',
+        regex: /\b(KO(?:s|'d|ed|ing)?)\b/g,
+        message: `Use "kill" or "death" instead of "KO".`
+    }
+];
+
+/** Yields the string scalars in `node` that are values of {@link PROSE_KEYS} (or items of their lists). */
+function* getProse(node: unknown, key?: string): Generator<yaml.Scalar<string>> {
+    if (yaml.isMap(node)) {
+        for (const pair of node.items) {
+            yield* getProse(pair.value, yaml.isScalar(pair.key) ? String(pair.key.value) : undefined);
+        }
+    } else if (yaml.isSeq(node)) {
+        for (const item of node.items) {
+            yield* getProse(item, key === 'tips' || key === 'mistakes' ? key : undefined);
+        }
+    } else if (yaml.isScalar(node) && typeof node.value === 'string' && node.range != null && key != null && PROSE_KEYS.has(key)) {
+        yield node as yaml.Scalar<string>;
+    }
+}
+
+/** Matches the case of `original`'s first letter on `replacement`. */
+function matchCase(original: string, replacement: string): string {
+    return original[0] === original[0]!.toUpperCase() ? replacement[0]!.toUpperCase() + replacement.slice(1) : replacement;
+}
+
+export function* proseMustFollowWordingRules({ textDocument, document }: LinterInput): Generator<Diagnostic> {
+    for (const scalar of getProse(document.contents)) {
+        // The source text, so that offsets stay right in block and folded scalars.
+        const offset = scalar.range![0];
+        const text = textDocument.getText().slice(offset, scalar.range![1]);
+
+        for (const rule of WORDING_RULES) {
+            for (const match of text.matchAll(rule.regex)) {
+                const start = offset + match.index! + match[0].indexOf(match[1]!);
+                const range = getRangeFromOffset(textDocument, start, start + match[1]!.length);
+
+                yield* diagnostics({
+                    code: rule.code,
+                    severity: DiagnosticSeverity.Information,
+                    message: rule.message,
+                    range,
+                    data: rule.replace != null ? { textEdits: [TextEdit.replace(range, matchCase(match[1]!, rule.replace(match)))] satisfies TextEdit[] } : undefined
+                });
+            }
+        }
+    }
+}

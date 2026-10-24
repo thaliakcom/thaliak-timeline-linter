@@ -22,4 +22,15 @@
 - Build errors still missing: last child with `link`, `Placeholder description`.
 - Strategy key / graph ID completion and orphan graph warnings (2 found).
 
-**Status:** Completed (step one awaiting user verification; step two delivered as recommendations).
+The user rejected the game-data cache (only works for one person) and the outline (the Red Hat YAML extension already provides one), and approved the rest.
+
+**Step three (implemented):**
+- Inlay hints (`inlay-hint-provider.ts`): top-level timeline `at` as `m:ss.mmm`; children are left out because their `at` is relative. VS Code shows inlay hints by default.
+- `unused-action` (hint, faded): actions not referenced by timeline items, children, diagram `action` or `[a:]`/`(a:)` placeholders (19 in the timelines).
+- `last-child-link` (error), as in the build.
+- `placeholder-description` (error) for actions and statuses with thaliak-cli's `Placeholder description` or its `castType: N, cast100ms: N, omenPath: X` description, skipped with wip `timeline` or `guide` (user's choice; the build uses `guide`).
+- Strategy keys complete against graph IDs and graph IDs against strategy keys (each offers what the other side has that this side lacks); `unused-graph` (warning) for graphs no strategy names (2: top `p3-transition`, umad `p3-limit-cut`).
+- Wording rules from the Author's Guide (information) on `description`, `resolve`, `trivia`, `caption`, `tips` and `mistakes`, with quick fixes where the replacement is unambiguous: damage adjectives (`light` → `mild`, `high` → `heavy`, ...; only directly before "damage" and not before "damage buff/up/down/..."), "do damage", "apply" before a status placeholder (no fix: inflict vs grant), "affected players" (no fix: also right for players hit by an attack), "party member", "KO". Known false positive: p11s's "light damage" means light-aspected damage.
+- Fixed `isWip()`: it compared `Scalar` nodes with the kind string, so list-form `wip` never matched (m3s/m4s got `missing-auto-attacks` despite `wip: [.., damage, ..]`).
+
+**Status:** Completed (awaiting user verification in VS Code).
