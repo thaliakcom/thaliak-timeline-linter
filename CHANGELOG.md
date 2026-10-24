@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 (2026-10-24)
+
+* **Added**: support for new thaliak data schema (d4d164fda44d0637827e2535176d1493ffc5c073)
+* **Fixed**: an erroneous missing auto-attack diagnostic on fights that aren't meant to
+  have any (50df1a6b6def3a03ba6b5424a577235c1ea2ee73)
+* **Fixed**: an issue that caused multiple defined WIP types to never match
+  (b7b0ffc9bdaf29e6150cea877d333956c058f19d)
+* **Added**: ability to show timeline timestamps as inlay hints
+  (422089dda92643ba7b6e43c9fd8d4b8fbda7eb3c)
+* **Added**: diagnostic that reports unused actions (fb9f8ff323d880440dd6470e7c0b04d50f1553e9)
+* **Added**: diagnostic that reports unused graphs (9e97c0f1f3347ff420ceb00ad469603e4164929b)
+* **Added**: some other diagnostics (78161003d90372d011ab9605a939104878d5a0d1)
+* **Added**: wording hints (7b549aa91ddeba006dd3c19d7a11ec5f404786de)
+
 ## 0.2.6 (2026-10-17)
 
 * **Fixed**: an issue that would cause an autocompletion on something like `[a:`
