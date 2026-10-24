@@ -1,3 +1,5 @@
+import { InAnimation, LookType, MarkerLookType, OutAnimation, TetherLookType } from './enums';
+
 export type Point = readonly [x: number, y: number];
 export type PositivePoint = readonly [x: PositiveNumber, y: PositiveNumber];
 export type Origin = readonly [x: number, y: number];
@@ -11,7 +13,7 @@ export type CoordinateSystemPoint = readonly [x: number, y: number, coordinateSy
 type RelativeNumber = number;
 
 /** @minimum 0 */
-type PositiveNumber = number;
+export type PositiveNumber = number;
 
 /** 
  * @minimum -360
@@ -19,9 +21,81 @@ type PositiveNumber = number;
  */
 type degrees = number;
 
+/**
+ * Like the CSS `margin` property: one value for all sides, or 2–4 values in the order
+ * top, right, bottom, left.
+ */
+export type Margin = number | readonly [all: number] | readonly [vertical: number, horizontal: number] | readonly [top: number, horizontal: number, bottom: number] | readonly [top: number, right: number, bottom: number, left: number];
+
 interface Colored {
     /** An HTML color string for this element. */
     color?: string;
+}
+
+/** For the shapes that can be drawn as an animated AoE. */
+interface AoeCapable {
+    /**
+     * How the shape is drawn. The values are listed in `enums/looks.yaml` (under `aoes`).
+     * Default is `plain`: filled with `color`. Every other look ignores `color`; tint it with
+     * `filter` (e.g. `hue-rotate`).
+     */
+    look?: LookType;
+    /**
+     * For every look except `plain`: merges this AoE with the AoEs of the same group (same ID
+     * before `#`, or the same `group`) that come right before or after it in drawing order, also
+     * merge and have the same `look`, into one outline with a single rim. Defaults to `false`:
+     * the AoE is drawn on its own.
+     */
+    merge?: boolean;
+    /**
+     * A line along the shape's edge: an HTML color string, or an object with an optional `color`
+     * and a `style`. A `solid` stroke (default) is a 1.2-unit line with a soft glow on both
+     * sides; a `dashed` stroke marches along the edge and has no glow.
+     * For `look: landslide` and `look: sludge`, `stroke` recolours or dashes their built-in
+     * jagged border; without a `color`, the look's own border colour is used. For the other
+     * looks, the default colour is the AoE rim's yellow (`#fce76e`).
+     * Merged shapes are stroked along their merged outline.
+     */
+    stroke?: string | {
+        /** The HTML color string of the stroke. */
+        color?: string;
+        /** Whether the stroke is a glowing solid line (default) or marching dashes. */
+        style?: 'solid' | 'dashed';
+    };
+}
+
+/** For links, which can be drawn as a tether. */
+interface TetherCapable {
+    /**
+     * How the link is drawn. The values are listed in `enums/looks.yaml` (under `tethers`).
+     * Default is `plain`: a band of `color`, `width` wide. Every other look has fixed colours
+     * and a fixed size, so `color` and `width` are only allowed with `plain`; tint it with
+     * `filter` (e.g. `hue-rotate`). The moving looks (`pulse`, `strands`, `braid`, `coil`)
+     * move towards the `to` end.
+     */
+    look?: TetherLookType;
+}
+
+/** For the shapes whose size can come from an action. */
+interface ActionSized {
+    /**
+     * The key of an action in `actions` whose game data gives this element's size,
+     * converted from yalms with the fight's `arena` size: `effectRange` is the radius
+     * of an ellipse or cone and the length of a rectangle, whose width is the action's
+     * `XAxisModifier`. Donuts still need an explicit `size` (game data has no inner radius).
+     * An explicit `size` always takes precedence.
+     */
+    action?: string;
+}
+
+/**
+ * Fields the build adds to the graphing data. They're not part of the timeline schema.
+ */
+export interface ProcessedSizing {
+    /** The element's size in yalms, from its `action`. Diagrams convert it into `size` in every step. */
+    yalms?: PositivePoint;
+    /** The natural size in pixels of an arena element's `image`. */
+    imageSize?: PositivePoint;
 }
 
 interface BaseElementData {
@@ -31,7 +105,7 @@ interface BaseElementData {
     description?: string;
 }
 
-interface SharedElementData extends BaseElementData {
+export interface SharedElementData extends BaseElementData {
     /**
      * The scale of the element, either as a `[scaleX, scaleY]` array or a single
      * number that specifies the scale on both axes.
@@ -52,8 +126,23 @@ interface SharedElementData extends BaseElementData {
      * Set `null` to keep the previous rotation.
      */
     rotate?: degrees | string | null;
-    /** Whether the element is currently visible or not. Default is `true`. */
-    visible?: boolean;
+    /**
+     * Whether the element is currently visible or not. Default is `true`.
+     * `resolve` shows the element only as its `out` animation in this step (e.g. an AoE that
+     * resolves without a telegraph). It doesn't carry over to later steps, where the element is hidden.
+     */
+    visible?: boolean | 'resolve';
+    /**
+     * The animation that plays when the element becomes visible. The values are listed in
+     * `enums/animations.yaml` (under `in`). Default is `fade`.
+     */
+    in?: InAnimation;
+    /**
+     * The animation that plays when the element becomes hidden. The values are listed in
+     * `enums/animations.yaml` (under `out`). Default is `fade`. Resolve animations (e.g. `rocks`) replace the
+     * element with an effect that is drawn above all elements, players included.
+     */
+    out?: OutAnimation;
     /** 
      * The initial size of the element. Can either be an array of `[width, height]`
      * or a single number, in which case both width and height will be the same.
@@ -61,7 +150,7 @@ interface SharedElementData extends BaseElementData {
      * property, otherwise animations won't work.
      */
     size?: PositiveNumber | PositivePoint;
-    /** Sets the CSS `filter` property on this element. */
+    /** Sets the CSS `filter` property on this element. Its color functions also tint the element's resolve animations (e.g. `out: fire`). */
     filter?: string;
     /** Whether the element should repeatedly fade in and out. */
     blink?: boolean;
@@ -84,14 +173,14 @@ export interface DefinitionElementData extends SharedElementData {
 }
 
 export const SpecialStatuses = {
-    'dice-1': { name: 'First in Line', description: 'First to be targeted by the mechanic.', image: '/images/dice/1.png', size: 10 },
-    'dice-2': { name: 'Second in Line', description: 'Second to be targeted by the mechanic.', image: '/images/dice/2.png', size: 10 },
-    'dice-3': { name: 'Third in Line', description: 'Third to be targeted by the mechanic.', image: '/images/dice/3.png', size: 10 },
-    'dice-4': { name: 'Fourth in Line', description: 'Fourth to be targeted by the mechanic.', image: '/images/dice/4.png', size: 10 },
-    'dice-5': { name: 'Fifth in Line', description: 'Fifth to be targeted by the mechanic.', image: '/images/dice/5.png', size: 10 },
-    'dice-6': { name: 'Sixth in Line', description: 'Sixth to be targeted by the mechanic.', image: '/images/dice/6.png', size: 10 },
-    'dice-7': { name: 'Seventh in Line', description: 'Seventh to be targeted by the mechanic.', image: '/images/dice/7.png', size: 10 },
-    'dice-8': { name: 'Eighth in Line', description: 'Eighth to be targeted by the mechanic.', image: '/images/dice/8.png', size: 10 },
+    'dice-1': { name: 'First in Line', description: 'First to be targeted by the mechanic.', image: '/images/dice/1.svg', size: 10 },
+    'dice-2': { name: 'Second in Line', description: 'Second to be targeted by the mechanic.', image: '/images/dice/2.svg', size: 10 },
+    'dice-3': { name: 'Third in Line', description: 'Third to be targeted by the mechanic.', image: '/images/dice/3.svg', size: 10 },
+    'dice-4': { name: 'Fourth in Line', description: 'Fourth to be targeted by the mechanic.', image: '/images/dice/4.svg', size: 10 },
+    'dice-5': { name: 'Fifth in Line', description: 'Fifth to be targeted by the mechanic.', image: '/images/dice/5.svg', size: 10 },
+    'dice-6': { name: 'Sixth in Line', description: 'Sixth to be targeted by the mechanic.', image: '/images/dice/6.svg', size: 10 },
+    'dice-7': { name: 'Seventh in Line', description: 'Seventh to be targeted by the mechanic.', image: '/images/dice/7.svg', size: 10 },
+    'dice-8': { name: 'Eighth in Line', description: 'Eighth to be targeted by the mechanic.', image: '/images/dice/8.svg', size: 10 },
     'mark1': { name: 'Marked 1', description: 'Marked as player 1.', image: '/images/markers/mark1.svg', size: 6 },
     'mark2': { name: 'Marked 2', description: 'Marked as player 2.', image: '/images/markers/mark2.svg', size: 6 },
     'mark3': { name: 'Marked 3', description: 'Marked as player 3.', image: '/images/markers/mark3.svg', size: 6 },
@@ -140,15 +229,15 @@ export interface StepElementData extends SharedElementData {
     transform?: string;
 }
 
-export interface DonutDefinition extends DefinitionElementData, Colored {
+export interface DonutDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
     type: 'donut';
 }
 
-export interface EllipseDefinition extends DefinitionElementData, Colored {
+export interface EllipseDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
     type: 'ellipse';
 }
 
-export interface ConeDefinition extends DefinitionElementData, Colored {
+export interface ConeDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
     type: 'cone';
     angle: number;
     /** 
@@ -165,13 +254,21 @@ export interface ImageDefinition extends DefinitionElementData {
     image: string;
     /** Whether the image should be rendered in full (`rectangle`) or only as a circular cutout. */
     shape?: 'circle' | 'rectangle';
-    /** The source of a `<mask>` element to apply to this image. See https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Element/mask. */
-    mask?: string;
-    /** A `clip-path` to apply to this image. See https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Attribute/clip-path. */
-    clipPath?: string;
+    /**
+     * Only on the `arena` element: the margin in pixels of the arena image (CSS `margin`
+     * semantics) around the part that corresponds to the fight's `arena` size in yalms.
+     * Negative values for images smaller than the arena. Doesn't change how the image is drawn.
+     */
+    margin?: Margin;
 }
 
-export interface RectangleDefinition extends DefinitionElementData, Colored {
+export interface MarkerDefinition extends DefinitionElementData {
+    type: 'marker';
+    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). */
+    look: MarkerLookType;
+}
+
+export interface RectangleDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
     type: 'rectangle';
 }
 
@@ -181,36 +278,43 @@ export interface PrismDefinition extends DefinitionElementData, Colored {
     depth: number;
 }
 
-export interface LinkDefinition extends BaseElementData, Colored, Pick<SharedElementData, 'visible'> {
+export interface LinkDefinition extends BaseElementData, Colored, TetherCapable, Pick<SharedElementData, 'visible' | 'in' | 'out' | 'filter'> {
     type: 'link';
     width?: number;
 }
 
-export type ElementDefinition = DonutDefinition | EllipseDefinition | ConeDefinition | ImageDefinition | RectangleDefinition | LinkDefinition | PrismDefinition;
+export type ElementDefinition = DonutDefinition | EllipseDefinition | ConeDefinition | ImageDefinition | MarkerDefinition | RectangleDefinition | LinkDefinition | PrismDefinition;
 
-export interface DonutDelta extends StepElementData, Colored {
+
+export interface DonutDelta extends StepElementData, Colored, AoeCapable {
 }
 
-export interface EllipseDelta extends StepElementData, Colored {
+export interface EllipseDelta extends StepElementData, Colored, AoeCapable {
 }
 
-export interface ConeDelta extends StepElementData, Colored {
+export interface ConeDelta extends StepElementData, Colored, AoeCapable {
     rotation?: number;
 }
 
 export interface ImageDelta extends StepElementData {
     image?: string;
     shape?: 'circle' | 'rectangle';
-    mask?: string;
+    /** Only on the `arena` element: see `margin` on image definitions. */
+    margin?: Margin;
+}
+
+export interface MarkerDelta extends StepElementData {
+    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). */
+    look?: MarkerLookType;
 }
 
 export interface EnemyDelta extends StepElementData {
 }
 
-export interface RectangleDelta extends StepElementData, Colored {
+export interface RectangleDelta extends StepElementData, Colored, AoeCapable {
 }
 
-export interface LinkDelta extends BaseElementData, Colored, Pick<StepElementData, 'visible'> {
+export interface LinkDelta extends BaseElementData, Colored, TetherCapable, Pick<StepElementData, 'visible' | 'in' | 'out' | 'filter'> {
     /** The element ID to link from. */
     from?: string | Point;
     /** The element ID to link to. */
@@ -234,7 +338,7 @@ export interface Hint {
     background?: string;
 }
 
-export type ElementDelta = DonutDelta | EllipseDelta | ConeDelta | ImageDelta | EnemyDelta | RectangleDelta | LinkDelta | Point | CoordinateSystemPoint | RotatedPoint | SpecialElementStep[keyof SpecialElementStep];
+export type ElementDelta = DonutDelta | EllipseDelta | ConeDelta | ImageDelta | MarkerDelta | EnemyDelta | RectangleDelta | LinkDelta | Point | CoordinateSystemPoint | RotatedPoint | SpecialElementStep[keyof SpecialElementStep];
 
 interface SpecialElementStep {
     /** Allows you to specify a castbar. */
@@ -281,7 +385,7 @@ export type GraphStep = ElementGraphStep & SpecialElementStep;
 
 export type CoordinateSystem = 'polar' | 'cartesian';
 
-export type Def = `linear-gradient(${string})` | `radial-gradient(${string})` | `rectangle-gradient(${string})` | `image(${string})` | `image-cone(${string})`;
+export type Def = `linear-gradient(${string})` | `radial-gradient(${string})` | `rectangle-gradient(${string})`;
 
 type SpecialElements = {
     boss?: DefinitionElementData;

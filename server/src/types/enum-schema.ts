@@ -95,3 +95,34 @@ export interface StatusTypes {
 export interface Terms {
     [k: string]: string;
 }
+
+interface Animation {
+    /** The element types the animation can be used on: all of them, only shapes, or a list of element types. */
+    elements: 'all' | 'shapes' | string[];
+}
+
+/**
+ * A list of the animations diagram elements can play when they appear (`in`) or disappear (`out`).
+ *
+ * @title Animations
+ */
+export interface Animations {
+    /** The animations elements can play when they appear. */
+    in: Record<string, Animation>;
+    /** The animations elements can play when they disappear. */
+    out: Record<string, Animation>;
+}
+
+/**
+ * A list of the looks diagram shapes and links can be drawn with.
+ *
+ * @title Looks
+ */
+export interface Looks {
+    /** The looks of shapes (`look` on ellipses, rectangles, cones and donuts). */
+    aoes: string[];
+    /** The looks of links (`look` on links). */
+    tethers: string[];
+    /** The markers (`look` on markers). */
+    markers: string[];
+}

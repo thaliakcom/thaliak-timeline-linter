@@ -28,7 +28,7 @@ import { lintDocument } from './linter';
 import { getParserCache } from './parser-cache';
 import referenceProvider from './reference-provider';
 import { renameProvider, prepareRenameProvider } from './rename-provider';
-import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
+import type { Animations, Common, DamageTypes, Looks, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
 import documentColorProvider from './document-color-provider';
 import colorPresentationProvider from './color-presentation-provider';
 
@@ -111,9 +111,11 @@ export interface PropertyOrder {
 
 export interface LinterOptions extends ThaliakTimelineLinterSettings {
     enums: {
+        'animations'?: ParsedYAML<Animations>,
         'common'?: ParsedYAML<Common>,
         'damage-types'?: ParsedYAML<DamageTypes>,
         'expansions'?: ParsedYAML<Record<number, string>>,
+        'looks'?: ParsedYAML<Looks>,
         'mechanic-shapes'?: ParsedYAML<MechanicShapes>,
         'mechanic-types'?: ParsedYAML<MechanicTypes>,
         'status-types'?: ParsedYAML<StatusTypes>,
