@@ -1,4 +1,4 @@
-import { Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, TextEdit } from 'vscode-languageserver';
+import { Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag, TextEdit } from 'vscode-languageserver';
 import { Range, TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { DEFAULT_GRAPHICS_KEYS, KeyResolverResult, RESERVED_ELEMENTS, resolveKey, SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
@@ -6,7 +6,7 @@ import { LinterInput } from './linter';
 import { LinterOptions, PropertyOrder } from './server';
 import { SpecialStatuses } from './types/graphing';
 import { UnprocessedRaidData, WipKind } from './types/raids';
-import { getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, getRangeOrStart, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { getElementActions, getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, getRangeOrStart, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 
 function* diagnostics(diagnostic: Diagnostic): Generator<Diagnostic> {
     diagnostic.source = 'thaliak';
@@ -1056,6 +1056,48 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
                     }
                 }
             }
+        }
+    }
+}
+
+export function* actionsMustBeUsed({ textDocument, document }: LinterInput): Generator<Diagnostic> {
+    const actions = getIfType(document, 'actions', yaml.isMap);
+
+    if (actions == null) {
+        return;
+    }
+
+    const used = new Set<string>();
+
+    for (const item of traverseTimelineItems(document)) {
+        const id = item.get('id');
+
+        if (typeof id === 'string') {
+            used.add(id);
+        }
+    }
+
+    for (const action of getElementActions(document)) {
+        used.add(String(action.value));
+    }
+
+    for (const match of textDocument.getText().matchAll(PLACEHOLDER_REGEX)) {
+        const text = match[1] ?? match[2];
+
+        if (text.startsWith('a:')) {
+            used.add(text.slice(2));
+        }
+    }
+
+    for (const action of actions.items) {
+        if (yaml.isScalar(action.key) && action.key.range != null && !used.has(String(action.key.value))) {
+            yield* diagnostics({
+                code: 'unused-action',
+                severity: DiagnosticSeverity.Hint,
+                tags: [DiagnosticTag.Unnecessary],
+                message: `Action '${action.key.value}' is never used in the timeline, in children, in diagrams or in placeholders.`,
+                range: getRange(textDocument, action.key.range)
+            });
         }
     }
 }
