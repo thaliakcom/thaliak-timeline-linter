@@ -501,7 +501,7 @@ function isWip(document: yaml.Document, kind: WipKind): [boolean, yaml.Range | u
     }
 
     return [
-        yaml.isScalar(wip.value) ? wip.value.value === 'full' : (yaml.isSeq(wip.value) && wip.value.items.includes(kind)),
+        yaml.isScalar(wip.value) ? wip.value.value === 'full' : (yaml.isSeq(wip.value) && wip.value.items.some(x => yaml.isScalar(x) && x.value === kind)),
         wip.key.range ?? undefined
     ];
 }
