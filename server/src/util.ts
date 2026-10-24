@@ -415,6 +415,23 @@ export function* getElementActions(document: yaml.Document): Generator<yaml.Scal
     }
 }
 
+/** The keys of all actions' `strategies`, which are also the IDs of the strategies' graphs. */
+export function getStrategyKeys(document: yaml.Document): Set<string> {
+    const keys = new Set<string>();
+
+    for (const action of getIfType(document, 'actions', yaml.isMap)?.items ?? []) {
+        const strategies = yaml.isMap(action.value) ? getIfType(action.value, 'strategies', yaml.isMap) : null;
+
+        for (const strategy of strategies?.items ?? []) {
+            if (yaml.isScalar(strategy.key)) {
+                keys.add(String(strategy.key.value));
+            }
+        }
+    }
+
+    return keys;
+}
+
 export function getGraphingElement(document: yaml.Document | undefined, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | null {
     const graphing = getIfType(document, 'graphing', yaml.isMap);
 

@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getAtPathIfType, getKeyValueAt, getLineAt, getNodeAt, getSymbolAt, ICONS, isInRange, isPositionInYamlRange, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
+import { getAtPathIfType, getKeyValueAt, getLineAt, getNodeAt, getStrategyKeys, getSymbolAt, ICONS, isInRange, isPositionInYamlRange, NodeWrapper, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 import * as yaml from 'yaml';
 import { ElementDefinition, SpecialStatus, SpecialStatuses } from './types/graphing';
 import { SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
@@ -41,6 +41,40 @@ export default function completionProvider(documents: TextDocuments<TextDocument
 
         if (result == null) {
             return [];
+        }
+
+        // The map whose key is being typed: at a key, or on an empty line indented like the map's keys.
+        const lineBefore = getLineAt(textDocument, params.position).lineBefore;
+        let keyMap: NodeWrapper | null | undefined = null;
+
+        if (yaml.isScalar(result.node) && yaml.isPair(result.parent?.node) && result.parent.node.key === result.node) {
+            keyMap = result.parent.parent;
+        } else if (lineBefore.trim().length === 0) {
+            // At the end of a map, the position belongs to its last value, so look upwards.
+            for (let current: NodeWrapper | undefined = result; current != null && keyMap == null; current = current.parent) {
+                const firstKey = yaml.isMap(current.node) ? current.node.items[0]?.key : null;
+
+                if (yaml.isNode(firstKey) && firstKey.range != null && textDocument.positionAt(firstKey.range[0]).character === lineBefore.length) {
+                    keyMap = current;
+                }
+            }
+        }
+
+        const keyMapParent = keyMap != null && yaml.isMap(keyMap.node) && yaml.isPair(keyMap.parent?.node) && yaml.isScalar(keyMap.parent.node.key)
+            ? keyMap.parent.node.key.value
+            : null;
+        const graphs = getAtPathIfType(document, 'graphing.graphs', yaml.isMap);
+
+        // Strategy keys are graph IDs and vice versa; offer the ones the other side has but this one doesn't.
+        if (keyMapParent === 'strategies' || (keyMapParent === 'graphs' && keyMap!.node === graphs)) {
+            const existing = new Set((keyMap!.node as yaml.YAMLMap).items.map(x => yaml.isScalar(x.key) ? String(x.key.value) : null));
+            const candidates = keyMapParent === 'strategies'
+                ? (graphs?.items ?? []).map(x => yaml.isScalar(x.key) ? String(x.key.value) : null)
+                : Array.from(getStrategyKeys(document));
+
+            return candidates
+                .filter(x => x != null && !existing.has(x))
+                .map(x => ({ label: x!, labelDetails: { description: keyMapParent === 'strategies' ? 'graph' : 'strategy' }, ...base }));
         }
 
         if ((yaml.isScalar(result.node) && typeof result.node.value === 'string' && yaml.isPair(result.parent?.node) && result.parent.node.key === result.node)

@@ -6,7 +6,7 @@ import { LinterInput } from './linter';
 import { LinterOptions, PropertyOrder } from './server';
 import { SpecialStatuses } from './types/graphing';
 import { UnprocessedRaidData, WipKind } from './types/raids';
-import { getElementActions, getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, getRangeOrStart, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { getElementActions, getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, getRangeOrStart, getStrategyKeys, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 
 function* diagnostics(diagnostic: Diagnostic): Generator<Diagnostic> {
     diagnostic.source = 'thaliak';
@@ -1097,6 +1097,27 @@ export function* actionsMustBeUsed({ textDocument, document }: LinterInput): Gen
                 tags: [DiagnosticTag.Unnecessary],
                 message: `Action '${action.key.value}' is never used in the timeline, in children, in diagrams or in placeholders.`,
                 range: getRange(textDocument, action.key.range)
+            });
+        }
+    }
+}
+
+export function* graphsMustBeUsed({ textDocument, document }: LinterInput): Generator<Diagnostic> {
+    const graphs = getIfType(getIfType(document, 'graphing', yaml.isMap), 'graphs', yaml.isMap);
+
+    if (graphs == null) {
+        return;
+    }
+
+    const strategies = getStrategyKeys(document);
+
+    for (const graph of graphs.items) {
+        if (yaml.isScalar(graph.key) && graph.key.range != null && !strategies.has(String(graph.key.value))) {
+            yield* diagnostics({
+                code: 'unused-graph',
+                severity: DiagnosticSeverity.Warning,
+                message: `No action has a strategy named '${graph.key.value}', so this diagram is never shown.`,
+                range: getRange(textDocument, graph.key.range)
             });
         }
     }
