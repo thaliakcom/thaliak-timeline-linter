@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getAtPathIfType, getKeyValueAt, getLineAt, getNodeAt, getSymbolAt, ICONS, isPositionInYamlRange, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
+import { getAtPathIfType, getKeyValueAt, getLineAt, getNodeAt, getSymbolAt, ICONS, isInRange, isPositionInYamlRange, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 import * as yaml from 'yaml';
 import { ElementDefinition, SpecialStatus, SpecialStatuses } from './types/graphing';
 import { SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
@@ -19,6 +19,20 @@ export default function completionProvider(documents: TextDocuments<TextDocument
 
         if (document?.contents == null) {
             return [];
+        }
+
+        const elementAction = getKeyValueAt(textDocument, params.position, 'action');
+        const elements = getAtPathIfType(document, 'graphing.elements', yaml.isMap);
+
+        // Element sizes only come from the file's own actions (not common ones or special IDs).
+        if (elementAction != null && elements != null && isInRange(textDocument, elementAction.range, elements.range!)) {
+            const actions = (document.toJS() as UnprocessedRaidData).actions ?? {};
+
+            return Object.entries(actions).map(([key, action]) => ({
+                label: key,
+                labelDetails: { description: action.description },
+                ...base
+            }));
         }
 
         const result = getNodeAt(document, textDocument, params.position);

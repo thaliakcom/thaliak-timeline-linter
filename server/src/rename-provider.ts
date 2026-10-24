@@ -2,7 +2,7 @@ import { PrepareRenameParams, Range, RenameParams, TextDocumentPositionParams, T
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { findPlaceholders, getIfType, getRange, getSymbolAt, SymbolRange } from './util';
+import { findPlaceholders, getElementActions, getIfType, getRange, getSymbolAt, SymbolRange } from './util';
 import * as yaml from 'yaml';
 
 export function renameProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: RenameParams) => WorkspaceEdit | null {
@@ -63,6 +63,12 @@ export function renameProvider(documents: TextDocuments<TextDocument>, documentC
                             edits.push(TextEdit.replace(getRange(textDocument, id.range), params.newName));
                         }
                     }
+                }
+            }
+
+            for (const action of getElementActions(document)) {
+                if (action.value === actionId) {
+                    edits.push(TextEdit.replace(getRange(textDocument, action.range!), params.newName));
                 }
             }
 

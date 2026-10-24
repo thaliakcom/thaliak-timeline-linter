@@ -219,6 +219,20 @@ export function getSymbolAt(document: yaml.Document, textDocument: TextDocument,
         return null;
     }
 
+    const elementAction = getKeyValueAt(textDocument, position, 'action');
+
+    if (elementAction != null) {
+        const elements = getAtPathIfType(document, 'graphing.elements', yaml.isMap);
+
+        if (elements != null && isInRange(textDocument, elementAction.range, elements.range!)) {
+            console.log(`[symbol-resolver]: found graphing element action '${elementAction.text}' at cursor position`);
+            elementAction.text = `a:${elementAction.text}`;
+            return elementAction;
+        }
+
+        return null;
+    }
+
     const mechanic = getKeyValueAt(textDocument, position, 'mechanic');
 
     if (mechanic != null) {
@@ -386,6 +400,19 @@ export function getStatus(document: yaml.Document | undefined, key: string): yam
     }
 
     return null;
+}
+
+/** Yields the `action` values of all definitions under `graphing.elements`. */
+export function* getElementActions(document: yaml.Document): Generator<yaml.Scalar> {
+    const elements = getAtPathIfType(document, 'graphing.elements', yaml.isMap);
+
+    for (const element of elements?.items ?? []) {
+        const action = yaml.isMap(element.value) ? element.value.get('action', true) : null;
+
+        if (yaml.isScalar(action) && action.range != null) {
+            yield action;
+        }
+    }
 }
 
 export function getGraphingElement(document: yaml.Document | undefined, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | null {
