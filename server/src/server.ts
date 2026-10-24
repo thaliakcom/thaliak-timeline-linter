@@ -31,6 +31,7 @@ import { renameProvider, prepareRenameProvider } from './rename-provider';
 import type { Animations, Common, DamageTypes, Looks, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
 import documentColorProvider from './document-color-provider';
 import colorPresentationProvider from './color-presentation-provider';
+import inlayHintProvider from './inlay-hint-provider';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -68,7 +69,8 @@ connection.onInitialize((params: InitializeParams) => {
             codeActionProvider: {
                 codeActionKinds: [CodeActionKind.QuickFix]
             },
-            colorProvider: true
+            colorProvider: true,
+            inlayHintProvider: true
         }
     };
     if (hasWorkspaceFolderCapability) {
@@ -224,6 +226,7 @@ connection.onPrepareRename(prepareRenameProvider(documents, documentCache, globa
 connection.onCodeAction(codeActionProvider(documents, documentCache, globalSettings));
 connection.onDocumentColor(documentColorProvider(documents, documentCache, globalSettings));
 connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));
+connection.languages.inlayHint.on(inlayHintProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events
