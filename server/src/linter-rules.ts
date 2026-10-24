@@ -532,10 +532,26 @@ export function* mustSpecifyArena({ textDocument, document }: LinterInput): Gene
     }
 }
 
+/**
+ * Whether the fight has multiple phases with their own `hp`, i.e. phases against
+ * different enemies, which usually have different auto-attacks.
+ */
+function hasIsolatedPhases(document: yaml.Document): boolean {
+    let count = 0;
+
+    for (const item of traverseTimelineItems(document)) {
+        if (item.get('id') === '<phase>' && item.has('hp')) {
+            count++;
+        }
+    }
+
+    return count > 1;
+}
+
 export function* mustSpecifyAutoAttacks({ textDocument, document }: LinterInput): Generator<Diagnostic> {
     const [wip, wipRange] = isWip(document, 'damage');
 
-    if (!wip && !document.has('autos')) {
+    if (!wip && !document.has('autos') && !hasIsolatedPhases(document)) {
         yield* diagnostics({
             code: 'missing-auto-attacks',
             severity: DiagnosticSeverity.Error,
