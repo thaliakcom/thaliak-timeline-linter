@@ -519,6 +519,19 @@ export function* mustSpecifyPartyHP({ textDocument, document }: LinterInput): Ge
     }
 }
 
+export function* mustSpecifyArena({ textDocument, document }: LinterInput): Generator<Diagnostic> {
+    const [wip, wipRange] = isWip(document, 'timeline');
+
+    if (!wip && !document.has('arena')) {
+        yield* diagnostics({
+            code: 'missing-arena',
+            severity: DiagnosticSeverity.Error,
+            message: `Field 'arena' is required in timeline files without the "timeline" work-in-progress kind.`,
+            range: getRangeOrStart(textDocument, wipRange)
+        });
+    }
+}
+
 export function* mustSpecifyAutoAttacks({ textDocument, document }: LinterInput): Generator<Diagnostic> {
     const [wip, wipRange] = isWip(document, 'damage');
 
@@ -816,6 +829,214 @@ export function* validateGraphingItems({ textDocument, document, options }: Lint
                         }
 
                         first = false;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The diagram element types that `elements: shapes` in `enums/animations.yaml` refers to. */
+const SHAPE_TYPES: string[] = ['donut', 'ellipse', 'cone', 'rectangle'];
+
+/**
+ * The build-time diagram checks from `processGraphing()` in thaliak's `data.ts`, except
+ * for those that need game data (an action's `effectRange` and `XAxisModifier`) or the
+ * arena image's size (`margin`).
+ */
+export function* validateDiagramElements({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
+    const graphing = getIfType(document, 'graphing', yaml.isMap);
+    const elements = getIfType(graphing, 'elements', yaml.isMap);
+    const graphs = getIfType(graphing, 'graphs', yaml.isMap);
+    const actions = getIfType(document, 'actions', yaml.isMap);
+    const looks = options.enums.looks?.yaml;
+    const animations = options.enums.animations?.yaml;
+    /** Step keys with several elements check the same node more than once. */
+    const reported = new Set<string>();
+
+    function* error(code: string, range: yaml.Range, message: string): Generator<Diagnostic> {
+        const id = `${range[0]}:${message}`;
+
+        if (!reported.has(id)) {
+            reported.add(id);
+
+            yield* diagnostics({ code, severity: DiagnosticSeverity.Error, message, range: getRange(textDocument, range) });
+        }
+    }
+
+    /** The definition in `elements` that a step key (or one element of it) refers to. */
+    function getDefinition(key: string): yaml.YAMLMap | undefined {
+        const definition = elements?.get(key.trim().split('#')[0]!, true);
+
+        return yaml.isMap(definition) ? definition : undefined;
+    }
+
+    function getType(key: string): string | undefined {
+        const type = getDefinition(key)?.get('type');
+
+        return typeof type === 'string' ? type : undefined;
+    }
+
+    function* checkDonutSize(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
+        const size = data.get('size', true);
+
+        if (getType(key) === 'donut' && yaml.isSeq(size)) {
+            const [inner, outer] = size.items.map(x => yaml.isScalar(x) ? x.value : undefined);
+
+            if (typeof inner === 'number' && typeof outer === 'number' && inner >= outer) {
+                yield* error('invalid-donut-size', size.range!, `Donut size [${inner}, ${outer}] must be [inner diameter, outer diameter].`);
+            }
+        }
+    }
+
+    /** Reports `in`/`out` animations that aren't allowed on the type of the element(s) `key` refers to. */
+    function* checkAnimations(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
+        for (const field of ['in', 'out'] as const) {
+            const node = data.get(field, true);
+            const allowed = yaml.isScalar(node) ? animations?.[field]?.[node.value as string]?.elements : undefined;
+
+            if (allowed == null || allowed === 'all') {
+                continue;
+            }
+
+            for (const part of key.split(',')) {
+                // Predefined IDs (boss, players, ...) without a definition are images.
+                const type = getType(part) ?? 'image';
+                const ok = allowed === 'shapes' ? SHAPE_TYPES.includes(type) : allowed.includes(type);
+
+                if (!ok) {
+                    yield* error('invalid-animation', node!.range!, `'${field}: ${node!.value}' is only allowed on ${allowed === 'shapes' ? 'shapes' : allowed.join(', ')}, but '${part.trim()}' has type ${type}.`);
+                }
+            }
+        }
+    }
+
+    /**
+     * Reports a `color` on a shape or link, or a `width` on a link, whose look isn't `plain`,
+     * which ignores it. `look` is the look the element had before, if `data` doesn't set one.
+     */
+    function* checkColor(data: yaml.YAMLMap, key: string, look: string | undefined): Generator<Diagnostic> {
+        const type = getType(key);
+        const ownLook = data.get('look');
+        const resolved = (typeof ownLook === 'string' ? ownLook : undefined) ?? look ?? 'plain';
+
+        if (type == null || resolved === 'plain' || !(SHAPE_TYPES.includes(type) || type === 'link')) {
+            return;
+        }
+
+        for (const field of type === 'link' ? ['color', 'width'] : ['color']) {
+            const entry = getEntry(data, field);
+
+            if (entry != null) {
+                yield* error('ignored-by-look', entry.key.range!, `'${field}' is ignored with 'look: ${resolved}'; remove it or use 'look: plain'.`);
+            }
+        }
+    }
+
+    /** Reports a `look` that isn't one of the looks of its element's type. */
+    function* checkLook(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
+        const type = getType(key);
+        const look = data.get('look', true);
+
+        if (type == null || !yaml.isScalar(look)) {
+            return;
+        }
+
+        const list = SHAPE_TYPES.includes(type) ? 'aoes' : type === 'link' ? 'tethers' : type === 'marker' ? 'markers' : undefined;
+
+        if (list == null) {
+            yield* error('invalid-look', look.range!, `${type} elements have no look.`);
+        } else if (looks != null && !looks[list].includes(look.value as string)) {
+            yield* error('invalid-look', look.range!, `'${look.value}' isn't one of the ${list} in 'enums/looks.yaml': '${looks[list].join('\', \'')}'`);
+        }
+    }
+
+    /** Reports an `image` that is the URL a marker used to be referenced by (`/images/markers/stack.svg`). */
+    function* checkImage(data: yaml.YAMLMap): Generator<Diagnostic> {
+        const image = data.get('image', true);
+        const name = yaml.isScalar(image) && typeof image.value === 'string' ? /^\/images\/(?:markers|other)\/([a-z-]+)\.svg$/.exec(image.value)?.[1] : undefined;
+
+        if (name != null && looks?.markers.includes(name)) {
+            yield* error('marker-image', image!.range!, `${image!.value} is a marker; use 'type: marker' with 'look: ${name}'.`);
+        }
+    }
+
+    function* checkMargin(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
+        const margin = getEntry(data, 'margin');
+
+        if (margin != null && key !== 'arena') {
+            yield* error('invalid-margin', margin.key.range!, `Only the arena can have a margin.`);
+        }
+    }
+
+    for (const item of elements?.items ?? []) {
+        if (!yaml.isScalar(item.key) || !yaml.isMap(item.value)) {
+            continue;
+        }
+
+        const id = String(item.key.value);
+
+        yield* checkDonutSize(item.value, id);
+        yield* checkAnimations(item.value, id);
+        yield* checkColor(item.value, id, undefined);
+        yield* checkLook(item.value, id);
+        yield* checkImage(item.value);
+        yield* checkMargin(item.value, id);
+
+        const action = item.value.get('action', true);
+
+        if (yaml.isScalar(action) && action.value != null) {
+            if (actions == null || !actions.has(action.value)) {
+                yield* error('invalid-id', action.range!, `Unresolved action ${action.value}. Diagram elements can only be sized by actions defined in this file.`);
+            } else if (getType(id) === 'donut' && !item.value.has('size')) {
+                yield* error('missing-donut-size', action.range!, `Game data has no inner radius; specify a size [inner diameter, outer diameter].`);
+            }
+        }
+    }
+
+    for (const graph of graphs?.items ?? []) {
+        if (!yaml.isSeq(graph.value)) {
+            continue;
+        }
+
+        /** The looks set by this graph's steps so far, by step key. */
+        const stepLooks = new Map<string, string>();
+
+        for (const step of graph.value.items) {
+            if (!yaml.isMap(step)) {
+                continue;
+            }
+
+            for (const item of step.items) {
+                if (!yaml.isMap(item.value)) {
+                    continue;
+                }
+
+                // Unquoted keys like `[M2, T2]` are sequences, which the build (js-yaml) joins into `M2,T2`.
+                const id = yaml.isScalar(item.key) ? String(item.key.value)
+                    : yaml.isSeq(item.key) ? item.key.items.map(x => yaml.isScalar(x) ? String(x.value) : '').join(',')
+                    : undefined;
+
+                if (id == null) {
+                    continue;
+                }
+
+                yield* checkDonutSize(item.value, id);
+                yield* checkAnimations(item.value, id);
+                yield* checkImage(item.value);
+                yield* checkMargin(item.value, id);
+
+                // Only exact keys are tracked; wildcard and range keys fall back to the definition's look.
+                for (const key of id.includes('#') ? [id] : id.split(',').map(x => x.trim())) {
+                    const base = getDefinition(key)?.get('look');
+
+                    yield* checkColor(item.value, key, stepLooks.get(key) ?? (typeof base === 'string' ? base : undefined));
+                    yield* checkLook(item.value, key);
+
+                    const look = item.value.get('look');
+
+                    if (typeof look === 'string') {
+                        stepLooks.set(key, look);
                     }
                 }
             }
