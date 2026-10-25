@@ -905,6 +905,16 @@ function* validateHits(step: yaml.YAMLMap, first: boolean, firstStepElements: Se
 const SHAPE_TYPES: string[] = ['donut', 'ellipse', 'cone', 'rectangle'];
 
 /**
+ * The node holding the type of a look or animation given as its name (`look: ripple`) or
+ * as `{ type, ...parameters }` (`look: { type: ripple, speed: 2 }`).
+ */
+function typeNodeOf(node: unknown): yaml.Scalar | undefined {
+    const type = yaml.isMap(node) ? node.get('type', true) : node;
+
+    return yaml.isScalar(type) && typeof type.value === 'string' ? type : undefined;
+}
+
+/**
  * The build-time diagram checks from `processGraphing()` in thaliak's `data.ts`, except
  * for those that need game data (an action's `effectRange` and `XAxisModifier`) or the
  * arena image's size (`margin`).
@@ -954,11 +964,11 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
         }
     }
 
-    /** Reports `in`/`out` animations that aren't allowed on the type of the element(s) `key` refers to. */
+    /** Reports `enter`/`exit` animations that aren't allowed on the type of the element(s) `key` refers to. */
     function* checkAnimations(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
-        for (const field of ['in', 'out'] as const) {
-            const node = data.get(field, true);
-            const allowed = yaml.isScalar(node) ? animations?.[field === 'in' ? 'enter' : 'exit']?.[node.value as string]?.elements : undefined;
+        for (const field of ['enter', 'exit'] as const) {
+            const node = typeNodeOf(data.get(field, true));
+            const allowed = node != null ? animations?.[field]?.[node.value as string]?.elements : undefined;
 
             if (allowed == null || allowed === 'all') {
                 continue;
@@ -977,33 +987,36 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
     }
 
     /**
-     * Reports a `color` on a shape or link, or a `width` on a link, whose look isn't `plain`,
-     * which ignores it. `look` is the look the element had before, if `data` doesn't set one.
+     * Reports a `width` on a link whose look isn't `plain`, which ignores it. `look` is the look
+     * the element had before, if `data` doesn't set one.
      */
-    function* checkColor(data: yaml.YAMLMap, key: string, look: string | undefined): Generator<Diagnostic> {
-        const type = getType(key);
-        const ownLook = data.get('look');
-        const resolved = (typeof ownLook === 'string' ? ownLook : undefined) ?? look ?? 'plain';
+    function* checkWidth(data: yaml.YAMLMap, key: string, look: string | undefined): Generator<Diagnostic> {
+        const resolved = (typeNodeOf(data.get('look', true))?.value as string | undefined) ?? look ?? 'plain';
+        const entry = getEntry(data, 'width');
 
-        if (type == null || resolved === 'plain' || !(SHAPE_TYPES.includes(type) || type === 'link')) {
-            return;
+        if (getType(key) === 'link' && resolved !== 'plain' && entry != null) {
+            yield* error('ignored-by-look', entry.key.range!, `'width' is ignored with 'look: ${resolved}'; remove it or use 'look: plain'.`);
         }
+    }
 
-        for (const field of type === 'link' ? ['color', 'width'] : ['color']) {
-            const entry = getEntry(data, field);
+    /** Reports a `color` on a shape or link, which takes its colour from its `look` instead. */
+    function* checkColor(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
+        const type = getType(key);
+        const entry = getEntry(data, 'color');
 
-            if (entry != null) {
-                yield* error('ignored-by-look', entry.key.range!, `'${field}' is ignored with 'look: ${resolved}'; remove it or use 'look: plain'.`);
-            }
+        if (type != null && (SHAPE_TYPES.includes(type) || type === 'link') && entry != null) {
+            const value = yaml.isScalar(entry.value) ? String(entry.value.value) : '...';
+
+            yield* error('color-in-look', entry.key.range!, `'color' moved into the look: 'look: { type: plain, color: ${value} }'.`);
         }
     }
 
     /** Reports a `look` that isn't one of the looks of its element's type. */
     function* checkLook(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
         const type = getType(key);
-        const look = data.get('look', true);
+        const look = typeNodeOf(data.get('look', true));
 
-        if (type == null || !yaml.isScalar(look)) {
+        if (type == null || look == null) {
             return;
         }
 
@@ -1043,7 +1056,8 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
 
         yield* checkDonutSize(item.value, id);
         yield* checkAnimations(item.value, id);
-        yield* checkColor(item.value, id, undefined);
+        yield* checkWidth(item.value, id, undefined);
+        yield* checkColor(item.value, id);
         yield* checkLook(item.value, id);
         yield* checkImage(item.value);
         yield* checkMargin(item.value, id);
@@ -1067,7 +1081,7 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
         /** The looks set by this graph's steps so far, by step key. */
         const stepLooks = new Map<string, string>();
 
-        for (const step of graph.value.items) {
+        for (const [i, step] of graph.value.items.entries()) {
             if (!yaml.isMap(step)) {
                 continue;
             }
@@ -1091,16 +1105,22 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
                 yield* checkImage(item.value);
                 yield* checkMargin(item.value, id);
 
+                const lookEntry = getEntry(item.value, 'look');
+                const look = typeNodeOf(lookEntry?.value)?.value as string | undefined;
+
+                if (i > 0 && lookEntry != null) {
+                    yield* error('look-after-first-step', lookEntry.key.range!, `'look' can only be set in the element definition or the first step; use separate elements to change it.`);
+                }
+
                 // Only exact keys are tracked; wildcard and range keys fall back to the definition's look.
                 for (const key of id.includes('#') ? [id] : id.split(',').map(x => x.trim())) {
-                    const base = getDefinition(key)?.get('look');
+                    const base = typeNodeOf(getDefinition(key)?.get('look', true))?.value as string | undefined;
 
-                    yield* checkColor(item.value, key, stepLooks.get(key) ?? (typeof base === 'string' ? base : undefined));
+                    yield* checkWidth(item.value, key, stepLooks.get(key) ?? base);
+                    yield* checkColor(item.value, key);
                     yield* checkLook(item.value, key);
 
-                    const look = item.value.get('look');
-
-                    if (typeof look === 'string') {
+                    if (look != null) {
                         stepLooks.set(key, look);
                     }
                 }
