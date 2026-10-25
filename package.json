@@ -92,10 +92,10 @@
         "package-anew": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs --production",
         "compile": "npm run check-types && node esbuild.mjs",
         "package": "npm run check-types && node esbuild.mjs --production",
-        "check-types": "tsc --noEmit",
+        "check-types": "tsc --noEmit --project client && tsc --noEmit --project server",
         "watch": "npm run watch:esbuild & npm run watch:tsc",
         "watch:esbuild": "node esbuild.mjs --watch",
-        "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+        "watch:tsc": "tsc --noEmit --watch --project client & tsc --noEmit --watch --project server",
         "lint": "eslint ./client/src ./server/src --ext .ts,.tsx",
         "postinstall": "cd client && npm install && cd ../server && npm install && cd ..",
         "test": "sh ./scripts/e2e.sh"
@@ -110,7 +110,7 @@
         "esbuild": "^0.23.0",
         "eslint": "^8.57.0",
         "mocha": "^10.3.0",
-        "typescript": "^5.3.3"
+        "typescript": "^6.0.3"
     },
     "dependencies": {
         "color-string": "^1.9.1"
