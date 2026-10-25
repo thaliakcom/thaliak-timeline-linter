@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 (2026-10-25)
+
+* **Added**: support for `hits` (48f2d5611eb26c52d3435968b4cd98fc5494f9ad)
+* **Fixed**: an error that showed anytime you opened a timeline file (1b88e6ba88188cd6f3a51ce20cdd2835585e3158)
+* **Fixed**: missing diagnostics for the renamed `enter`/`exit` properties
+  (481d9ab9170b4aae6199d3e70ef958e38555ed08)
+
 ## 0.3.0 (2026-10-24)
 
 * **Added**: support for new thaliak data schema (d4d164fda44d0637827e2535176d1493ffc5c073)
