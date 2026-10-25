@@ -99,7 +99,7 @@ export interface Terms {
 interface Animation {
     /** The element types the animation can be used on: all of them, only shapes, or a list of element types. */
     elements: 'all' | 'shapes' | string[];
-    /** The parameters the animation takes (keys of `enums/parameters.yaml`), e.g. `{ name: fade, speed: 2 }`. */
+    /** The parameters the animation takes (keys of `enums/parameters.yaml`), e.g. `{ type: fade, speed: 2 }`. */
     params?: string[];
 }
 
@@ -129,20 +129,22 @@ export interface Looks {
     markers: Record<string, LookParameters>;
 }
 
-/** The parameters a look takes (keys of `enums/parameters.yaml`), e.g. `{ name: ripple, speed: 2 }`; empty if none. */
+/** The parameters a look takes (keys of `enums/parameters.yaml`), e.g. `{ type: ripple, speed: 2 }`; empty if none. */
 type LookParameters = string[] | null;
 
 interface Parameter {
-    /** What the parameter does. Every parameter is a factor of the normal value (default 1). */
+    /** What the parameter does. Every numeric parameter is a factor of the normal value (default 1). */
     description: string;
-    /** The smallest value allowed. */
-    minimum: number;
-    /** The largest value allowed. */
-    maximum: number;
+    /** The type of the value: a number (the default) or an HTML color string. */
+    type?: 'number' | 'color';
+    /** The smallest value allowed (numbers only). */
+    minimum?: number;
+    /** The largest value allowed (numbers only). */
+    maximum?: number;
 }
 
 /**
- * The parameters looks and animations can take (`look: { name: ripple, speed: 2 }`).
+ * The parameters looks and animations can take (`look: { type: ripple, speed: 2 }`).
  *
  * @title Parameters
  */

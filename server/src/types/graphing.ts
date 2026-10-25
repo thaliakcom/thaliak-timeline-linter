@@ -32,15 +32,21 @@ interface Colored {
     color?: string;
 }
 
-/** For the shapes that can be drawn as an animated AoE. */
-interface AoeCapable {
+/** The look of a shape. Only in its definition and in the first step of a graph. */
+interface AoeLook {
     /**
-     * How the shape is drawn. The values are listed in `enums/looks.yaml` (under `aoes`).
-     * Default is `plain`: filled with `color`. Every other look ignores `color`; tint it with
-     * `filter` (e.g. `hue-rotate`). Looks that move take a `speed`: `look: { name: ripple, speed: 2 }`
-     * (which ones is listed in `enums/looks.yaml`; the parameters are in `enums/parameters.yaml`).
+     * How the shape is drawn. The values are listed in `enums/looks.yaml` (under `aoes`), with the
+     * parameters each takes (described in `enums/parameters.yaml`). Default is `plain` in the default
+     * colour. Parameters are given as `{ type, ...parameters }`: `look: { type: plain, color: '#f00' }`,
+     * `look: { type: ripple, speed: 2, color: '#4af' }`. Looks without a `color` parameter can be tinted
+     * with `filter` (e.g. `hue-rotate`). Can only be set in the definition and in the first step of a
+     * graph; to change it later, show another element instead.
      */
     look?: LookTypeValue;
+}
+
+/** For the shapes that can be drawn as an animated AoE. */
+interface AoeCapable {
     /**
      * For every look except `plain`: merges this AoE with the AoEs of the same group (same ID
      * before `#`, or the same `group`) that come right before or after it in drawing order, also
@@ -65,14 +71,18 @@ interface AoeCapable {
     };
 }
 
-/** For links, which can be drawn as a tether. */
-interface TetherCapable {
+/** The look of a link. Only in its definition and in the first step of a graph. */
+interface TetherLook {
     /**
-     * How the link is drawn. The values are listed in `enums/looks.yaml` (under `tethers`).
-     * Default is `plain`: a band of `color`, `width` wide. Every other look has fixed colours
-     * and a fixed size, so `color` and `width` are only allowed with `plain`; tint it with
-     * `filter` (e.g. `hue-rotate`). The moving looks (`pulse`, `strands`, `braid`, `coil`)
-     * move towards the `to` end. Moving looks take a `speed`: `look: { name: pulse, speed: 2 }`.
+     * How the link is drawn. The values are listed in `enums/looks.yaml` (under `tethers`), with
+     * the parameters each takes (described in `enums/parameters.yaml`). Default is `plain`: a band
+     * in the default colour, `width` wide. Every other look has a fixed size, so `width` is only
+     * allowed with `plain`. Parameters are given as `{ type, ...parameters }`:
+     * `look: { type: plain, color: '#f00' }`, `look: { type: glow, color: '#4af' }`,
+     * `look: { type: pulse, speed: 2 }`. Looks without a `color` parameter can be tinted with
+     * `filter` (e.g. `hue-rotate`). The moving looks (`pulse`, `strands`, `braid`, `coil`) move
+     * towards the `to` end. Can only be set in the definition and in the first step of a graph;
+     * to change it later, show another element instead.
      */
     look?: TetherLookTypeValue;
 }
@@ -136,14 +146,14 @@ export interface SharedElementData extends BaseElementData {
     /**
      * The animation that plays when the element becomes visible. The values are listed in
      * `enums/animations.yaml` (under `enter`). Default is `fade`. Takes parameters as
-     * `{ name, ...parameters }`, e.g. `enter: { name: scale, speed: 2 }` (see `enums/parameters.yaml`).
+     * `{ type, ...parameters }`, e.g. `enter: { type: scale, speed: 2 }` (see `enums/parameters.yaml`).
      */
     enter?: EnterAnimationValue;
     /**
      * The animation that plays when the element becomes hidden. The values are listed in
      * `enums/animations.yaml` (under `exit`). Default is `fade`. Resolve animations (e.g. `rocks`) replace the
      * element with an effect that is drawn above all elements, players included. Takes parameters as
-     * `{ name, ...parameters }`, e.g. `exit: { name: tornado, speed: 0.5, height: 1.5 }` (see `enums/parameters.yaml`).
+     * `{ type, ...parameters }`, e.g. `exit: { type: tornado, speed: 0.5, height: 1.5 }` (see `enums/parameters.yaml`).
      */
     exit?: ExitAnimationValue;
     /** 
@@ -240,15 +250,15 @@ export interface StepElementData extends SharedElementData {
     hits?: string[];
 }
 
-export interface DonutDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
+export interface DonutDefinition extends DefinitionElementData, AoeCapable, AoeLook, ActionSized {
     type: 'donut';
 }
 
-export interface EllipseDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
+export interface EllipseDefinition extends DefinitionElementData, AoeCapable, AoeLook, ActionSized {
     type: 'ellipse';
 }
 
-export interface ConeDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
+export interface ConeDefinition extends DefinitionElementData, AoeCapable, AoeLook, ActionSized {
     type: 'cone';
     angle: number;
     /** 
@@ -275,11 +285,11 @@ export interface ImageDefinition extends DefinitionElementData {
 
 export interface MarkerDefinition extends DefinitionElementData {
     type: 'marker';
-    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). Takes a `speed`: `look: { name: stack, speed: 2 }`. */
+    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). Takes a `speed`: `look: { type: stack, speed: 2 }`. */
     look: MarkerLookTypeValue;
 }
 
-export interface RectangleDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
+export interface RectangleDefinition extends DefinitionElementData, AoeCapable, AoeLook, ActionSized {
     type: 'rectangle';
 }
 
@@ -289,7 +299,7 @@ export interface PrismDefinition extends DefinitionElementData, Colored {
     depth: number;
 }
 
-export interface LinkDefinition extends BaseElementData, Colored, TetherCapable, Pick<SharedElementData, 'visible' | 'enter' | 'exit' | 'filter'> {
+export interface LinkDefinition extends BaseElementData, TetherLook, Pick<SharedElementData, 'visible' | 'enter' | 'exit' | 'filter'> {
     type: 'link';
     width?: number;
 }
@@ -297,13 +307,13 @@ export interface LinkDefinition extends BaseElementData, Colored, TetherCapable,
 export type ElementDefinition = DonutDefinition | EllipseDefinition | ConeDefinition | ImageDefinition | MarkerDefinition | RectangleDefinition | LinkDefinition | PrismDefinition;
 
 
-export interface DonutDelta extends StepElementData, Colored, AoeCapable {
+export interface DonutDelta extends StepElementData, AoeCapable {
 }
 
-export interface EllipseDelta extends StepElementData, Colored, AoeCapable {
+export interface EllipseDelta extends StepElementData, AoeCapable {
 }
 
-export interface ConeDelta extends StepElementData, Colored, AoeCapable {
+export interface ConeDelta extends StepElementData, AoeCapable {
     rotation?: number;
 }
 
@@ -315,17 +325,15 @@ export interface ImageDelta extends StepElementData {
 }
 
 export interface MarkerDelta extends StepElementData {
-    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). Takes a `speed`: `look: { name: stack, speed: 2 }`. */
-    look?: MarkerLookTypeValue;
 }
 
 export interface EnemyDelta extends StepElementData {
 }
 
-export interface RectangleDelta extends StepElementData, Colored, AoeCapable {
+export interface RectangleDelta extends StepElementData, AoeCapable {
 }
 
-export interface LinkDelta extends BaseElementData, Colored, TetherCapable, Pick<StepElementData, 'visible' | 'enter' | 'exit' | 'filter' | 'hits'> {
+export interface LinkDelta extends BaseElementData, Pick<StepElementData, 'visible' | 'enter' | 'exit' | 'filter' | 'hits'> {
     /** The element ID to link from. */
     from?: string | Point;
     /** The element ID to link to. */
@@ -351,6 +359,29 @@ export interface Hint {
 
 export type ElementDelta = DonutDelta | EllipseDelta | ConeDelta | ImageDelta | MarkerDelta | EnemyDelta | RectangleDelta | LinkDelta | Point | CoordinateSystemPoint | RotatedPoint | SpecialElementStep[keyof SpecialElementStep];
 
+export interface DonutFirstDelta extends DonutDelta, AoeLook {
+}
+
+export interface EllipseFirstDelta extends EllipseDelta, AoeLook {
+}
+
+export interface ConeFirstDelta extends ConeDelta, AoeLook {
+}
+
+export interface RectangleFirstDelta extends RectangleDelta, AoeLook {
+}
+
+export interface LinkFirstDelta extends LinkDelta, TetherLook {
+}
+
+export interface MarkerFirstDelta extends MarkerDelta {
+    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). Takes a `speed`: `look: { type: stack, speed: 2 }`. Can only be set in the definition and in the first step of a graph. */
+    look?: MarkerLookTypeValue;
+}
+
+/** A delta in the first step of a graph, which can also set the element's `look`. */
+export type FirstElementDelta = DonutFirstDelta | EllipseFirstDelta | ConeFirstDelta | ImageDelta | MarkerFirstDelta | EnemyDelta | RectangleFirstDelta | LinkFirstDelta | Point | CoordinateSystemPoint | RotatedPoint | SpecialElementStep[keyof SpecialElementStep];
+
 interface SpecialElementStep {
     /** Allows you to specify a castbar. */
     cast?: Cast;
@@ -358,7 +389,7 @@ interface SpecialElementStep {
     hint?: Hint | string;
 }
 
-interface ElementGraphStep {
+interface ElementGraphStep<T> {
     /** 
      * Each graph step uses as its key one of the unique element IDs defined in `elements` _or_
      * one of the following predefined IDs:
@@ -389,10 +420,16 @@ interface ElementGraphStep {
      *   within the brackets.
      * * `ELEMENT_TYPE_1,ELEMENT_TYPE_2: DELTA`: Allows you to match multiple element types. Cannot be used with sub-IDs.
      */
-    [key: string]: ElementDelta;
+    [key: string]: T;
 }
 
-export type GraphStep = ElementGraphStep & SpecialElementStep;
+/** A step after the first one of a graph. */
+export interface GraphStep extends ElementGraphStep<ElementDelta>, SpecialElementStep {
+}
+
+/** The first step of a graph, which can also set the elements' `look`. */
+export interface FirstGraphStep extends ElementGraphStep<FirstElementDelta>, SpecialElementStep {
+}
 
 export type CoordinateSystem = 'polar' | 'cartesian';
 
@@ -423,9 +460,9 @@ export interface Graphing {
      * All subsequent steps define a *delta* for each element that changes the element's
      * state compared to the previous step.
      * As a result, **the first step for each graph must include every element you intend
-     * to use in later steps**.
+     * to use in later steps**. Only the first step can set an element's `look`.
      */
-    graphs: Record<string, GraphStep[]>;
+    graphs: Record<string, [FirstGraphStep, ...GraphStep[]]>;
     /** A list of additional definitions to include in the final SVG, alongside IDs to reference them by. */
     defs?: Record<string, Def>;
 }

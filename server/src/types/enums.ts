@@ -6,12 +6,28 @@ export type LookType = 'plain' | 'aoe' | 'landslide' | 'sludge' | 'ripple' | 'cr
 export type TetherLookType = 'plain' | 'glow' | 'flicker' | 'pulse' | 'strands' | 'braid' | 'coil' | 'chain' | 'jagged';
 export type MarkerLookType = 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower';
 export type EnterAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y';
-export type ExitAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'flash-sweep' | 'feather-rain' | 'wind' | 'tornado' | 'vortex' | 'ice' | 'splash';
-export type ParameterName = 'speed' | 'height';
-/** The look, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+export type ExitAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'sweep' | 'feather-rain' | 'wind' | 'tornado' | 'vortex' | 'ice' | 'splash';
+export type ParameterName = 'speed' | 'height' | 'color';
+/** The look, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
 export type LookTypeValue = LookType | {
     /** The look. */
-    name: 'aoe' | 'ripple' | 'flame' | 'wormhole';
+    type: 'plain' | 'cracks';
+    /** The colour it's drawn in, as an HTML color string. Replaces the look's own colour; with `plain`, the fill. */
+    color?: string;
+} | {
+    /** The look. */
+    type: 'aoe' | 'ripple' | 'flame';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+    /** The colour it's drawn in, as an HTML color string. Replaces the look's own colour; with `plain`, the fill. */
+    color?: string;
+} | {
+    /** The look. */
+    type: 'wormhole';
     /**
      * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
      * @minimum 0.1
@@ -19,21 +35,37 @@ export type LookTypeValue = LookType | {
      */
     speed?: number;
 };
-/** The tether look, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+/** The tether look, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
 export type TetherLookTypeValue = TetherLookType | {
     /** The tether look. */
-    name: 'flicker' | 'pulse' | 'strands' | 'braid' | 'coil' | 'jagged';
+    type: 'plain' | 'glow' | 'chain';
+    /** The colour it's drawn in, as an HTML color string. Replaces the look's own colour; with `plain`, the fill. */
+    color?: string;
+} | {
+    /** The tether look. */
+    type: 'flicker' | 'pulse' | 'strands' | 'braid' | 'coil';
     /**
      * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
      * @minimum 0.1
      * @maximum 10
      */
     speed?: number;
+} | {
+    /** The tether look. */
+    type: 'jagged';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+    /** The colour it's drawn in, as an HTML color string. Replaces the look's own colour; with `plain`, the fill. */
+    color?: string;
 };
-/** The marker, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+/** The marker, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
 export type MarkerLookTypeValue = MarkerLookType | {
     /** The marker. */
-    name: 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower';
+    type: 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower';
     /**
      * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
      * @minimum 0.1
@@ -41,10 +73,10 @@ export type MarkerLookTypeValue = MarkerLookType | {
      */
     speed?: number;
 };
-/** The animation, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+/** The animation, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
 export type EnterAnimationValue = EnterAnimation | {
     /** The animation. */
-    name: 'fade' | 'scale' | 'scale-x' | 'scale-y';
+    type: 'fade' | 'scale' | 'scale-x' | 'scale-y';
     /**
      * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
      * @minimum 0.1
@@ -52,10 +84,10 @@ export type EnterAnimationValue = EnterAnimation | {
      */
     speed?: number;
 };
-/** The animation, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+/** The animation, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
 export type ExitAnimationValue = ExitAnimation | {
     /** The animation. */
-    name: 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'flash-sweep' | 'feather-rain' | 'wind' | 'splash';
+    type: 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'sweep' | 'feather-rain' | 'wind' | 'splash';
     /**
      * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
      * @minimum 0.1
@@ -64,7 +96,7 @@ export type ExitAnimationValue = ExitAnimation | {
     speed?: number;
 } | {
     /** The animation. */
-    name: 'rocks' | 'fire' | 'tornado' | 'vortex' | 'ice';
+    type: 'rocks' | 'fire' | 'tornado' | 'vortex' | 'ice';
     /**
      * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
      * @minimum 0.1
