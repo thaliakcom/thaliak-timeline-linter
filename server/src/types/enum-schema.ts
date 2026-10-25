@@ -99,18 +99,20 @@ export interface Terms {
 interface Animation {
     /** The element types the animation can be used on: all of them, only shapes, or a list of element types. */
     elements: 'all' | 'shapes' | string[];
+    /** The parameters the animation takes (keys of `enums/parameters.yaml`), e.g. `{ name: fade, speed: 2 }`. */
+    params?: string[];
 }
 
 /**
- * A list of the animations diagram elements can play when they appear (`in`) or disappear (`out`).
+ * A list of the animations diagram elements can play when they appear (`enter`) or disappear (`exit`).
  *
  * @title Animations
  */
 export interface Animations {
     /** The animations elements can play when they appear. */
-    in: Record<string, Animation>;
+    enter: Record<string, Animation>;
     /** The animations elements can play when they disappear. */
-    out: Record<string, Animation>;
+    exit: Record<string, Animation>;
 }
 
 /**
@@ -120,9 +122,30 @@ export interface Animations {
  */
 export interface Looks {
     /** The looks of shapes (`look` on ellipses, rectangles, cones and donuts). */
-    aoes: string[];
+    aoes: Record<string, LookParameters>;
     /** The looks of links (`look` on links). */
-    tethers: string[];
+    tethers: Record<string, LookParameters>;
     /** The markers (`look` on markers). */
-    markers: string[];
+    markers: Record<string, LookParameters>;
+}
+
+/** The parameters a look takes (keys of `enums/parameters.yaml`), e.g. `{ name: ripple, speed: 2 }`; empty if none. */
+type LookParameters = string[] | null;
+
+interface Parameter {
+    /** What the parameter does. Every parameter is a factor of the normal value (default 1). */
+    description: string;
+    /** The smallest value allowed. */
+    minimum: number;
+    /** The largest value allowed. */
+    maximum: number;
+}
+
+/**
+ * The parameters looks and animations can take (`look: { name: ripple, speed: 2 }`).
+ *
+ * @title Parameters
+ */
+export interface Parameters {
+    [k: string]: Parameter;
 }

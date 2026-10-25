@@ -842,10 +842,59 @@ export function* validateGraphingItems({ textDocument, document, options }: Lint
                                     }
                                 }
                             }
+
+                            // After the step's keys, so that a hit can target an element initialized later in the first step.
+                            yield* validateHits(step, first, firstStepElements, textDocument);
                         }
 
                         first = false;
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Checks the `hits` of a graph step's elements: each entry must be a valid step key whose elements
+ * are initialized in the first step of the graph (`firstStepElements`), without wildcards in the first step.
+ */
+function* validateHits(step: yaml.YAMLMap, first: boolean, firstStepElements: Set<string>, textDocument: TextDocument): Generator<Diagnostic> {
+    for (const item of step.items) {
+        const hits = yaml.isMap(item.value) ? getIfType(item.value, 'hits', yaml.isSeq) : undefined;
+
+        for (const entry of hits?.items ?? []) {
+            if (!yaml.isScalar(entry) || typeof entry.value !== 'string') {
+                continue;
+            }
+
+            const range = getRange(textDocument, entry.range!);
+            let result: KeyResolverResult;
+
+            try {
+                result = resolveKey(entry.value, firstStepElements);
+            } catch (e) {
+                yield* diagnostics({ code: 'graphing-error', severity: DiagnosticSeverity.Error, message: (e as Error).message, range });
+                continue;
+            }
+
+            if (result.wildcard && first) {
+                yield* diagnostics({
+                    code: 'first-step-wildcard',
+                    severity: DiagnosticSeverity.Error,
+                    message: 'Wildcards in element identifiers may only be used in step 2 and onwards.',
+                    range
+                });
+            }
+
+            for (const element of result.elements) {
+                if (!firstStepElements.has(element) && !SPECIAL_ELEMENT_KEYS.has(element)) {
+                    yield* diagnostics({
+                        code: 'unresolved-graphing-element',
+                        severity: DiagnosticSeverity.Error,
+                        message: `Failed to resolve hit target '${element}'. All elements must be initialized in the first step of a graph.`,
+                        range
+                    });
                 }
             }
         }

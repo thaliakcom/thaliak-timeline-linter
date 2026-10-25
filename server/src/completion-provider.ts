@@ -6,11 +6,18 @@ import { UnprocessedRaidData } from './types/raids';
 import { getAtPathIfType, getKeyValueAt, getLineAt, getNodeAt, getStrategyKeys, getSymbolAt, ICONS, isInRange, isPositionInYamlRange, NodeWrapper, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 import * as yaml from 'yaml';
 import { ElementDefinition, SpecialStatus, SpecialStatuses } from './types/graphing';
-import { SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
+import { resolveKey, SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
 
 const base = {
     kind: CompletionItemKind.EnumMember
 };
+
+/** Whether `result` is in the `hits` list of a graph step's element: the list itself or one of its entries. */
+function isInHits(result: NodeWrapper): boolean {
+    const list = yaml.isSeq(result.node) ? result : yaml.isScalar(result.node) && yaml.isSeq(result.parent?.node) ? result.parent : undefined;
+    const pair = list?.parent?.node;
+    return yaml.isPair(pair) && yaml.isScalar(pair.key) && pair.key.value === 'hits';
+}
 
 export default function completionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CompletionParams) => CompletionItem[] {
     return (params) => {
@@ -75,6 +82,27 @@ export default function completionProvider(documents: TextDocuments<TextDocument
             return candidates
                 .filter(x => x != null && !existing.has(x))
                 .map(x => ({ label: x!, labelDetails: { description: keyMapParent === 'strategies' ? 'graph' : 'strategy' }, ...base }));
+        }
+
+        // Hit targets: the elements initialized in the first step of the graph, and the special keys.
+        if (isInHits(result)) {
+            const graph = graphs?.items.find(x => yaml.isSeq(x.value) && isPositionInYamlRange(textDocument, params.position, x.value.range));
+            const firstStep = yaml.isSeq(graph?.value) ? graph.value.items[0] : undefined;
+            const targets = new Set([...SPECIAL_ELEMENT_KEYS].filter(x => x !== 'cast' && x !== 'hint'));
+
+            if (yaml.isMap(firstStep)) {
+                for (const item of firstStep.items) {
+                    if (yaml.isScalar(item.key) && typeof item.key.value === 'string') {
+                        try {
+                            resolveKey(item.key.value, new Set()).elements.forEach(x => targets.add(x));
+                        } catch {
+                            // Invalid keys are reported by the linter.
+                        }
+                    }
+                }
+            }
+
+            return [...targets].map(x => ({ label: x, ...base }));
         }
 
         if ((yaml.isScalar(result.node) && typeof result.node.value === 'string' && yaml.isPair(result.parent?.node) && result.parent.node.key === result.node)

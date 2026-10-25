@@ -2,8 +2,79 @@ export type MechanicType = 'unknown' | 'raidwide' | 'raidwide.lb' | 'raidwide.pr
 export type ShapeType = 'chariot' | 'defamation' | 'dynamo' | 'in-or-out' | 'cone' | '270°' | 'line' | 'grid' | 'plus' | 'cross' | 'sides' | 'rect' | 'halfroom' | 'star';
 export type StatusType = 'dot' | 'vuln' | 'resistance' | 'condition' | 'delay' | 'form' | 'impairment' | 'impairment.pyretic' | 'indicator' | 'damage-up' | 'rot' | 'rot.pass' | 'rot.immunity';
 export type DamageType = 'physical' | 'magic' | 'dark' | 'mixed';
-export type LookType = 'plain' | 'aoe' | 'landslide' | 'sludge' | 'ripple' | 'cracks' | 'flame';
+export type LookType = 'plain' | 'aoe' | 'landslide' | 'sludge' | 'ripple' | 'cracks' | 'flame' | 'wormhole';
 export type TetherLookType = 'plain' | 'glow' | 'flicker' | 'pulse' | 'strands' | 'braid' | 'coil' | 'chain' | 'jagged';
 export type MarkerLookType = 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower';
-export type InAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y';
-export type OutAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion';
+export type EnterAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y';
+export type ExitAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'flash-sweep' | 'feather-rain' | 'wind' | 'tornado' | 'vortex' | 'ice' | 'splash';
+export type ParameterName = 'speed' | 'height';
+/** The look, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+export type LookTypeValue = LookType | {
+    /** The look. */
+    name: 'aoe' | 'ripple' | 'flame' | 'wormhole';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+};
+/** The tether look, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+export type TetherLookTypeValue = TetherLookType | {
+    /** The tether look. */
+    name: 'flicker' | 'pulse' | 'strands' | 'braid' | 'coil' | 'jagged';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+};
+/** The marker, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+export type MarkerLookTypeValue = MarkerLookType | {
+    /** The marker. */
+    name: 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+};
+/** The animation, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+export type EnterAnimationValue = EnterAnimation | {
+    /** The animation. */
+    name: 'fade' | 'scale' | 'scale-x' | 'scale-y';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+};
+/** The animation, as its name or as `{ name, ...parameters }` (see `enums/parameters.yaml`). */
+export type ExitAnimationValue = ExitAnimation | {
+    /** The animation. */
+    name: 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'flash-sweep' | 'feather-rain' | 'wind' | 'splash';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+} | {
+    /** The animation. */
+    name: 'rocks' | 'fire' | 'tornado' | 'vortex' | 'ice';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+    /**
+     * How high its raised parts rise, as a factor of their normal height (2 is twice as high).
+     * @minimum 0.1
+     * @maximum 5
+     */
+    height?: number;
+};

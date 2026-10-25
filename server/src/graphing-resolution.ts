@@ -116,7 +116,7 @@ function accumulateWildcardElements(subkey: string, elementKey: string, elements
         const rightKey = subkey.slice(wildcardIndex + 1);
         const foundElements: string[] = [];
 
-        for (const innerElementKey in elements) {
+        for (const innerElementKey of elements) {
             if (innerElementKey.startsWith(leftKey) && innerElementKey.endsWith(rightKey)) {
                 foundElements.push(innerElementKey);
             }

@@ -1,4 +1,4 @@
-import { InAnimation, LookType, MarkerLookType, OutAnimation, TetherLookType } from './enums';
+import { EnterAnimationValue, ExitAnimationValue, LookTypeValue, MarkerLookTypeValue, TetherLookTypeValue } from './enums';
 
 export type Point = readonly [x: number, y: number];
 export type PositivePoint = readonly [x: PositiveNumber, y: PositiveNumber];
@@ -37,9 +37,10 @@ interface AoeCapable {
     /**
      * How the shape is drawn. The values are listed in `enums/looks.yaml` (under `aoes`).
      * Default is `plain`: filled with `color`. Every other look ignores `color`; tint it with
-     * `filter` (e.g. `hue-rotate`).
+     * `filter` (e.g. `hue-rotate`). Looks that move take a `speed`: `look: { name: ripple, speed: 2 }`
+     * (which ones is listed in `enums/looks.yaml`; the parameters are in `enums/parameters.yaml`).
      */
-    look?: LookType;
+    look?: LookTypeValue;
     /**
      * For every look except `plain`: merges this AoE with the AoEs of the same group (same ID
      * before `#`, or the same `group`) that come right before or after it in drawing order, also
@@ -71,9 +72,9 @@ interface TetherCapable {
      * Default is `plain`: a band of `color`, `width` wide. Every other look has fixed colours
      * and a fixed size, so `color` and `width` are only allowed with `plain`; tint it with
      * `filter` (e.g. `hue-rotate`). The moving looks (`pulse`, `strands`, `braid`, `coil`)
-     * move towards the `to` end.
+     * move towards the `to` end. Moving looks take a `speed`: `look: { name: pulse, speed: 2 }`.
      */
-    look?: TetherLookType;
+    look?: TetherLookTypeValue;
 }
 
 /** For the shapes whose size can come from an action. */
@@ -128,21 +129,23 @@ export interface SharedElementData extends BaseElementData {
     rotate?: degrees | string | null;
     /**
      * Whether the element is currently visible or not. Default is `true`.
-     * `resolve` shows the element only as its `out` animation in this step (e.g. an AoE that
+     * `resolve` shows the element only as its `exit` animation in this step (e.g. an AoE that
      * resolves without a telegraph). It doesn't carry over to later steps, where the element is hidden.
      */
     visible?: boolean | 'resolve';
     /**
      * The animation that plays when the element becomes visible. The values are listed in
-     * `enums/animations.yaml` (under `in`). Default is `fade`.
+     * `enums/animations.yaml` (under `enter`). Default is `fade`. Takes parameters as
+     * `{ name, ...parameters }`, e.g. `enter: { name: scale, speed: 2 }` (see `enums/parameters.yaml`).
      */
-    in?: InAnimation;
+    enter?: EnterAnimationValue;
     /**
      * The animation that plays when the element becomes hidden. The values are listed in
-     * `enums/animations.yaml` (under `out`). Default is `fade`. Resolve animations (e.g. `rocks`) replace the
-     * element with an effect that is drawn above all elements, players included.
+     * `enums/animations.yaml` (under `exit`). Default is `fade`. Resolve animations (e.g. `rocks`) replace the
+     * element with an effect that is drawn above all elements, players included. Takes parameters as
+     * `{ name, ...parameters }`, e.g. `exit: { name: tornado, speed: 0.5, height: 1.5 }` (see `enums/parameters.yaml`).
      */
-    out?: OutAnimation;
+    exit?: ExitAnimationValue;
     /** 
      * The initial size of the element. Can either be an array of `[width, height]`
      * or a single number, in which case both width and height will be the same.
@@ -150,7 +153,7 @@ export interface SharedElementData extends BaseElementData {
      * property, otherwise animations won't work.
      */
     size?: PositiveNumber | PositivePoint;
-    /** Sets the CSS `filter` property on this element. Its color functions also tint the element's resolve animations (e.g. `out: fire`). */
+    /** Sets the CSS `filter` property on this element. Its color functions also tint the element's resolve animations (e.g. `exit: fire`). */
     filter?: string;
     /** Whether the element should repeatedly fade in and out. */
     blink?: boolean;
@@ -227,6 +230,14 @@ export interface StepElementData extends SharedElementData {
     text?: string;
     /** Sets the CSS `transform` property on this element during this step. */
     transform?: string;
+    /**
+     * The elements this element hits in this step, as element IDs or in the forms of step keys
+     * (`players`, `DPS`, `tanks`, `healers`, `supports`, `aoe#2`, `aoe#1..3`, `aoe#[1,2]`, `aoe#*`).
+     * Each target flashes red and shakes briefly when this element's `exit` resolve animation lands
+     * (e.g. at the meteor's impact), or at the start of the step if this element doesn't resolve in it.
+     * Applies only to the step that sets it.
+     */
+    hits?: string[];
 }
 
 export interface DonutDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
@@ -264,8 +275,8 @@ export interface ImageDefinition extends DefinitionElementData {
 
 export interface MarkerDefinition extends DefinitionElementData {
     type: 'marker';
-    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). */
-    look: MarkerLookType;
+    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). Takes a `speed`: `look: { name: stack, speed: 2 }`. */
+    look: MarkerLookTypeValue;
 }
 
 export interface RectangleDefinition extends DefinitionElementData, Colored, AoeCapable, ActionSized {
@@ -278,7 +289,7 @@ export interface PrismDefinition extends DefinitionElementData, Colored {
     depth: number;
 }
 
-export interface LinkDefinition extends BaseElementData, Colored, TetherCapable, Pick<SharedElementData, 'visible' | 'in' | 'out' | 'filter'> {
+export interface LinkDefinition extends BaseElementData, Colored, TetherCapable, Pick<SharedElementData, 'visible' | 'enter' | 'exit' | 'filter'> {
     type: 'link';
     width?: number;
 }
@@ -304,8 +315,8 @@ export interface ImageDelta extends StepElementData {
 }
 
 export interface MarkerDelta extends StepElementData {
-    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). */
-    look?: MarkerLookType;
+    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). Takes a `speed`: `look: { name: stack, speed: 2 }`. */
+    look?: MarkerLookTypeValue;
 }
 
 export interface EnemyDelta extends StepElementData {
@@ -314,7 +325,7 @@ export interface EnemyDelta extends StepElementData {
 export interface RectangleDelta extends StepElementData, Colored, AoeCapable {
 }
 
-export interface LinkDelta extends BaseElementData, Colored, TetherCapable, Pick<StepElementData, 'visible' | 'in' | 'out' | 'filter'> {
+export interface LinkDelta extends BaseElementData, Colored, TetherCapable, Pick<StepElementData, 'visible' | 'enter' | 'exit' | 'filter' | 'hits'> {
     /** The element ID to link from. */
     from?: string | Point;
     /** The element ID to link to. */
