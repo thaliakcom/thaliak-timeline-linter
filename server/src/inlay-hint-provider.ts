@@ -16,26 +16,42 @@ function formatTime(ms: number): string {
     return `${sign}${minutes}:${seconds}.${millis}`;
 }
 
-/** Shows the `at` of top-level timeline items as a timestamp. Children are left out: their `at` is relative to the parent. */
+/** Shows the `at` of timeline items as a timestamp (children's as an offset with `+`, since theirs is relative to the parent). */
 export default function inlayHintProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: InlayHintParams) => InlayHint[] {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri);
         const document = textDocument != null ? documentCache.get(textDocument) : null;
-        const timeline = getIfType(document, 'timeline', yaml.isSeq);
 
-        if (textDocument == null || timeline == null) {
+        if (textDocument == null || document == null) {
             return [];
         }
 
         const start = textDocument.offsetAt(params.range.start);
         const end = textDocument.offsetAt(params.range.end);
         const hints: InlayHint[] = [];
+        const inRange = (range: yaml.Range | null | undefined): range is yaml.Range => range != null && range[1] >= start && range[0] <= end;
 
-        for (const item of timeline.items) {
-            const at = yaml.isMap(item) ? item.get('at', true) : null;
+        function addTimestamps(items: yaml.YAMLSeq, prefix: string): void {
+            for (const item of items.items) {
+                const at = yaml.isMap(item) ? item.get('at', true) : null;
 
-            if (yaml.isScalar(at) && typeof at.value === 'number' && at.range != null && at.range[1] >= start && at.range[0] <= end) {
-                hints.push({ position: textDocument.positionAt(at.range[1]), label: formatTime(at.value), paddingLeft: true });
+                if (yaml.isScalar(at) && typeof at.value === 'number' && inRange(at.range)) {
+                    hints.push({ position: textDocument!.positionAt(at.range[1]), label: prefix + formatTime(at.value), paddingLeft: true });
+                }
+            }
+        }
+
+        const timeline = getIfType(document, 'timeline', yaml.isSeq);
+
+        if (timeline != null) {
+            addTimestamps(timeline, '');
+        }
+
+        for (const action of getIfType(document, 'actions', yaml.isMap)?.items ?? []) {
+            const children = yaml.isMap(action.value) ? getIfType(action.value, 'children', yaml.isSeq) : null;
+
+            if (children != null) {
+                addTimestamps(children, '+');
             }
         }
 
