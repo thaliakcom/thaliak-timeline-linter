@@ -1011,8 +1011,8 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
 
         if (list == null) {
             yield* error('invalid-look', look.range!, `${type} elements have no look.`);
-        } else if (looks != null && !looks[list].includes(look.value as string)) {
-            yield* error('invalid-look', look.range!, `'${look.value}' isn't one of the ${list} in 'enums/looks.yaml': '${looks[list].join('\', \'')}'`);
+        } else if (looks != null && !Object.hasOwn(looks[list], look.value as string)) {
+            yield* error('invalid-look', look.range!, `'${look.value}' isn't one of the ${list} in 'enums/looks.yaml': '${Object.keys(looks[list]).join('\', \'')}'`);
         }
     }
 
@@ -1021,7 +1021,7 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
         const image = data.get('image', true);
         const name = yaml.isScalar(image) && typeof image.value === 'string' ? /^\/images\/(?:markers|other)\/([a-z-]+)\.svg$/.exec(image.value)?.[1] : undefined;
 
-        if (name != null && looks?.markers.includes(name)) {
+        if (name != null && looks != null && Object.hasOwn(looks.markers, name)) {
             yield* error('marker-image', image!.range!, `${image!.value} is a marker; use 'type: marker' with 'look: ${name}'.`);
         }
     }
