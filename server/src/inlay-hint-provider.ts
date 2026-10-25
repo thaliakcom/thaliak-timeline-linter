@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { getIfType } from './util';
+import { getAtPathIfType, getIfType } from './util';
 
 /** Formats milliseconds as `m:ss.mmm`, like fflogs. */
 function formatTime(ms: number): string {
@@ -16,7 +16,10 @@ function formatTime(ms: number): string {
     return `${sign}${minutes}:${seconds}.${millis}`;
 }
 
-/** Shows the `at` of timeline items as a timestamp (children's as an offset with `+`, since theirs is relative to the parent). */
+/**
+ * Shows the `at` of timeline items as a timestamp (children's as an offset with `+`, since
+ * theirs is relative to the parent) and the number of each step in a graph.
+ */
 export default function inlayHintProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: InlayHintParams) => InlayHint[] {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri);
@@ -52,6 +55,18 @@ export default function inlayHintProvider(documents: TextDocuments<TextDocument>
 
             if (children != null) {
                 addTimestamps(children, '+');
+            }
+        }
+
+        for (const graph of getAtPathIfType(document, 'graphing.graphs', yaml.isMap)?.items ?? []) {
+            if (!yaml.isSeq(graph.value)) {
+                continue;
+            }
+
+            for (const [i, step] of graph.value.items.entries()) {
+                if (yaml.isNode(step) && inRange(step.range)) {
+                    hints.push({ position: textDocument.positionAt(step.range[0]), label: `step ${i + 1}:`, paddingRight: true });
+                }
             }
         }
 
