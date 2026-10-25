@@ -958,7 +958,7 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
     function* checkAnimations(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
         for (const field of ['in', 'out'] as const) {
             const node = data.get(field, true);
-            const allowed = yaml.isScalar(node) ? animations?.[field]?.[node.value as string]?.elements : undefined;
+            const allowed = yaml.isScalar(node) ? animations?.[field === 'in' ? 'enter' : 'exit']?.[node.value as string]?.elements : undefined;
 
             if (allowed == null || allowed === 'all') {
                 continue;
