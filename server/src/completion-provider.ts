@@ -19,6 +19,16 @@ function isInHits(result: NodeWrapper): boolean {
     return yaml.isPair(pair) && yaml.isScalar(pair.key) && pair.key.value === 'hits';
 }
 
+/**
+ * Whether `result` is in a `status` list (e.g. of a graph step's element): the list itself or one of
+ * its entries. Its entries are bare status keys, without the `s:` prefix of placeholders.
+ */
+function isInStatusList(result: NodeWrapper): boolean {
+    const list = yaml.isSeq(result.node) ? result : yaml.isScalar(result.node) && yaml.isSeq(result.parent?.node) ? result.parent : undefined;
+    const pair = list?.parent?.node;
+    return yaml.isPair(pair) && yaml.isScalar(pair.key) && pair.key.value === 'status';
+}
+
 export default function completionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CompletionParams) => CompletionItem[] {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
@@ -153,7 +163,7 @@ export default function completionProvider(documents: TextDocuments<TextDocument
 
         if (keyValue != null) {
             isActionId = true;
-        } else if (statusKeyValue != null || (yaml.isSeq(result.node) && yaml.isPair(result.parent?.node) && yaml.isScalar(result.parent.node.key) && result.parent.node.key.value === 'status')) {
+        } else if (statusKeyValue != null || isInStatusList(result)) {
             isStatusId = true;
         } else if (!yaml.isScalar(result.node) || typeof result.node.value !== 'string' || (yaml.isPair(result.parent?.node) && result.node === result.parent.node.key)) {
             return [];
