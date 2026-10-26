@@ -104,16 +104,11 @@ export function getKeyValueAt(textDocument: TextDocument, position: Position, ke
     }
 
     const startIndex = lineBefore.indexOf(key) + key.length + 2;
-    let endIndex = lineAfter.lastIndexOf('\n');
-
-    if (endIndex !== -1) {
-        endIndex += lineBefore.length;
-    } else {
-        endIndex = Infinity;
-    }
+    // `lineAfter` ends with the line's EOL, which is `\r\n` in CRLF files.
+    const keyAfter = lineAfter.replace(/\r?\n$/, '');
+    const endIndex = lineBefore.length + keyAfter.length;
 
     const keyBefore = lineBefore.slice(startIndex);
-    const keyAfter = lineAfter.slice(0, endIndex - lineBefore.length);
     const rawKey = keyBefore + keyAfter;
 
     return {
