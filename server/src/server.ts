@@ -28,7 +28,7 @@ import { lintDocument } from './linter';
 import { getParserCache } from './parser-cache';
 import referenceProvider from './reference-provider';
 import { renameProvider, prepareRenameProvider } from './rename-provider';
-import type { Animations, Common, DamageTypes, Looks, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
+import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
 import documentColorProvider from './document-color-provider';
 import colorPresentationProvider from './color-presentation-provider';
 import inlayHintProvider from './inlay-hint-provider';
@@ -111,18 +111,25 @@ export interface PropertyOrder {
     before: string | undefined;
 }
 
+/** The looks and animations of diagram elements, from `schemas/raid.schema.json`. */
+export interface DiagramEnums {
+    /** The looks by kind of element (the `LookType`, `TetherLookType` and `MarkerLookType` enums). */
+    looks: Record<'aoes' | 'tethers' | 'markers', string[]>;
+    /** The element types each animation is allowed on (`x-elements` of `EnterAnimation` and `ExitAnimation`): all of them, only shapes, or a list of types. */
+    animations: Record<'enter' | 'exit', Record<string, 'all' | 'shapes' | string[]>>;
+}
+
 export interface LinterOptions extends ThaliakTimelineLinterSettings {
     enums: {
-        'animations'?: ParsedYAML<Animations>,
         'common'?: ParsedYAML<Common>,
         'damage-types'?: ParsedYAML<DamageTypes>,
         'expansions'?: ParsedYAML<Record<number, string>>,
-        'looks'?: ParsedYAML<Looks>,
         'mechanic-shapes'?: ParsedYAML<MechanicShapes>,
         'mechanic-types'?: ParsedYAML<MechanicTypes>,
         'status-types'?: ParsedYAML<StatusTypes>,
         'terms'?: ParsedYAML<Terms>
     };
+    diagramEnums?: DiagramEnums;
     propOrder: Map<string, Map<string, PropertyOrder>>;
 }
 

@@ -39,8 +39,8 @@ export function activate(context: ExtensionContext) {
 
     // Options to control the language client
     const clientOptions: LanguageClientOptions = {
-        // Register the server for plain text documents
-        documentSelector: [{ language: 'yaml' }]
+        // Register the server for plain text documents, and for the raid schema, which the looks and animations are read from
+        documentSelector: [{ language: 'yaml' }, { language: 'json', pattern: '**/schemas/raid.schema.json' }]
     };
 
     // Create the language client and start the client.
@@ -53,6 +53,9 @@ export function activate(context: ExtensionContext) {
 
     // Start the client. This will also launch the server
     client.start();
+
+    vscode.workspace.findFiles('**/schemas/raid.schema.json', '**/node_modules', 1)
+        .then(uris => uris.forEach(uri => vscode.workspace.openTextDocument(uri)));
 
     vscode.workspace.findFiles('**/enums/*.yaml', '**/node_modules')
         .then(async uris => {

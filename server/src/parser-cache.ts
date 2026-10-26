@@ -1,7 +1,10 @@
 import { TextDocumentIdentifier } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
-import { LinterOptions, ThaliakTimelineLinterSettings } from './server';
+import { DiagramEnums, LinterOptions, ThaliakTimelineLinterSettings } from './server';
+
+/** The end of the URI of the data repository's raid schema, which the looks and animations are read from. */
+const RAID_SCHEMA = 'schemas/raid.schema.json';
 
 // Based on https://github.com/microsoft/vscode/blob/main/extensions/json-language-features/server/src/languageModelCache.ts
 
@@ -31,8 +34,9 @@ export function getParserCache(): ParserCache {
     return {
         get(document: TextDocument | TextDocumentIdentifier): yaml.Document | null {
             const isEnum = document.uri.includes('enums/');
+            const isSchema = document.uri.endsWith(RAID_SCHEMA);
 
-            const info = isEnum ? secondaryDocuments[document.uri] : (openDocument?.textDocument.uri === document.uri ? openDocument : null);
+            const info = isEnum || isSchema ? secondaryDocuments[document.uri] : (openDocument?.textDocument.uri === document.uri ? openDocument : null);
 
             const version = 'version' in document ? document.version : info?.version;
             const languageId = 'languageId' in document ? document.languageId : info?.languageId;
@@ -51,6 +55,18 @@ export function getParserCache(): ParserCache {
             }
 
             console.log('Adding or updating', document.uri);
+
+            // The raid schema only feeds `diagramEnums`; it isn't linted, so it has no AST.
+            if (isSchema) {
+                try {
+                    options.diagramEnums = diagramEnumsOf(JSON.parse(document.getText()));
+                } catch (e) {
+                    console.log(`Couldn't read the diagram enums from ${document.uri}: ${e}`);
+                }
+
+                secondaryDocuments[document.uri] = { ast: new yaml.Document(), textDocument: document, version, languageId, cTime: Date.now(), isRelevant: false };
+                return null;
+            }
 
             try {
                 const yamlDocument = yaml.parseDocument(document.getText());
@@ -96,6 +112,16 @@ export function getParserCache(): ParserCache {
             secondaryDocuments = {};
             openDocument = null;
         }
+    };
+}
+
+/** The looks and animations in the definitions of the raid schema `schema`. */
+function diagramEnumsOf(schema: { definitions: Record<string, { enum: string[], 'x-elements'?: Record<string, 'all' | 'shapes' | string[]> }> }): DiagramEnums {
+    const { definitions } = schema;
+
+    return {
+        looks: { aoes: definitions.LookType.enum, tethers: definitions.TetherLookType.enum, markers: definitions.MarkerLookType.enum },
+        animations: { enter: definitions.EnterAnimation['x-elements'] ?? {}, exit: definitions.ExitAnimation['x-elements'] ?? {} }
     };
 }
 

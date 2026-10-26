@@ -213,8 +213,13 @@ function updateOrderItem(order: Map<string, PropertyOrder>, orderItem: PropertyO
     }
 }
 
-function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: boolean, textDocument: TextDocument, options: LinterOptions): Generator<Diagnostic> {
-    const order = getOrSet(options.propOrder, itemKind, emptyMap);
+/**
+ * Warns about keys of `map` that aren't in the order of the maps of the same `itemKind` before it.
+ * `orderKey` separates the orders of maps of one kind that don't share their keys (by default, all
+ * maps of `itemKind` share one order).
+ */
+function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: boolean, textDocument: TextDocument, options: LinterOptions, orderKey: string = itemKind): Generator<Diagnostic> {
+    const order = getOrSet(options.propOrder, orderKey, emptyMap);
     const keysBefore: string[] = [];
 
     for (let i: number = 0, j: number = 0; i < map.items.length; i++, j++) {
@@ -901,7 +906,7 @@ function* validateHits(step: yaml.YAMLMap, first: boolean, firstStepElements: Se
     }
 }
 
-/** The diagram element types that `elements: shapes` in `enums/animations.yaml` refers to. */
+/** The diagram element types that `shapes` in an animation's `x-elements` (in the raid schema) refers to. */
 const SHAPE_TYPES: string[] = ['donut', 'ellipse', 'cone', 'rectangle'];
 
 /**
@@ -924,8 +929,8 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
     const elements = getIfType(graphing, 'elements', yaml.isMap);
     const graphs = getIfType(graphing, 'graphs', yaml.isMap);
     const actions = getIfType(document, 'actions', yaml.isMap);
-    const looks = options.enums.looks?.yaml;
-    const animations = options.enums.animations?.yaml;
+    const looks = options.diagramEnums?.looks;
+    const animations = options.diagramEnums?.animations;
     /** Step keys with several elements check the same node more than once. */
     const reported = new Set<string>();
 
@@ -968,7 +973,7 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
     function* checkAnimations(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
         for (const field of ['enter', 'exit'] as const) {
             const node = typeNodeOf(data.get(field, true));
-            const allowed = node != null ? animations?.[field]?.[node.value as string]?.elements : undefined;
+            const allowed = node != null ? animations?.[field]?.[node.value as string] : undefined;
 
             if (allowed == null || allowed === 'all') {
                 continue;
@@ -1024,8 +1029,8 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
 
         if (list == null) {
             yield* error('invalid-look', look.range!, `${type} elements have no look.`);
-        } else if (looks != null && !Object.hasOwn(looks[list], look.value as string)) {
-            yield* error('invalid-look', look.range!, `'${look.value}' isn't one of the ${list} in 'enums/looks.yaml': '${Object.keys(looks[list]).join('\', \'')}'`);
+        } else if (looks != null && !looks[list].includes(look.value as string)) {
+            yield* error('invalid-look', look.range!, `'${look.value}' isn't one of the ${list}: '${looks[list].join('\', \'')}'`);
         }
     }
 
@@ -1034,7 +1039,7 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
         const image = data.get('image', true);
         const name = yaml.isScalar(image) && typeof image.value === 'string' ? /^\/images\/(?:markers|other)\/([a-z-]+)\.svg$/.exec(image.value)?.[1] : undefined;
 
-        if (name != null && looks != null && Object.hasOwn(looks.markers, name)) {
+        if (name != null && looks != null && looks.markers.includes(name)) {
             yield* error('marker-image', image!.range!, `${image!.value} is a marker; use 'type: marker' with 'look: ${name}'.`);
         }
     }
