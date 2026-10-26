@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import type { OutlineIcon } from './outline-types';
 
-/** The icon file in `media/shapes` of each mechanic shape (`enums/mechanic-shapes.yaml`). */
+/** The icon file in `media/shapes` of each mechanic shape (`enums/mechanic-shapes.yaml`). Keep in sync with `server/src/tooltip.ts`. */
 const SHAPE_FILES: Record<string, string> = {
     'chariot': 'circle',
     'defamation': 'circle',
@@ -73,6 +73,10 @@ export function iconFor(icon: OutlineIcon, extensionUri: vscode.Uri): vscode.The
 
     switch (icon.kind) {
         case 'status':
+            if (icon.path != null) {
+                return vscode.Uri.file(icon.path);
+            }
+
             return icon.dot ? media('status', 'dot.svg') : new vscode.ThemeIcon('symbol-event');
         case 'shape': {
             const file = icon.shape != null ? SHAPE_FILES[icon.shape] : undefined;

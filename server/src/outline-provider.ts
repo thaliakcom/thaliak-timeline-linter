@@ -3,6 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
+import { getStatusIcon } from './tooltip';
 import { OutlineIcon, OutlineNode, OutlineParams } from './types/outline';
 import { formatTime, getAction, getIfType, getRange } from './util';
 
@@ -17,10 +18,10 @@ interface ResolvedAction {
 /**
  * Builds the timeline tree view of a timeline file: its `status`, `actions`, `timeline` (grouped
  * by `<phase>`) and `graphing` sections, in the order they appear in the file. `null` if the
- * file isn't a timeline.
+ * file isn't a timeline. Status rows get their in-game icon, if game data is on.
  */
-export default function outlineProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: OutlineParams) => OutlineNode[] | null {
-    return (params) => {
+export default function outlineProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: OutlineParams) => Promise<OutlineNode[] | null> {
+    return async (params) => {
         const textDocument = documents.get(params.uri);
         const document = textDocument != null ? documentCache.get(textDocument) : null;
 
@@ -29,6 +30,8 @@ export default function outlineProvider(documents: TextDocuments<TextDocument>, 
         }
 
         const common = documentCache.getLinterOptions(settings).enums.common;
+        /** The status icon lookups, which fill in the rows once they're done. */
+        const gameData: Promise<void>[] = [];
 
         function resolveAction(key: unknown): ResolvedAction | null {
             if (typeof key !== 'string') {
@@ -112,7 +115,8 @@ export default function outlineProvider(documents: TextDocuments<TextDocument>, 
                     icon: shapeIcon(childAction),
                     range: childRange,
                     selection: childRange,
-                    definition: definitionOf(childAction)
+                    definition: definitionOf(childAction),
+                    symbol: childAction != null ? `a:${id}` : undefined
                 });
             }
 
@@ -124,14 +128,22 @@ export default function outlineProvider(documents: TextDocuments<TextDocument>, 
                 const value = yaml.isMap(pair.value) ? pair.value : null;
                 const id = value?.get('id');
                 const type = value?.get('type');
+                const icon: OutlineIcon & { kind: 'status' } = { kind: 'status', statusId: typeof id === 'number' ? id : undefined, dot: type === 'dot' };
+
+                if (typeof id === 'number') {
+                    gameData.push(getStatusIcon(id, value?.get('icon')).then(gameIcon => {
+                        icon.path = gameIcon?.path;
+                    }));
+                }
 
                 return {
                     label: String((pair.key as yaml.Scalar).value),
                     description: describe(type, id),
-                    icon: { kind: 'status', statusId: typeof id === 'number' ? id : undefined, dot: type === 'dot' },
+                    icon,
                     range: getRange(textDocument!, pairRange(pair)),
                     selection: getRange(textDocument!, keyRange(pair)),
-                    references: textDocument!.positionAt(keyRange(pair)[0])
+                    references: textDocument!.positionAt(keyRange(pair)[0]),
+                    symbol: `s:${(pair.key as yaml.Scalar).value}`
                 };
             });
         }
@@ -149,7 +161,8 @@ export default function outlineProvider(documents: TextDocuments<TextDocument>, 
                     range: getRange(textDocument!, pairRange(pair)),
                     selection: getRange(textDocument!, keyRange(pair)),
                     references: textDocument!.positionAt(keyRange(pair)[0]),
-                    children: children.length > 0 ? children : undefined
+                    children: children.length > 0 ? children : undefined,
+                    symbol: `a:${(pair.key as yaml.Scalar).value}`
                 };
             });
         }
@@ -192,7 +205,8 @@ export default function outlineProvider(documents: TextDocuments<TextDocument>, 
                     range: itemRange,
                     selection: yaml.isScalar(idNode) && idNode.range != null ? getRange(textDocument!, idNode.range) : itemRange,
                     definition: definitionOf(action),
-                    children: children.length > 0 ? children : undefined
+                    children: children.length > 0 ? children : undefined,
+                    symbol: action != null ? `a:${id}` : undefined
                 };
 
                 if (phase != null) {
@@ -283,6 +297,8 @@ export default function outlineProvider(documents: TextDocuments<TextDocument>, 
                 sections.push(sectionNode(pair, graphingNodes(pair.value)));
             }
         }
+
+        await Promise.all(gameData);
 
         return sections;
     };

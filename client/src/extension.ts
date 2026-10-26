@@ -17,6 +17,22 @@ import { registerOutlineView } from './outline-view';
 
 let client: LanguageClient;
 
+/** The settings that are passed to the server when it starts, so changing them restarts it. */
+const IRONWORKS_SETTINGS = ['ironworksPath', 'gameDirectory', 'cachePath'];
+
+/** The game data settings for the server (`IronworksOptions` in `server/src/ironworks.ts`). */
+function ironworksOptions(context: ExtensionContext) {
+    const configuration = vscode.workspace.getConfiguration('thaliak-timeline-linter');
+    const cachePath = configuration.get<string>('cachePath') ?? '';
+
+    return {
+        executable: configuration.get<string>('ironworksPath') || 'ironworks-cli',
+        gameDirectory: configuration.get<string>('gameDirectory') ?? '',
+        cachePath: cachePath || vscode.Uri.joinPath(context.globalStorageUri, 'ironworks').fsPath,
+        ownsCache: cachePath === ''
+    };
+}
+
 async function isThaliakProject(): Promise<boolean> {
     return (await vscode.workspace.findFiles('**/{calender,metadata,recent}.yaml', '**/node_modules')).length === 3
         && (await vscode.workspace.findFiles('**/{ultimates,raids,extremes}/.yaml', '**/node_modules')).length > 0;
@@ -41,7 +57,11 @@ export function activate(context: ExtensionContext) {
     // Options to control the language client
     const clientOptions: LanguageClientOptions = {
         // Register the server for plain text documents, and for the raid schema, which the looks and animations are read from
-        documentSelector: [{ language: 'yaml' }, { language: 'json', pattern: '**/schemas/raid.schema.json' }]
+        documentSelector: [{ language: 'yaml' }, { language: 'json', pattern: '**/schemas/raid.schema.json' }],
+        // Hovers lay out their header (icon, name, caption) with HTML, like thaliak's tooltips
+        markdown: { supportHtml: true },
+        // A function, so that a restart picks up changed settings
+        initializationOptions: () => ({ ironworks: ironworksOptions(context) })
     };
 
     // Create the language client and start the client.
@@ -74,6 +94,12 @@ export function activate(context: ExtensionContext) {
         });
 
     vscode.commands.registerCommand('thaliak-timeline-linter.restart', () => client.restart());
+
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (IRONWORKS_SETTINGS.some(setting => e.affectsConfiguration(`thaliak-timeline-linter.${setting}`))) {
+            client.restart();
+        }
+    }));
 }
 
 export function deactivate(): Thenable<void> | undefined {

@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import { iconFor } from './outline-icons';
-import type { OutlineNode, OutlineParams } from './outline-types';
+import type { OutlineNode, OutlineParams, TooltipParams } from './outline-types';
 import { updateSectionLines } from './section-lines';
+import { updateStatusDecorations } from './status-decorations';
 
 /** How long to wait after the last edit before asking the server for a new outline. */
 const REFRESH_DELAY = 300;
@@ -52,12 +53,42 @@ class OutlineView implements vscode.TreeDataProvider<OutlineNode> {
 
         item.id = this.ids.get(node);
         item.description = node.description;
-        item.tooltip = node.description != null ? `${node.label} ${node.description}` : node.label;
+        // Action and status rows get their tooltip in resolveTreeItem, on hover.
+        item.tooltip = node.symbol == null ? this.title(node) : undefined;
         item.iconPath = iconFor(node.icon, this.extensionUri);
         item.contextValue = [node.references != null ? 'references' : null, node.definition != null ? 'definition' : null].filter(x => x != null).join(' ');
         item.command = { command: 'thaliak-timeline-linter.outline.reveal', title: 'Reveal', arguments: [node] };
 
         return item;
+    }
+
+    /** Fills in the tooltip of an action or status row: the same as its hover, or the plain tooltip if the server has none. */
+    public async resolveTreeItem(item: vscode.TreeItem, node: OutlineNode): Promise<vscode.TreeItem> {
+        if (node.symbol != null && this.uri != null) {
+            let tooltip: string | null = null;
+
+            try {
+                tooltip = await this.client.sendRequest<string | null>('thaliak/tooltip', { uri: this.uri.toString(), symbol: node.symbol } satisfies TooltipParams);
+            } catch (e) {
+                console.log(`Couldn't get the tooltip of ${node.symbol}: ${e}`);
+            }
+
+            if (tooltip != null) {
+                const markdown = new vscode.MarkdownString(tooltip);
+
+                markdown.supportHtml = true;
+                item.tooltip = markdown;
+            } else {
+                item.tooltip = this.title(node);
+            }
+        }
+
+        return item;
+    }
+
+    /** The plain tooltip of a row: its label and description. */
+    private title(node: OutlineNode): string {
+        return node.description != null ? `${node.label} ${node.description}` : node.label;
     }
 
     public getChildren(node?: OutlineNode): OutlineNode[] {
@@ -99,6 +130,7 @@ class OutlineView implements vscode.TreeDataProvider<OutlineNode> {
         this.index(this.nodes, undefined, '');
         this.changeEmitter.fire();
         updateSectionLines(editor, nodes, this.client);
+        updateStatusDecorations(editor, nodes != null, this.client);
         this.syncWithCursor();
     }
 

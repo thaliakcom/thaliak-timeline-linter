@@ -23,7 +23,7 @@ The timeline tree view (`2026-10-26-timeline-tree-view.md`) shows generic status
 
 ### Design (to be confirmed in step 1)
 
-- Settings: `thaliak-timeline-linter.ironworksPath` (CLI executable; default: look it up on `PATH`) and `thaliak-timeline-linter.gameDirectory` (FFXIV install directory). The feature is off unless both work.
+- Settings: `thaliak-timeline-linter.ironworksPath` (CLI executable; default: look it up on `PATH`) and `thaliak-timeline-linter.gameDirectory` (FFXIV install directory). The feature is off unless both work. Also `thaliak-timeline-linter.cachePath` (the dir that `ironworks-cli` saves its cached output in; should have the same shape as `thaliak/.cache` so that the user can reuse that path; if not defined it uses `context.globalStorageUri`, see below).
 - Cache in the extension's global storage (`context.globalStorageUri`), with thaliak's `.cache` layout (`status/<id>.json`, `actions/<id>.json`, `icons/<id>.png`). The CLI only runs on cache misses, and concurrent requests for one ID share a call (as in `execIronworks`).
 - Tree: status rows use the base icon (`Status.icon`, no stack offset). The lightning bolt and DoT icons stay as the fallback.
 - Hovers and tree tooltips for actions and statuses show the game name and description after the timeline's own `description`; a timeline `name` override wins over the game name.
@@ -37,7 +37,6 @@ The timeline tree view (`2026-10-26-timeline-tree-view.md`) shows generic status
 5. Whether game descriptions contain markup that has to be converted to Markdown for hovers.
 6. Run time and memory of one CLI call (decides whether to batch requests per file).
 7. Where the CLI runs: client only (and the server asks the client for game text through a custom request), or both client and server (the server gets the settings and the cache path through `initializationOptions`). Depends on 1 and 6.
-8. Whether thaliak's own `.cache` should be read as a fallback when present (only useful to the main author).
 
 ### Steps
 
@@ -47,3 +46,15 @@ The timeline tree view (`2026-10-26-timeline-tree-view.md`) shows generic status
 4. In-game status icons in the tree (`client/src/outline-icons.ts`, `status` case).
 5. Game names and descriptions in hovers and tree tooltips.
 6. Verification, by the user: tree icons, hovers, behaviour without the CLI or setting, and the cost of the first run.
+
+### Step 1 results and decisions (approved)
+
+1. CLI interface: `ironworks-cli <Status|Action> <id> -g <dir>` prints one line of JSON; `icon <id>` writes PNG bytes to stdout; errors on stderr, exit 1. `ironworks-cli -v -g <dir>` prints `Final Fantasy XIV v<version>` if the game dir works (exit 0 either way), used as the probe. The CLI clones EXDSchema next to its own executable on the first run after each patch (needs internet).
+2. Users install the CLI themselves: bundling needs per-platform builds, libgit2, and a writable directory next to the executable.
+3. Fields shown. Actions: name, description (only job actions have one), cast time, `range`, `effectRange`, `attackType`, `omenPath`, `aspect`, `XAxisModifier`, `castType`; enum values as `<n> (<name>)`, names from the commented tables in `thaliak/src/eleventy/utility/data.ts`. Statuses: name, game description (a timeline `gameDescription` override wins), `maxStacks`, `canDispel`, `isPermanent`, `statusCategory`.
+4. Stack offset: from a `:<n>` placeholder suffix (`icon + n - 1`). Tree rows show the base icon; inline icons in front of `s:` placeholders show the stacked one.
+5. Descriptions are plain text with `\n` (checked over all of `thaliak/.cache`); converted to Markdown line breaks and escaped.
+6. One call takes 0.1 to 0.25 s and about 20 MB (WSL, game on `/mnt/e`): no batching, at most `os.availableParallelism()` processes.
+7. The CLI runs in the server only. The client passes the settings through `initializationOptions` and restarts the server when they change.
+
+Cache: icons are kept forever; `status/` and `actions/` of the extension's own cache are cleared when the game version changes. A custom `cachePath` is never cleared. Inline status icons in the editor use decorations (added at the user's request).

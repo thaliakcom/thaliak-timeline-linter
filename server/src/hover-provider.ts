@@ -2,6 +2,8 @@ import { Hover, HoverParams, TextDocuments } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
+import { actionTooltip, statusTooltip, symbolTooltip, type TooltipContext } from './tooltip';
+import { TooltipParams } from './types/outline';
 import { UnprocessedRaidData } from './types/raids';
 import { getSymbolAt, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 
@@ -9,8 +11,24 @@ function makeDescription(name: string, description: string): string {
     return `## ${name}\n\n${description}`;
 }
 
-export default function hoverProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: HoverParams) => Hover | null {
-    return (params) => {
+/** The tooltip of an action or status in the tree view (`thaliak/tooltip`), the same as its hover. */
+export function tooltipProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: TooltipParams) => Promise<string | null> {
+    return async (params) => {
+        const textDocument = documents.get(params.uri);
+        const document = textDocument != null ? documentCache.get(textDocument) : null;
+
+        if (document == null) {
+            return null;
+        }
+
+        const context: TooltipContext = { raid: document.toJS() as UnprocessedRaidData, enums: documentCache.getLinterOptions(settings).enums };
+
+        return symbolTooltip(context, params.symbol);
+    };
+}
+
+export default function hoverProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: HoverParams) => Promise<Hover | null> {
+    return async (params) => {
         const textDocument = documents.get(params.textDocument.uri)!;
         const document = documentCache.get(textDocument);
 
@@ -27,18 +45,15 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
         const { text: key, range } = result;
     
         const raidData = document.toJS() as UnprocessedRaidData;
-        const actions = raidData?.actions;
-        const status = raidData?.status;
         const enums = documentCache.getLinterOptions(settings).enums;
+        const context: TooltipContext = { raid: raidData, enums };
 
-        return perPrefix(key, {
-            'a:': key => {
-                const action = actions?.[key];
+        return (await perPrefix<Hover | undefined | Promise<Hover | undefined>>(key, {
+            'a:': async key => {
+                const tooltip = await actionTooltip(context, key);
 
-                if (action != null) {
-                    return { contents: { kind: 'markdown', value: makeDescription(key, action.description) }, range };
-                } else if (enums.common != null && enums.common.yaml.actions[key] != null) {
-                    return { contents: { kind: 'markdown', value: makeDescription(key, 'Common action (`enums/common.yaml`).') }, range };
+                if (tooltip != null) {
+                    return { contents: { kind: 'markdown', value: tooltip }, range };
                 } else if (result.delimiter == null) {
                     const specialTimelineItem = SPECIAL_TIMELINE_IDS.find(x => x.id === key);
 
@@ -47,13 +62,11 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
                     }
                 }
             },
-            's:': key => {
-                const item = status?.[key];
+            's:': async key => {
+                const tooltip = await statusTooltip(context, key);
 
-                if (item != null) {
-                    return { contents: { kind: 'markdown', value: makeDescription(key, item.description ?? 'Status effect.') }, range };
-                } else if (enums.common != null && enums.common.yaml.status[key] != null) {
-                    return { contents: { kind: 'markdown', value: makeDescription(key, 'Common status (`enums/common.yaml`).') }, range };
+                if (tooltip != null) {
+                    return { contents: { kind: 'markdown', value: tooltip }, range };
                 }
             },
             't:': key => {
@@ -81,6 +94,6 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
                     return { contents: { kind: 'markdown', value: makeDescription(enums['damage-types'].yaml[key].name, enums['damage-types'].yaml[key].description) }, range };
                 }
             }
-        }) ?? null;
+        })) ?? null;
     };
 }

@@ -23,7 +23,7 @@ import * as yaml from 'yaml';
 import codeActionProvider from './code-action-provider';
 import completionProvider from './completion-provider';
 import definitionProvider from './definition-provider';
-import hoverProvider from './hover-provider';
+import hoverProvider, { tooltipProvider } from './hover-provider';
 import { lintDocument } from './linter';
 import { getParserCache } from './parser-cache';
 import referenceProvider from './reference-provider';
@@ -33,6 +33,8 @@ import documentColorProvider from './document-color-provider';
 import colorPresentationProvider from './color-presentation-provider';
 import inlayHintProvider from './inlay-hint-provider';
 import outlineProvider from './outline-provider';
+import statusIconProvider from './status-icon-provider';
+import { configureIronworks, type IronworksOptions } from './ironworks';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -47,6 +49,8 @@ const TRIGGER_CHARACTERS = '[(: '.split('');
 
 connection.onInitialize((params: InitializeParams) => {
     const capabilities = params.capabilities;
+
+    configureIronworks((params.initializationOptions as { ironworks?: IronworksOptions } | undefined)?.ironworks, message => connection.window.showWarningMessage(message));
 
     hasWorkspaceFolderCapability = !!(
         capabilities.workspace && !!capabilities.workspace.workspaceFolders
@@ -242,6 +246,8 @@ connection.onDocumentColor(documentColorProvider(documents, documentCache, globa
 connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));
 connection.languages.inlayHint.on(inlayHintProvider(documents, documentCache, globalSettings));
 connection.onRequest('thaliak/outline', outlineProvider(documents, documentCache, globalSettings));
+connection.onRequest('thaliak/statusIcons', statusIconProvider(documents, documentCache, globalSettings));
+connection.onRequest('thaliak/tooltip', tooltipProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events
