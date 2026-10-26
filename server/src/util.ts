@@ -552,7 +552,8 @@ function getInnerNodeAt(result: NodeWrapper, textDocument: TextDocument, offset:
 
         for (const nodeRange of items) {
             if (yaml.isNode(nodeRange.node) && isOffsetInYamlRange(offset, nodeRange.range)) {
-                return getInnerNodeAt(new NodeWrapper(nodeRange.node, result), textDocument, offset);
+                // Past a scalar entry (after `[a, `), the position belongs to the list itself.
+                return getInnerNodeAt(new NodeWrapper(nodeRange.node, result), textDocument, offset) ?? result;
             }
         }
 
@@ -575,7 +576,25 @@ interface KeyPairNodeRange {
     value: NodeRange | null;
 }
 
-/** 
+/**
+ * The range of `node`. A single-pair map inside a flow sequence (`[key: value]`, also while typing
+ * `[key:]`) has none of its own, so its range spans from its first key to its last value.
+ */
+function getNodeRange(node: yaml.Node): yaml.Range {
+    if (node.range != null || !yaml.isMap(node)) {
+        return node.range!;
+    }
+
+    const first = node.items[0];
+    const lastPair = node.items[node.items.length - 1];
+    const lastNode = yaml.isNode(lastPair?.value) ? lastPair.value : lastPair?.key;
+    const start = yaml.isNode(first?.key) ? first.key.range![0] : 0;
+    const end = yaml.isNode(lastNode) ? lastNode.range![1] : start;
+
+    return [start, end, end];
+}
+
+/**
  * When a map or seq has blank lines in between items,
  * there will be a gap in the ranges between items A and B
  * as well. This function eliminates this gap, rendering
@@ -585,7 +604,7 @@ function getTrueNodeRanges(object: yaml.YAMLMap): KeyPairNodeRange[];
 function getTrueNodeRanges(object: yaml.YAMLSeq): NodeRange[];
 function getTrueNodeRanges(object: yaml.YAMLMap | yaml.YAMLSeq): NodeRange[] | KeyPairNodeRange[] {
     const ranges: NodeRange[] | KeyPairNodeRange[] = [];
-    const objectRange = object.range!;
+    const objectRange = getNodeRange(object);
     const last = object.items.length - 1;
 
     for (let i: number = 0; i < object.items.length; i++) {
@@ -613,8 +632,8 @@ function getTrueNodeRanges(object: yaml.YAMLMap | yaml.YAMLSeq): NodeRange[] | K
                 } as any);
             }
         } else if (yaml.isNode(item)) {
-            const start = i === 0 ? objectRange[0] : item.range![0];
-            const end = i !== last && yaml.isNode(next) ? next.range![0] - 1 : objectRange[1];
+            const start = i === 0 ? objectRange[0] : getNodeRange(item)[0];
+            const end = i !== last && yaml.isNode(next) ? getNodeRange(next)[0] - 1 : objectRange[1];
 
             ranges.push({ node: item, range: [start, end, end] } as any);
         }

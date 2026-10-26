@@ -906,7 +906,9 @@ export function* validateGraphingItems({ textDocument, document, js: json, optio
                                     if (status != null) {
                                         for (const id of status.items) {
                                             if (yaml.isScalar(id) && typeof id.value === 'string') {
-                                                const exists = (json.status != null && id.value in json.status) || (options.enums.common != null && id.value in options.enums.common.yaml.status) || id.value in SpecialStatuses;
+                                                // Without the stack count (`key:<n>`), which selects the icon.
+                                                const key = id.value.replace(/:\d+$/, '');
+                                                const exists = (json.status != null && key in json.status) || (options.enums.common != null && key in options.enums.common.yaml.status) || id.value in SpecialStatuses;
 
                                                 if (!exists) {
                                                     yield* diagnostics({
