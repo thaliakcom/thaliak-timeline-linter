@@ -2,9 +2,9 @@ import { Position, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 
-export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|dt|t|i):[^()\n]+)\))|(?:\[((?:a|s|m|ms|st|dt|t|i):[^[\]\n]+?)(?:(?::c)|(?::d)|(?::\d+))?\]))/g;
+export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|dt|t|i):[^()\n]+?)(?::\d+)?(?::\d+s)?\))|(?:\[((?:a|s|m|ms|st|dt|t|i):[^[\]\n]+?)(?:(?::c)|(?::d)|(?::\d+)?(?::\d+s)?)\]))/g;
 export const KEY_REGEX = /^\s{2}([^\s]+):\s/g;
-export const SUFFIX_REGEX = /(?:.+):(?:.+)(:(?:\d+|d|c))/g;
+export const SUFFIX_REGEX = /(?:.+?):(?:.+?)((?::\d+)?:\d+s|:(?:\d+|d|c))$/g;
 
 export const ICONS = ['tank', 'healer', 'dps', 'melee', 'ranged', 'pranged', 'caster', 'circle', 'cross', 'square', 'triangle'] as const;
 

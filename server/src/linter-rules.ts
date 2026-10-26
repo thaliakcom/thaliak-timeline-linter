@@ -691,6 +691,18 @@ export function* idMustBeValid({ textDocument, document, js: json, options }: Li
         }
     }
 
+    for (const action of getIfType(document, 'actions', yaml.isMap)?.items ?? []) {
+        const inflicts = yaml.isMap(action.value) ? getIfType(action.value, 'inflicts', yaml.isSeq) : null;
+
+        for (const inflicted of inflicts?.items ?? []) {
+            const status = yaml.isMap(inflicted) ? inflicted.get('status', true) : null;
+
+            if (yaml.isScalar(status) && typeof status.value === 'string') {
+                matches.push({ text: `s:${status.value}`, range: status.range! });
+            }
+        }
+    }
+
     for (const match of matches) {
         const isValid = perPrefix(match.text, {
             'a:': key => (json.actions != null && key in json.actions) || (options.enums.common != null && key in options.enums.common.yaml.actions) || SPECIAL_TIMELINE_IDS.some(x => x.id === key),

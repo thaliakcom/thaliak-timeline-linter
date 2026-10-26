@@ -13,7 +13,6 @@ export interface StatusEffect extends UnprocessedStatusEffect {
     isBuff: boolean;
     maxStacks: integer;
     affects: 'player' | 'enemy';
-    duration: integer[];
 }
 
 export interface UnprocessedStatusEffect {
@@ -38,15 +37,6 @@ export interface UnprocessedStatusEffect {
      * automatically retrieved from game data, so explicitly defining it is strongly discouraged.
      */
     icon?: number;
-    /**
-     * How long the status effect lasts (in milliseconds).
-     * If the status effect has multiple variations with different durations,
-     * you can supply an array instead of a single number here.
-     * If the status effect does not have a fixed duration
-     * (and therefore lasts indefinitely or until cleared by another mechanic),
-     * leave this field blank.
-     */
-    duration?: integer | integer[];
     /**
      * The type of the status effect. Must be one of the values from `status-types.yaml`.
      * Leave blank if none of these apply.
@@ -118,6 +108,18 @@ export enum CompactMode {
 }
 
 export type Element = 'fire' | 'ice' | 'wind' | 'earth' | 'lightning' | 'water';
+
+/** A status effect applied by an action. */
+export interface InflictedStatus {
+    /** The key of the status effect in the `status` object (or in common statuses). */
+    status: string;
+    /**
+     * How long the status effect lasts (in milliseconds) when applied by this action.
+     * If the action applies the status effect with different durations, supply an array.
+     * If the status effect does not have a fixed duration, leave this field blank.
+     */
+    duration?: integer | integer[];
+}
 
 export interface UnprocessedAction {
     /**
@@ -277,6 +279,13 @@ export interface UnprocessedAction {
      * speaking, `n` milliseconds after the cast).
      */
     children?: (BaseTimelineItem | SpecialChildTimelineItem)[];
+    /**
+     * The status effects this action applies.
+     *
+     * Note that this field is currently informational only and does not affect the
+     * rendered page in any way.
+     */
+    inflicts?: InflictedStatus[];
     /**
      * If set to `trim`, all child timeline items will display directly underneath
      * the parent ability name and will not display a description. As the description
