@@ -103,12 +103,15 @@ interface ParsedYAML<T> {
     textDocument: TextDocument
 }
 
+/**
+ * The order that the keys (or diagram elements, for graph steps) of the maps of one kind must
+ * follow. Only holds relations seen in the maps themselves, so it's a partial order.
+ */
 export interface PropertyOrder {
-    range: Range;
-    /** Specifies that this item must come between this key and {@link before} (or the start of the object and {@link before} if this is `null`). */
-    after: string | undefined;
-    /** Specifies that this item must come between {@link after} and this key (or {@link after} and the end of the object if this is `null`). */
-    before: string | undefined;
+    /** For every known key, all keys that must come after it, directly or transitively. */
+    successors: Map<string, Set<string>>;
+    /** For every key, the keys seen after it in one map, with the range of the key in the first such map. */
+    relations: Map<string, Map<string, Range>>;
 }
 
 /** The looks and animations of diagram elements, from `schemas/raid.schema.json`. */
@@ -130,7 +133,7 @@ export interface LinterOptions extends ThaliakTimelineLinterSettings {
         'terms'?: ParsedYAML<Terms>
     };
     diagramEnums?: DiagramEnums;
-    propOrder: Map<string, Map<string, PropertyOrder>>;
+    propOrder: Map<string, PropertyOrder>;
 }
 
 export const fixableDiagnostics: Diagnostic[] = [];

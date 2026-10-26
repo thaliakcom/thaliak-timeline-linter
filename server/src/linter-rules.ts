@@ -1,4 +1,4 @@
-import { Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, DiagnosticTag, TextEdit } from 'vscode-languageserver';
+import { Diagnostic, DiagnosticSeverity, DiagnosticTag, TextEdit } from 'vscode-languageserver';
 import { Range, TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { DEFAULT_GRAPHICS_KEYS, KeyResolverResult, RESERVED_ELEMENTS, resolveKey, SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
@@ -6,7 +6,7 @@ import { LinterInput } from './linter';
 import { LinterOptions, PropertyOrder } from './server';
 import { SpecialStatuses } from './types/graphing';
 import { UnprocessedRaidData, WipKind } from './types/raids';
-import { getElementActions, getEntry, getIfType, getRange, getRangeAt, getRangeFromOffset, getRangeOrStart, getStrategyKeys, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { getElementActions, getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, getStrategyKeys, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 
 function* diagnostics(diagnostic: Diagnostic): Generator<Diagnostic> {
     diagnostic.source = 'thaliak';
@@ -146,163 +146,229 @@ function* validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument,
     return true;
 }
 
-function getOrSet<K, V>(map: Map<K, V>, key: K, defaultValue: () => V): V {
+/** The diagram elements that the graph step key `key` sets, or `key` itself if it isn't a valid diagram key. */
+function elementsOf(key: string, elements: Set<string>): string[] {
+    try {
+        return resolveKey(key, elements).elements;
+    } catch {
+        return [key];
+    }
+}
+
+/** The offset where the value of `pair` (or its key, if it has no value) ends. */
+function valueEndOf(pair: yaml.Pair<yaml.Scalar, unknown>): number {
+    return (yaml.isNode(pair.value) ? pair.value.range?.[1] : undefined) ?? pair.key.range![1];
+}
+
+/** `names` quoted and joined into an English list ("'a', 'b' and 'c'"). */
+function listOf(names: string[]): string {
+    const quoted = names.map(name => `'${name}'`);
+
+    return quoted.length === 1 ? quoted[0] : `${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
+}
+
+/**
+ * The text edits that move the consecutive pairs `first` to `last` of a block map, with their
+ * whole lines, to right before `target` (which must come before `first`). The edits insert after
+ * the `- ` of a sequence item, so they never move the start of the item.
+ */
+function moveBefore(textDocument: TextDocument, first: yaml.Pair<yaml.Scalar, unknown>, last: yaml.Pair<yaml.Scalar, unknown>, target: yaml.Pair<yaml.Scalar, unknown>): TextEdit[] {
+    const keyStart = textDocument.positionAt(first.key.range![0]);
+    // A block collection's value ends at the start of the next line, so look at the character before it.
+    const lastLine = textDocument.positionAt(Math.max(valueEndOf(last) - 1, last.key.range![0])).line;
+    const range: Range = { start: { line: keyStart.line, character: 0 }, end: { line: lastLine + 1, character: 0 } };
+    const text = textDocument.getText(range).trimStart();
+    const targetStart = textDocument.positionAt(target.key.range![0]);
+
+    return [
+        TextEdit.del(range),
+        TextEdit.insert(targetStart, (text.endsWith('\n') ? text : text + '\n') + ' '.repeat(targetStart.character))
+    ];
+}
+
+function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V): V {
     let value = map.get(key);
 
     if (value == null) {
-        value = defaultValue();
+        value = create();
         map.set(key, value);
     }
 
     return value;
 }
 
-function emptyMap(): Map<never, never> {
-    return new Map<never, never>();
+/**
+ * Adds to `order` that `a` comes before `b`, as seen at `origin`, unless `order` already requires
+ * the opposite. `a` and `b` must be known to `order`.
+ */
+function relate(order: PropertyOrder, a: string, b: string, origin: Range): void {
+    const successorsOfB = order.successors.get(b)!;
+
+    if (a === b || successorsOfB.has(a)) {
+        return;
+    }
+
+    const relations = getOrCreate(order.relations, a, () => new Map());
+
+    if (!relations.has(b)) {
+        relations.set(b, origin);
+    }
+
+    if (order.successors.get(a)!.has(b)) {
+        return;
+    }
+
+    for (const [key, successors] of order.successors) {
+        if (key === a || successors.has(a)) {
+            successors.add(b);
+
+            for (const successor of successorsOfB) {
+                successors.add(successor);
+            }
+        }
+    }
 }
 
-function updateOrderItem(order: Map<string, PropertyOrder>, orderItem: PropertyOrder, after: string | undefined, before: string | undefined, range: Range): void {
-    let hasChanged = false;
-    let afterItem = orderItem.after;
-    let beforeItem = orderItem.before;
+/** The shortest chain of relations of `order` by which `a` comes before `b`, as `[from, to, origin]`. */
+function pathOf(order: PropertyOrder, a: string, b: string): [string, string, Range][] {
+    const previous = new Map<string, [string, Range]>();
+    const queue = [a];
 
-    if (afterItem !== after) {
-        if (afterItem == null) {
-            afterItem = after;
-            hasChanged = true;
-        } else if (after != null) {
-            while (afterItem != null) {
-                const item = order.get(afterItem);
-
-                if (item == null) {
-                    orderItem.after = after;
-                    hasChanged = true;
-                    break;
-                } else if (item.after === after) {
-                    break;
-                } else {
-                    afterItem = item.after;
-                }
+    for (let i: number = 0; i < queue.length && !previous.has(b); i++) {
+        for (const [next, origin] of order.relations.get(queue[i]) ?? []) {
+            if (next !== a && !previous.has(next)) {
+                previous.set(next, [queue[i], origin]);
+                queue.push(next);
             }
         }
     }
 
-    if (beforeItem !== before) {
-        if (beforeItem == null) {
-            beforeItem = before;
-            hasChanged = true;
-        } else if (before != null) {
-            while (beforeItem != null) {
-                const item = order.get(beforeItem);
+    const path: [string, string, Range][] = [];
 
-                if (item == null) {
-                    orderItem.before = before;
-                    hasChanged = true;
-                    break;
-                } else if (item.before === before) {
-                    break;
-                } else {
-                    beforeItem = item.before;
-                }
-            }
-        }
+    for (let current = b; previous.has(current); current = previous.get(current)![0]) {
+        const [from, origin] = previous.get(current)!;
+        path.unshift([from, current, origin]);
     }
 
-    if (hasChanged) {
-        orderItem.range = range;
-    }
+    return path;
 }
 
 /**
- * Warns about keys of `map` that aren't in the order of the maps of the same `itemKind` before it.
- * `orderKey` separates the orders of maps of one kind that don't share their keys (by default, all
- * maps of `itemKind` share one order).
+ * Warns about keys of `map` that come after a key that should come after them, by the order of
+ * the maps of the same `itemKind` before it. `orderKey` separates the orders of maps of one kind
+ * that don't share their keys (by default, all maps of `itemKind` share one order).
+ *
+ * `resolve` maps a key to the names whose order it follows (for graph steps, its diagram
+ * elements). A key only conflicts with a key whose names must all come after all of its own, so
+ * keys that share names never conflict. The order only holds relations seen in a map (never ones
+ * contradicting earlier maps), so it never has cycles and every warning can be resolved. If
+ * `learn` is `false`, only the first map establishes the order (graph steps follow their first
+ * step); otherwise, every map adds its relations.
  */
-function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: boolean, textDocument: TextDocument, options: LinterOptions, orderKey: string = itemKind): Generator<Diagnostic> {
-    const order = getOrSet(options.propOrder, orderKey, emptyMap);
-    const keysBefore: string[] = [];
+function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: boolean, textDocument: TextDocument, options: LinterOptions, orderKey: string = itemKind, learn: boolean = true, resolve: (key: string, known: Set<string>) => string[] = key => [key]): Generator<Diagnostic> {
+    const isFirst = !options.propOrder.has(orderKey);
 
-    for (let i: number = 0, j: number = 0; i < map.items.length; i++, j++) {
-        const key = map.items[i].key;
+    if (isFirst) {
+        options.propOrder.set(orderKey, { successors: new Map(), relations: new Map() });
+    }
 
-        if (!yaml.isScalar(key)) {
+    const order = options.propOrder.get(orderKey)!;
+    const pairs = map.items.filter((pair): pair is yaml.Pair<yaml.Scalar, unknown> => yaml.isScalar(pair.key) && pair.key.range != null);
+
+    // Wildcards also match the names of the keys before them in this map.
+    const known = new Set(order.successors.keys());
+    const names = pairs.map(pair => {
+        const resolved = resolve(String(pair.key.value), known);
+
+        for (const name of resolved) {
+            known.add(name);
+        }
+
+        return resolved;
+    });
+    const knownNames = names.map(keyNames => keyNames.filter(name => order.successors.has(name)));
+
+    /** Whether all known names of the key at `j` must come after all known names of the key at `i`. */
+    function mustComeBefore(i: number, j: number): boolean {
+        return knownNames[i].length > 0 && knownNames[j].length > 0
+            && knownNames[i].every(a => knownNames[j].every(b => order.successors.get(a)!.has(b)));
+    }
+
+    /** The index of the first key before `i` (from `from` on) that should come after the key at `i`, or -1. */
+    function conflictOf(i: number, from: number = 0): number {
+        for (let j: number = from; j < i; j++) {
+            if (mustComeBefore(i, j)) {
+                return j;
+            }
+        }
+
+        return -1;
+    }
+
+    const conflicts = pairs.map((_, i) => conflictOf(i));
+
+    for (let i: number = 0; i < pairs.length; i++) {
+        if (conflicts[i] === -1) {
             continue;
         }
 
-        const value = key.value as string;
-        const orderItem = order.get(value);
+        // Consecutive misplaced keys are in order among themselves and have to move together, so
+        // they're reported (and moved) as one block.
+        let end = i;
 
-        const after = map.items[i - 1]?.key as yaml.Scalar<string> | undefined;
-        const before = map.items[i + 1]?.key as yaml.Scalar<string> | undefined;
-        const range = getRange(textDocument, key.range!);
-
-        if (orderItem == null) {
-            order.set(value, {
-                range,
-                after: after?.value,
-                before: before?.value
-            });
-        } else {
-            let orderAfter = orderItem.after;
-            let orderBefore = orderItem.before;
-
-            while (orderAfter != null && !map.has(orderAfter)) {
-                orderAfter = order.get(orderAfter)?.after;
-            }
-
-            while (orderBefore != null && !map.has(orderBefore)) {
-                orderBefore = order.get(orderBefore)?.before;
-            }
-
-            if ((orderAfter != null && !keysBefore.includes(orderAfter)) || (orderBefore != null && keysBefore.includes(orderBefore))) {
-                const insertionItem = (orderAfter == null
-                    ? (map.items.find(x => (x.key as yaml.Scalar).value === orderBefore))!
-                    : (map.items.find(x => (x.key as yaml.Scalar).value === orderAfter))!) as yaml.Pair<yaml.Scalar<string>, yaml.Node>;
-                const relatedInformation: DiagnosticRelatedInformation = orderAfter == null ? {
-                    location: { uri: textDocument.uri, range: getRange(textDocument, insertionItem.key.range!) },
-                    message: `'${value}' should come before '${orderBefore}'.`
-                } : {
-                    location: { uri: textDocument.uri, range: getRange(textDocument, insertionItem.key.range!) },
-                    message: `'${value}' should come after '${orderAfter}'.`
-                };
-
-                const currentRange = getRangeFromOffset(textDocument, (map.items[i].key as yaml.Scalar).range![0], (map.items[i].value as yaml.Node).range![2]);
-                currentRange.start.character = 0;
-
-                const codeActionData = codeAction ? {
-                    textEdits: [
-                        {
-                            range: currentRange,
-                            newText: ''
-                        },
-                        {
-                            range: orderAfter == null ? getRangeAt(textDocument, insertionItem.key.range![0], 'start') : getRangeAt(textDocument, insertionItem.value!.range![2], 'start'),
-                            newText: textDocument.getText(currentRange)
-                        }
-                    ] satisfies TextEdit[],
-                    uniqueness: map.range?.toString()
-                } : undefined;
-
-                yield* diagnostics({
-                    code: `inconsistent-prop-order/${itemKind.replaceAll(' ', '-')}`,
-                    severity: DiagnosticSeverity.Warning,
-                    message: `The order of this '${value}' is inconsistent.`,
-                    range: getRange(textDocument, (map.items[i].key as yaml.Scalar).range!),
-                    relatedInformation: [
-                        relatedInformation,
-                        {
-                            location: { uri: textDocument.uri, range: orderItem.range },
-                            message: `The order of '${value}' was last adjusted here.`
-                        }
-                    ],
-                    data: codeActionData
-                });
-            } else {
-                updateOrderItem(order, orderItem, after?.value, before?.value, range);
-            }
+        while (end + 1 < pairs.length && conflicts[end + 1] !== -1 && conflicts[end + 1] < i && conflictOf(end + 1, i) === -1) {
+            end++;
         }
 
-        keysBefore.push(value);
+        const block = pairs.slice(i, end + 1);
+        const target = pairs[Math.min(...conflicts.slice(i, end + 1))];
+        const keys = listOf(block.map(pair => String(pair.key.value)));
+        const range = getRangeFromOffset(textDocument, pairs[i].key.range![0], valueEndOf(pairs[end]));
+
+        yield* diagnostics({
+            code: `inconsistent-prop-order/${itemKind.replaceAll(' ', '-')}`,
+            severity: DiagnosticSeverity.Warning,
+            message: block.length === 1
+                ? `The order of this '${pairs[i].key.value}' is inconsistent: it should come before '${target.key.value}'.`
+                : `The order of ${keys} is inconsistent: together, they should come before '${target.key.value}'.`,
+            range,
+            relatedInformation: [
+                {
+                    location: { uri: textDocument.uri, range: getRange(textDocument, target.key.range!) },
+                    message: `${keys} should come before '${target.key.value}'.`
+                },
+                // Every key of the block must come before the target by the same names, so the
+                // first ones of each show why.
+                ...block.flatMap((_, k) => pathOf(order, knownNames[i + k][0], knownNames[conflicts[i + k]][0]).map(([a, b, origin]) => ({
+                    location: { uri: textDocument.uri, range: origin },
+                    message: `'${a}' comes before '${b}' here.`
+                })))
+            ],
+            data: codeAction && !map.flow ? {
+                textEdits: moveBefore(textDocument, pairs[i], pairs[end], target),
+                uniqueness: map.range?.toString()
+            } : undefined
+        });
+
+        i = end;
+    }
+
+    if (isFirst || learn) {
+        // A name set by several keys (`players`, then `T1`) belongs to the first one.
+        const seen = new Set<string>();
+        const ownNames = names.map(keyNames => keyNames.filter(name => !seen.has(name) && seen.add(name) != null));
+
+        for (let j: number = 0; j < pairs.length; j++) {
+            for (const b of ownNames[j]) {
+                getOrCreate(order.successors, b, () => new Set());
+
+                for (let i: number = 0; i < j; i++) {
+                    for (const a of ownNames[i]) {
+                        relate(order, a, b, getRange(textDocument, pairs[i].key.range!));
+                    }
+                }
+            }
+        }
     }
 
     return true;
@@ -1155,7 +1221,7 @@ export function* validateGraphingOrder({ textDocument, document, options }: Lint
 
         for (const step of graph.value.items) {
             if (yaml.isMap(step)) {
-                yield* validatePropertyOrder(step, 'graph step', true, textDocument, options, `graph step ${graph.key.value}`);
+                yield* validatePropertyOrder(step, 'graph step', true, textDocument, options, `graph step ${graph.key.value}`, false, elementsOf);
             }
         }
     }
