@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.3.0 (2026-10-25)
+## 0.3.2 (2026-10-25)
+
+* **Added**: improved graphing diagnostics and type checking (1421457abe56c90358b667c32ff208ec3ad62292)
+* **Added**: inlay hint timestamps for children (c5de05716882fd68ddc0a1b19ba1d215323c5b59)
+* **Added**: inlay hints for step numbers (bbd2ce84116f83ea818d796831ad6a67735d2505)
+
+## 0.3.1 (2026-10-25)
 
 * **Added**: support for `hits` (48f2d5611eb26c52d3435968b4cd98fc5494f9ad)
 * **Fixed**: an error that showed anytime you opened a timeline file (1b88e6ba88188cd6f3a51ce20cdd2835585e3158)
