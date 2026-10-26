@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3 (2026-10-25)
+
+* **Added**: graphing key order validation (5a4055cfaad6fe7f507ec1f6c596f8468bf49a7b)
+* **Updated**: for new thaliak data schema (418509d43e9474dbfcbd6f60f4b945090a535311)
+
 ## 0.3.2 (2026-10-25)
 
 * **Added**: improved graphing diagnostics and type checking (1421457abe56c90358b667c32ff208ec3ad62292)
