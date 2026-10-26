@@ -3,10 +3,13 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import * as linterRules from './linter-rules';
 import { fixableDiagnostics, LinterOptions } from './server';
+import { UnprocessedRaidData } from './types/raids';
 
 export interface LinterInput {
     textDocument: TextDocument;
     document: yaml.Document;
+    /** `document` as plain JavaScript, converted once per lint since the conversion is expensive. */
+    js: UnprocessedRaidData;
     options: LinterOptions;
 }
 
@@ -14,6 +17,7 @@ export function lintDocument(textDocument: TextDocument, document: yaml.Document
     const input: LinterInput = {
         textDocument,
         document,
+        js: document.toJS() as UnprocessedRaidData,
         options: settings
     };
 

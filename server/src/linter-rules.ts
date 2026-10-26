@@ -28,11 +28,10 @@ function* diagnostics(diagnostic: Diagnostic): Generator<Diagnostic> {
     }
 }
 
-function* validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, document: yaml.Document, options: LinterOptions): Generator<Diagnostic> {
+function* validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument, js: UnprocessedRaidData, options: LinterOptions): Generator<Diagnostic> {
     let lastAt: number = 0;
     let lastAtRange: yaml.Range | undefined;
 
-    const js = document.toJS() as UnprocessedRaidData;
     const actions = js.actions;
 
     for (const item of items.items) {
@@ -87,11 +86,9 @@ function* validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument,
                     range: getRange(textDocument, item.get('id', true)!.range ?? [0, 0, 0])
                 });
             } else if (status != null) {
-                const json = document.toJS();
-
                 for (const id of status) {
                     if (typeof id.value === 'string') {
-                        const exists = (json.status != null && id.value in json.status) || (options.enums.common != null && id.value in options.enums.common.yaml.status) || id.value in SpecialStatuses;
+                        const exists = (js.status != null && id.value in js.status) || (options.enums.common != null && id.value in options.enums.common.yaml.status) || id.value in SpecialStatuses;
 
                         if (!exists) {
                             yield* diagnostics({
@@ -357,14 +354,17 @@ function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction:
         // A name set by several keys (`players`, then `T1`) belongs to the first one.
         const seen = new Set<string>();
         const ownNames = names.map(keyNames => keyNames.filter(name => !seen.has(name) && seen.add(name) != null));
+        const ranges = pairs.map(pair => getRange(textDocument, pair.key.range!));
 
         for (let j: number = 0; j < pairs.length; j++) {
             for (const b of ownNames[j]) {
                 getOrCreate(order.successors, b, () => new Set());
 
-                for (let i: number = 0; i < j; i++) {
+                // Nearest first: once `b` follows the key right before it, it also follows the
+                // keys before that, so their calls don't have to update the closure.
+                for (let i: number = j - 1; i >= 0; i--) {
                     for (const a of ownNames[i]) {
-                        relate(order, a, b, getRange(textDocument, pairs[i].key.range!));
+                        relate(order, a, b, ranges[i]);
                     }
                 }
             }
@@ -374,7 +374,7 @@ function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction:
     return true;
 }
 
-export function* validateAction({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
+export function* validateAction({ textDocument, document, js, options }: LinterInput): Generator<Diagnostic> {
     if (options.enums['mechanic-types'] == null) {
         return;
     }
@@ -393,7 +393,7 @@ export function* validateAction({ textDocument, document, options }: LinterInput
                 const children = action.value.get('children');
 
                 if (yaml.isSeq(children)) {
-                    yield* validateTimelineItems(children, textDocument, document, options);
+                    yield* validateTimelineItems(children, textDocument, js, options);
                 }
 
                 if (mechanic == null) {
@@ -675,7 +675,7 @@ function *traverseTimelineItems(document: yaml.Document): Generator<yaml.YAMLMap
     }
 }
 
-export function* idMustBeValid({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
+export function* idMustBeValid({ textDocument, document, js: json, options }: LinterInput): Generator<Diagnostic> {
     const matches: { text: string, range: [number, number, number?] }[] = [];
 
     for (const match of textDocument.getText().matchAll(PLACEHOLDER_REGEX)) {
@@ -690,8 +690,6 @@ export function* idMustBeValid({ textDocument, document, options }: LinterInput)
             matches.push({ text: `a:${id.value}`, range: id.range! });
         }
     }
-
-    const json = document.toJS() as UnprocessedRaidData;
 
     for (const match of matches) {
         const isValid = perPrefix(match.text, {
@@ -794,15 +792,15 @@ export function* mustNotHaveRecursiveChildren({ textDocument, document }: Linter
     }
 }
 
-export function* validateTimeline({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
+export function* validateTimeline({ textDocument, document, js, options }: LinterInput): Generator<Diagnostic> {
     const timeline = getIfType(document, 'timeline', yaml.isSeq);
 
     if (timeline != null) {
-        yield* validateTimelineItems(timeline, textDocument, document, options);
+        yield* validateTimelineItems(timeline, textDocument, js, options);
     }
 }
 
-export function* validateGraphingItems({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
+export function* validateGraphingItems({ textDocument, document, js: json, options }: LinterInput): Generator<Diagnostic> {
     const graphing = getIfType(document, 'graphing', yaml.isMap);
 
     if (graphing != null) {
@@ -894,8 +892,6 @@ export function* validateGraphingItems({ textDocument, document, options }: Lint
                                     const status = getIfType(item.value, 'status', yaml.isSeq);
 
                                     if (status != null) {
-                                        const json = document.toJS();
-
                                         for (const id of status.items) {
                                             if (yaml.isScalar(id) && typeof id.value === 'string') {
                                                 const exists = (json.status != null && id.value in json.status) || (options.enums.common != null && id.value in options.enums.common.yaml.status) || id.value in SpecialStatuses;

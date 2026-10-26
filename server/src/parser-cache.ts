@@ -70,7 +70,7 @@ export function getParserCache(): ParserCache {
 
             try {
                 const yamlDocument = yaml.parseDocument(document.getText());
-                const newInfo: Document = { ast: yamlDocument, textDocument: document, version, languageId, cTime: Date.now(), isRelevant: isEnum || isRaidData(yamlDocument.toJS()) };
+                const newInfo: Document = { ast: yamlDocument, textDocument: document, version, languageId, cTime: Date.now(), isRelevant: isEnum || isRaidData(yamlDocument) };
     
                 if (isEnum) {
                     secondaryDocuments[document.uri] = newInfo;
@@ -125,10 +125,11 @@ function diagramEnumsOf(schema: { definitions: Record<string, { enum: string[], 
     };
 }
 
-function isRaidData(json: Record<string, unknown>): boolean {
-    return typeof json.id === 'number'
-        && typeof json.patch === 'string'
-        && json.by != null
-        && typeof json.boss === 'string'
-        && typeof json.description === 'string';
+/** Whether `document` is a timeline. Reads the AST, since converting the whole document is expensive. */
+function isRaidData(document: yaml.Document): boolean {
+    return typeof document.get('id') === 'number'
+        && typeof document.get('patch') === 'string'
+        && document.get('by') != null
+        && typeof document.get('boss') === 'string'
+        && typeof document.get('description') === 'string';
 }

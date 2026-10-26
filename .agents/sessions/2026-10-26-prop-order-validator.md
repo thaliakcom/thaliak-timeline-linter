@@ -44,9 +44,18 @@ of "after" (`uwu.yaml:2641`), and only the first of several misplaced keys being
   same YAML error counts as the originals, step starts intact. `uwu.yaml:2641` no longer flagged.
   Not tested inside VS Code.
 - Final warning counts (probe now loads the enums, so actions are checked too): `top.yaml` 503,
-  `uwu.yaml` 177 (fix-all reaches 0 on `uwu.yaml` after 5 rounds). A lint of `top.yaml` takes
-  about 600 ms, mostly `yaml` `toJS()` in other rules (`validateTimelineItems` converts the whole
-  document once per `children` list), not the order code.
+  `uwu.yaml` 177 (fix-all reaches 0 on `uwu.yaml` after 5 rounds).
+- Performance (user request), measured with `node --cpu-prof` on `top.yaml`:
+  - `lintDocument` converts the document with `toJS()` once and passes it as `LinterInput.js`;
+    `validateTimelineItems` used to convert it once per `children` list, `idMustBeValid` and
+    `validateGraphingItems` (per `status` list) once more. Lint went from ~600 ms to ~260 ms
+    (probe time, which includes parsing and the probe's own enum loading; the rules themselves
+    now take ~60 ms). Checked that no rule mutates the shared object.
+  - `validatePropertyOrder` learning: key ranges computed once per key instead of once per pair,
+    and relations added nearest key first so `relate` rarely walks the closure (40 -> 16 ms).
+  - `parser-cache.ts` `isRaidData` reads the AST instead of converting the whole document on
+    every edit; same result as before on all 147 YAML files of `_data`.
+  - Not changed: hover and completion providers still call `toJS()` once per request.
 - `CHANGELOG.md` and `todo` left untouched.
 
 ## Status
