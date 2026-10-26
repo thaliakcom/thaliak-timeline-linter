@@ -78,13 +78,70 @@
                 "path": "./syntax/id.tmLanguage.json"
             }
         ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "thaliak",
+                    "title": "Thaliak",
+                    "icon": "media/activity-bar.svg"
+                }
+            ]
+        },
+        "views": {
+            "thaliak": [
+                {
+                    "id": "thaliak.outline",
+                    "name": "Timeline"
+                }
+            ]
+        },
+        "viewsWelcome": [
+            {
+                "view": "thaliak.outline",
+                "contents": "Open a Thaliak timeline file to see its outline."
+            }
+        ],
         "commands": [
             {
                 "command": "thaliak-timeline-linter.restart",
                 "title": "Restart language server",
                 "category": "Thaliak Timeline Linter"
+            },
+            {
+                "command": "thaliak-timeline-linter.outline.findReferences",
+                "title": "Find All References",
+                "icon": "$(references)"
+            },
+            {
+                "command": "thaliak-timeline-linter.outline.goToDefinition",
+                "title": "Go to Definition",
+                "icon": "$(go-to-file)"
             }
-        ]
+        ],
+        "menus": {
+            "view/item/context": [
+                {
+                    "command": "thaliak-timeline-linter.outline.findReferences",
+                    "when": "view == thaliak.outline && viewItem =~ /references/",
+                    "group": "inline"
+                },
+                {
+                    "command": "thaliak-timeline-linter.outline.goToDefinition",
+                    "when": "view == thaliak.outline && viewItem =~ /definition/",
+                    "group": "inline"
+                }
+            ],
+            "commandPalette": [
+                {
+                    "command": "thaliak-timeline-linter.outline.findReferences",
+                    "when": "false"
+                },
+                {
+                    "command": "thaliak-timeline-linter.outline.goToDefinition",
+                    "when": "false"
+                }
+            ]
+        }
     },
     "scripts": {
         "vscode:prepublish": "npm run package",
