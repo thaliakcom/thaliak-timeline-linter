@@ -1129,6 +1129,33 @@ export function* validateDiagramElements({ textDocument, document, options }: Li
     }
 }
 
+/**
+ * Warns when the properties of an element definition aren't in the order of the definitions before
+ * it, and when the elements of a graph's step aren't in the order of the steps before it (so
+ * every step follows the order of the first one).
+ */
+export function* validateGraphingOrder({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
+    const graphing = getIfType(document, 'graphing', yaml.isMap);
+
+    for (const definition of getIfType(graphing, 'elements', yaml.isMap)?.items ?? []) {
+        if (yaml.isMap(definition.value)) {
+            yield* validatePropertyOrder(definition.value, 'element definition', true, textDocument, options);
+        }
+    }
+
+    for (const graph of getIfType(graphing, 'graphs', yaml.isMap)?.items ?? []) {
+        if (!yaml.isScalar(graph.key) || !yaml.isSeq(graph.value)) {
+            continue;
+        }
+
+        for (const step of graph.value.items) {
+            if (yaml.isMap(step)) {
+                yield* validatePropertyOrder(step, 'graph step', true, textDocument, options, `graph step ${graph.key.value}`);
+            }
+        }
+    }
+}
+
 export function* actionsMustBeUsed({ textDocument, document }: LinterInput): Generator<Diagnostic> {
     const actions = getIfType(document, 'actions', yaml.isMap);
 
