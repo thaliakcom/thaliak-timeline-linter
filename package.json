@@ -5,7 +5,7 @@
     "author": "Thaliak <contact@thaliak.com> (https://thaliak.com/)",
     "publisher": "thaliak",
     "license": "MIT",
-    "version": "0.3.3",
+    "version": "0.4.0",
     "categories": [
         "Programming Languages",
         "Linters"
@@ -48,6 +48,24 @@
                     "type": "number",
                     "default": 100,
                     "description": "Controls the maximum number of problems produced by the server."
+                },
+                "thaliak-timeline-linter.ironworksPath": {
+                    "scope": "machine-overridable",
+                    "type": "string",
+                    "default": "",
+                    "description": "The ironworks-cli executable, which reads game data (in-game names, descriptions and icons of actions and statuses). Empty: `ironworks-cli` from the PATH."
+                },
+                "thaliak-timeline-linter.gameDirectory": {
+                    "scope": "machine-overridable",
+                    "type": "string",
+                    "default": "",
+                    "description": "The FFXIV install directory (the one containing `boot` and `game`). Game data is off while this is empty."
+                },
+                "thaliak-timeline-linter.cachePath": {
+                    "scope": "machine-overridable",
+                    "type": "string",
+                    "default": "",
+                    "description": "The directory game data is cached in, laid out like thaliak's `.cache` (so it can point at it). The extension never clears a directory set here. Empty: the extension's own storage, which is cleared after game updates (except icons)."
                 },
                 "thaliak-timeline-linter.trace.server": {
                     "scope": "window",

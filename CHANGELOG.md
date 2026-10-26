@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 (2026-10-26)
+
+* **Added**: `ironworks-cli` integration (070e893ca9d75985ee9495a60dd255e678d78e73)
+  -> status icons are showed inline
+  -> tooltips show a status's `gameDescription` and other data retrieved from the game
+* **Added**: a VSCode timeline tab with a better overview over the timeline file
+  (04cfffa1052141dce11492c3cd88896362a1c7e2)
+* **Added**: support for the new status template duration format (575657ca4ad1182e4cb344c42dccc04e6753b5ed)
+* **Fixed**: an issue that caused the symbol resolver to fail to resolve symbols
+  (28f2a455f9f8951f3a8f02226406bb6c8b382743)
+* **Improved**: extension performance (90af815e41b49069e3096089273493905ea782fe)
+* **Fixed**: various issues related to the property order validator (f4119b6843954395509a465945e74c0774d9bce5)
+
 ## 0.3.3 (2026-10-25)
 
 * **Added**: graphing key order validation (5a4055cfaad6fe7f507ec1f6c596f8468bf49a7b)
