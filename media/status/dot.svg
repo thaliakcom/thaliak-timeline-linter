@@ -1,0 +1,13 @@
+<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <!-- Damage over time: poison bubbles rising diagonally, growing from the bottom left to the top right. -->
+  <g fill="#5fbf3a" stroke="#c7f29b" stroke-width="0.75">
+    <circle cx="3.5" cy="12.5" r="2" />
+    <circle cx="7.5" cy="8.5" r="2.5" />
+    <circle cx="12" cy="4" r="3.25" />
+  </g>
+  <g fill="#e9ffd6">
+    <circle cx="3" cy="12" r="0.6" />
+    <circle cx="6.8" cy="7.8" r="0.75" />
+    <circle cx="11.1" cy="3.1" r="0.95" />
+  </g>
+</svg>

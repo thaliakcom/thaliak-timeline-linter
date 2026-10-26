@@ -18,6 +18,17 @@ export const SPECIAL_TIMELINE_IDS: Array<{ id: string, description: string }> = 
     { id: '<loop>', description: 'Indicates that all mechanics or a subset of mechanics up until now will loop until the boss enrages or a specific condition is met.' }
 ];
 
+/** Formats milliseconds as `m:ss.mmm`, like fflogs. */
+export function formatTime(ms: number): string {
+    const sign = ms < 0 ? '-' : '';
+    const abs = Math.abs(ms);
+    const minutes = Math.floor(abs / 60000);
+    const seconds = Math.floor(abs % 60000 / 1000).toString().padStart(2, '0');
+    const millis = Math.round(abs % 1000).toString().padStart(3, '0');
+
+    return `${sign}${minutes}:${seconds}.${millis}`;
+}
+
 export interface TextRange {
     text: string;
     range: Range;

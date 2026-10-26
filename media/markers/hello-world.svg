@@ -1,0 +1,27 @@
+<svg viewBox="0 0 1000 1000" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <defs>
+        <radialGradient id="centerGradient">
+            <stop offset="0%" stop-color="#fffff3"></stop>
+            <stop offset="40%" stop-color="#fffff3"></stop>
+            <stop offset="50%" stop-color="#ffdb59cc"></stop>
+            <stop offset="100%" stop-color="#eb6f3100"></stop>
+        </radialGradient>
+        <radialGradient id="glowGradient">
+            <stop offset="0%" stop-color="#eb6f3100"></stop>
+            <stop offset="48%" stop-color="#eb6f3100"></stop>
+            <stop offset="50%" stop-color="#ffdb59cc"></stop>
+            <stop offset="52%" stop-color="#eb6f3100"></stop>
+            <stop offset="100%" stop-color="#eb6f3100"></stop>
+        </radialGradient>
+    </defs>
+    <circle cx="500" cy="500" r="497" fill="#120505cc" stroke="#ffdb59" stroke-width="6"></circle>
+    <circle cx="500" cy="500" r="420" fill="none" stroke="#ffdb59" stroke-width="6"></circle>
+    <circle cx="500" cy="500" r="340" fill="none" stroke="#ffdb59aa" stroke-width="6"></circle>
+    <circle cx="500" cy="500" r="260" fill="none" stroke="#ffdb5966" stroke-width="6"></circle>
+    <path d="M500 5L500 995M150 150L850 850M5 500L995 500M150 850L850 150" fill="none" stroke="#ffdb59" stroke-width="6"></path>
+    <circle cx="500" cy="500" r="230" fill="url(#glowGradient)" transform="matrix(1.0000000000000002 0 0 1.0000000000000002 0 1.8189894035458565e-12)" opacity="0">
+        
+        
+    </circle>
+    <circle cx="500" cy="500" r="300" fill="url(#centerGradient)"></circle>
+</svg>

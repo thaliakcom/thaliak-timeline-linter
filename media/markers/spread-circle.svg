@@ -1,0 +1,21 @@
+<svg viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <radialGradient id="spread_circle_outer">
+      <stop offset="0%" stop-color="#c854ba00"></stop>
+      <stop offset="77%" stop-color="#c854ba00"></stop>
+      <stop offset="90%" stop-color="#e965da9b"></stop>
+      <stop offset="100%" stop-color="#ffdbfb"></stop>
+    </radialGradient>
+    <radialGradient id="spread_circle_inner">
+      <stop offset="0%" stop-color="#c854ba00"></stop>
+      <stop offset="80%" stop-color="#c854ba00"></stop>
+      <stop offset="93%" stop-color="#e965da9b"></stop>
+      <stop offset="100%" stop-color="#e87edc"></stop>
+    </radialGradient>
+  </defs>
+  <circle cx="50" cy="50" r="50" fill="url(#spread_circle_outer)"></circle>
+  <circle cx="50" cy="50" r="46.7752799987793" fill="url(#spread_circle_inner)" transform="matrix(1 0 0 1 1.4210854715202004e-14 2.2737367544323206e-13)" opacity="0.691128">
+    
+    
+  </circle>
+</svg>

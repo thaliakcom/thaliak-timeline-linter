@@ -13,6 +13,7 @@ import {
     ServerOptions,
     TransportKind
 } from 'vscode-languageclient/node';
+import { registerOutlineView } from './outline-view';
 
 let client: LanguageClient;
 
@@ -52,7 +53,9 @@ export function activate(context: ExtensionContext) {
     );
 
     // Start the client. This will also launch the server
-    client.start();
+    const started = client.start();
+
+    registerOutlineView(context, client, started);
 
     vscode.workspace.findFiles('**/schemas/raid.schema.json', '**/node_modules', 1)
         .then(uris => uris.forEach(uri => vscode.workspace.openTextDocument(uri)));

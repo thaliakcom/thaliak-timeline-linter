@@ -1,0 +1,5 @@
+<svg viewBox="-6 -6 112 112" xmlns="http://www.w3.org/2000/svg">
+  <!-- The boss at the bottom, which the line comes out of. -->
+  <circle cx="50" cy="100" r="22" fill="#c88454" fill-opacity="0.35" stroke="#fce76e" stroke-opacity="0.5" stroke-width="6" />
+  <rect x="27.5" width="45" height="80" fill="#c88454" fill-opacity="0.7" stroke="#fce76e" stroke-width="8" />
+</svg>

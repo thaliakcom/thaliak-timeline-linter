@@ -1,0 +1,20 @@
+<svg viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <linearGradient id="flare_fill" spreadMethod="reflect">
+      <stop offset="0%" stop-color="#cfebfe"></stop>
+      <stop offset="100%" stop-color="#f5feff"></stop>
+    </linearGradient>
+    <path id="arrow" d="M0 50L20 35,25 40,12 50,25 60,20 65Z" fill="url(#flare_fill)" opacity="0.7">
+        
+    </path>
+  </defs>
+  <g transform="rotate(-90 50 50)"><path d="M0 50L20 35,25 40,12 50,25 60,20 65Z" fill="url(#flare_fill)" opacity="0.7" transform="matrix(1 0 0 1 0 1.4210854715202004e-14)">
+        
+    </path></g>
+  <g transform="rotate(150 50 50)"><path d="M0 50L20 35,25 40,12 50,25 60,20 65Z" fill="url(#flare_fill)" opacity="0.7" transform="matrix(1 0 0 1 0 -2.2737367544323206e-13)">
+        
+    </path></g>
+  <g transform="rotate(30 50 50)"><path d="M0 50L20 35,25 40,12 50,25 60,20 65Z" fill="url(#flare_fill)" opacity="0.7" transform="matrix(1 0 0 1 0 4.547473508864641e-13)">
+        
+    </path></g>
+</svg>

@@ -1,0 +1,57 @@
+<svg viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <linearGradient id="rotate_cw_fill" gradientTransform="matrix(-0.809011985171767 0.5877921468073869 -0.5877921468073869 -0.809011985171767 1.1984020659895769 0.6106099191821901)">
+      <stop offset="0%" stop-color="#fffbc3" stop-opacity="1"></stop>
+      <stop offset="20%" stop-color="#fbb173" stop-opacity="0"></stop>
+      <stop offset="90%" stop-color="#fbb173" stop-opacity="0"></stop>
+      <stop offset="100%" stop-color="#fbb173" stop-opacity="1"></stop>
+      
+    </linearGradient>
+    <path id="arrow" d="M10 21L10 17,0 25,10 33,10 29,5 25Z">
+      
+      
+    </path>
+  </defs>
+  <circle cx="50" cy="50" r="40" stroke-width="1" stroke="#ede9e655" fill="url(#rotate_cw_fill)"></circle>
+  <g fill="#1a0f09" opacity="0.9" transform="rotate(80 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472627 -0.30902104687887594 0.30902104687887594 0.9510551995472627 45.05719067401128 67.3779541840525)" opacity="1">
+      
+      
+    </path></g>
+  <g fill="#21130b" opacity="0.8" transform="rotate(60 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472628 -0.3090210468788759 0.3090210468788759 0.9510551995472628 45.057190674011736 67.37795418405278)" opacity="1">
+      
+      
+    </path></g>
+  <g fill="#382113" opacity="0.7" transform="rotate(40 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472626 -0.3090210468788759 0.3090210468788759 0.9510551995472626 45.05719067401128 67.3779541840529)" opacity="1">
+      
+      
+    </path></g>
+  <g fill="#915530" opacity="0.5" transform="rotate(20 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472627 -0.30902104687887594 0.30902104687887594 0.9510551995472627 45.05719067401117 67.37795418405244)" opacity="1">
+      
+      
+    </path></g>
+  <g fill="#de7f45" opacity="0.3" transform="rotate(0 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472627 -0.30902104687887594 0.30902104687887594 0.9510551995472627 45.05719067401132 67.37795418405267)" opacity="1">
+      
+      
+    </path></g>
+
+  <g fill="#1a0f09" opacity="0.9" transform="rotate(270 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472627 -0.30902104687887594 0.30902104687887594 0.9510551995472627 45.05719067401128 67.3779541840526)" opacity="1">
+      
+      
+    </path></g>
+  <g fill="#21130b" opacity="0.8" transform="rotate(250 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472627 -0.3090210468788759 0.3090210468788759 0.9510551995472627 45.05719067401128 67.37795418405267)" opacity="1">
+      
+      
+    </path></g>
+  <g fill="#382113" opacity="0.7" transform="rotate(230 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472626 -0.30902104687887594 0.30902104687887594 0.9510551995472626 45.05719067401151 67.37795418405278)" opacity="1">
+      
+      
+    </path></g>
+  <g fill="#915530" opacity="0.5" transform="rotate(210 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472628 -0.309021046878876 0.309021046878876 0.9510551995472628 45.05719067401151 67.37795418405267)" opacity="1">
+      
+      
+    </path></g>
+  <g fill="#de7f45" opacity="0.3" transform="rotate(190 50 50)"><path d="M10 21L10 17,0 25,10 33,10 29,5 25Z" transform="matrix(0.9510551995472627 -0.3090210468788759 0.3090210468788759 0.9510551995472627 45.05719067401128 67.37795418405244)" opacity="1">
+      
+      
+    </path></g>
+</svg>

@@ -3,18 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { getAtPathIfType, getIfType } from './util';
-
-/** Formats milliseconds as `m:ss.mmm`, like fflogs. */
-function formatTime(ms: number): string {
-    const sign = ms < 0 ? '-' : '';
-    const abs = Math.abs(ms);
-    const minutes = Math.floor(abs / 60000);
-    const seconds = Math.floor(abs % 60000 / 1000).toString().padStart(2, '0');
-    const millis = Math.round(abs % 1000).toString().padStart(3, '0');
-
-    return `${sign}${minutes}:${seconds}.${millis}`;
-}
+import { formatTime, getAtPathIfType, getIfType } from './util';
 
 /**
  * Shows the `at` of timeline items as a timestamp (children's as an offset with `+`, since

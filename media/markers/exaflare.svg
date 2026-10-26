@@ -1,0 +1,34 @@
+<svg viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <radialGradient id="exaflare_fill">
+      <stop offset="0%" stop-color="#fffbc3" stop-opacity="0.2"></stop>
+      <stop offset="80%" stop-color="#fbb173" stop-opacity="0.2"></stop>
+      <stop offset="100%" stop-color="#fbb173" stop-opacity="1"></stop>
+    </radialGradient>
+  </defs>
+  <circle cx="50" cy="50" r="50" fill="url(#exaflare_fill)"></circle>
+  <path d="M0 50L40 0,62 0,22 50,62 100,40 100Z" transform="matrix(0.40000000596046453 0 0 0.40000000596046453 49.14284515380861 30.000000000000227)" opacity="0.500002" fill="rgb(255, 199, 150)">
+    
+    
+    
+  </path>
+  <path d="M0 50L40 0,62 0,22 50,62 100,40 100Z" transform="matrix(0.40000000596046453 0 0 0.40000000596046453 31.651447296142592 30.000000000000227)" opacity="0.780701" fill="rgb(255, 220, 189)">
+    
+    
+    
+  </path>
+  <path d="M0 50L40 0,62 0,22 50,62 100,40 100Z" fill="rgb(255, 235, 217)" transform="matrix(0.40000000596046453 0 0 0.40000000596046453 23.478904724121108 30.000000000000227)" opacity="0.884486">
+    
+    
+    
+  </path>
+  <path d="M0 50L40 0,62 0,22 50,62 100,40 100Z" fill="rgb(255, 244, 235)" transform="matrix(0.40000000596046453 0 0 0.40000000596046453 20.00809478759767 30.000000000000227)" opacity="0.899996">
+    
+    
+    
+  </path>
+  <path d="M0 50L40 0,55 0,15 50,55 100,40 100Z" fill="#fffefd" transform="matrix(0.699999988079071 0 0 0.699999988079071 15 15)" opacity="0.9">
+    
+    
+  </path>
+</svg>

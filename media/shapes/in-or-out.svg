@@ -1,0 +1,10 @@
+<svg viewBox="-6 -6 112 112" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- The halves on either side of the diagonal from the bottom left to the top right corner. -->
+    <clipPath id="top-left"><path d="M-6,-6 L106,-6 -6,106 Z" /></clipPath>
+    <clipPath id="bottom-right"><path d="M106,-6 L106,106 -6,106 Z" /></clipPath>
+  </defs>
+  <circle cx="50" cy="50" r="50" fill="#c88454" fill-opacity="0.7" stroke="#fce76e" stroke-width="8" clip-path="url(#top-left)" />
+  <path d="M0,50 A50,50 0 1,0 100,50 A50,50 0 1,0 0,50 Z M23,50 A27,27 0 1,1 77,50 A27,27 0 1,1 23,50 Z" fill="#c88454" fill-opacity="0.7" fill-rule="evenodd" stroke="#fce76e" stroke-width="8" clip-path="url(#bottom-right)" />
+  <line x1="0" y1="100" x2="100" y2="0" stroke="#fce76e" stroke-width="3" />
+</svg>

@@ -1,0 +1,32 @@
+<svg viewBox="0 0 70 80" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <linearGradient id="line_stack_fill" spreadMethod="reflect">
+      <stop offset="0%" stop-color="#f2946c" stop-opacity="0.7"></stop>
+      <stop offset="30%" stop-color="#fef88b"></stop>
+      <stop offset="50%" stop-color="#fef88b"></stop>
+      <stop offset="80%" stop-color="#fffdfe"></stop>
+      <stop offset="100%" stop-color="#fffdfe"></stop>
+    </linearGradient>
+    <path id="arrow" d="M0 40L15 40,25 50,15 60,0 60,10 50Z" fill="url(#line_stack_fill)" opacity="0.7">
+        
+    </path>
+  </defs>
+  <g transform="translate(0 -35)"><path d="M0 40L15 40,25 50,15 60,0 60,10 50Z" fill="url(#line_stack_fill)" opacity="0.7" transform="matrix(0.9999999999999999 0 0 0.9999999999999999 0 0)">
+        
+    </path></g>
+  <g transform="translate(0 -10)"><path d="M0 40L15 40,25 50,15 60,0 60,10 50Z" fill="url(#line_stack_fill)" opacity="0.7" transform="matrix(0.9999999999999999 0 0 0.9999999999999999 0 0)">
+        
+    </path></g>
+  <g transform="translate(0 15)"><path d="M0 40L15 40,25 50,15 60,0 60,10 50Z" fill="url(#line_stack_fill)" opacity="0.7" transform="matrix(0.9999999999999999 0 0 0.9999999999999999 0 0)">
+        
+    </path></g>
+  <g transform="rotate(180 35 50) translate(0 35)"><path d="M0 40L15 40,25 50,15 60,0 60,10 50Z" fill="url(#line_stack_fill)" opacity="0.7" transform="matrix(0.9999999999999999 0 0 0.9999999999999999 0 0)">
+        
+    </path></g>
+  <g transform="rotate(180 35 50) translate(0 10)"><path d="M0 40L15 40,25 50,15 60,0 60,10 50Z" fill="url(#line_stack_fill)" opacity="0.7" transform="matrix(0.9999999999999999 0 0 0.9999999999999999 0 0)">
+        
+    </path></g>
+  <g transform="rotate(180 35 50) translate(0 -15)"><path d="M0 40L15 40,25 50,15 60,0 60,10 50Z" fill="url(#line_stack_fill)" opacity="0.7" transform="matrix(0.9999999999999999 0 0 0.9999999999999999 0 0)">
+        
+    </path></g>
+</svg>

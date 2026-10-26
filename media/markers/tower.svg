@@ -1,0 +1,29 @@
+<svg viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <radialGradient id="tower_pulse">
+      <stop offset="0%" stop-color="#fce76e00"></stop>
+      <stop offset="85%" stop-color="#fce76e00"></stop>
+      <stop offset="97%" stop-color="#e4b57b"></stop>
+      <stop offset="100%" stop-color="#fce76e00"></stop>
+    </radialGradient>
+  </defs>
+  <circle cx="50" cy="50" r="0" fill="url(#tower_pulse)" transform="matrix(1 0 0 1 1.4210854715202004e-14 2.2737367544323206e-13)" opacity="0">
+    
+    
+  </circle>
+  <!-- <path d="M50,50 m0,-6.5 l3,3 -3,3 -3,-3Z m3.5,3.5 l3,3 -3,3 -3,-3Z m-3.5,3.5 l3,3 -3,3 -3,-3Z m-3.5,-3.5 l3,3 -3,3 -3,-3Z" fill="#fef4cf" /> -->
+  <circle cx="50" cy="50" r="9.5" fill="none" stroke="#fef4cf" stroke-dasharray="15.833333 3.958333333" stroke-width="2" transform="matrix(-1 0 0 -1 100.00000000000001 100.00000000000023)" opacity="1">
+    
+  </circle>
+  <circle cx="50" cy="50" r="12" fill="none" stroke="#fef4cf" stroke-dasharray="20 5" transform="matrix(-1 0 0 -1 100.00000000000001 100.00000000000023)" opacity="1">
+    
+  </circle>
+  <circle cx="50" cy="50" r="21" fill="none" stroke="#e8c292" stroke-width="0.5"></circle>
+  <circle cx="50" cy="50" r="26" fill="none" stroke="#fef4cf" stroke-dasharray="30 10" transform="matrix(-1 0 0 -1 100.00000000000001 100.00000000000023)" opacity="1">
+    
+  </circle>
+  <circle cx="50" cy="50" r="42" fill="none" stroke="#e4b57b" stroke-dasharray="34 10" transform="matrix(-1 0 0 -1 100.00000000000001 100.00000000000023)" opacity="1">
+    
+  </circle>
+  <circle cx="50" cy="50" r="49" fill="none" stroke="#fef4cf" stroke-width="1.5"></circle>
+</svg>

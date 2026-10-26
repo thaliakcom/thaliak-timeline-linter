@@ -32,6 +32,7 @@ import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, T
 import documentColorProvider from './document-color-provider';
 import colorPresentationProvider from './color-presentation-provider';
 import inlayHintProvider from './inlay-hint-provider';
+import outlineProvider from './outline-provider';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -163,6 +164,9 @@ documents.onDidOpen(e => {
         if (documentCache.getOpenDocument() != null) {
             connection.languages.diagnostics.refresh();
         }
+    } else {
+        // Lets the client's timeline tree view retry an outline request that came before the document.
+        connection.sendNotification('thaliak/documentOpened', { uri: e.document.uri });
     }
 });
 
@@ -237,6 +241,7 @@ connection.onCodeAction(codeActionProvider(documents, documentCache, globalSetti
 connection.onDocumentColor(documentColorProvider(documents, documentCache, globalSettings));
 connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));
 connection.languages.inlayHint.on(inlayHintProvider(documents, documentCache, globalSettings));
+connection.onRequest('thaliak/outline', outlineProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events
