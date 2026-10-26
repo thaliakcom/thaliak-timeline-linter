@@ -91,7 +91,8 @@
             "thaliak": [
                 {
                     "id": "thaliak.outline",
-                    "name": "Timeline"
+                    "name": "Timeline",
+                    "icon": "media/activity-bar.svg"
                 }
             ]
         },
