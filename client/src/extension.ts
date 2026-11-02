@@ -56,8 +56,8 @@ export function activate(context: ExtensionContext) {
 
     // Options to control the language client
     const clientOptions: LanguageClientOptions = {
-        // Register the server for plain text documents, and for the raid schema, which the looks and animations are read from
-        documentSelector: [{ language: 'yaml' }, { language: 'json', pattern: '**/schemas/raid.schema.json' }],
+        // Register the server for plain text documents, `.diagram` files, and the schema of `.diagram` files
+        documentSelector: [{ language: 'yaml' }, { language: 'thaliak-diagram' }, { language: 'json', pattern: '**/schemas/diagram.schema.json' }],
         // Hovers lay out their header (icon, name, caption) with HTML, like thaliak's tooltips
         markdown: { supportHtml: true },
         // A function, so that a restart picks up changed settings
@@ -77,7 +77,7 @@ export function activate(context: ExtensionContext) {
 
     registerOutlineView(context, client, started);
 
-    vscode.workspace.findFiles('**/schemas/raid.schema.json', '**/node_modules', 1)
+    vscode.workspace.findFiles('**/schemas/diagram.schema.json', '**/node_modules', 1)
         .then(uris => uris.forEach(uri => vscode.workspace.openTextDocument(uri)));
 
     vscode.workspace.findFiles('**/enums/*.yaml', '**/node_modules')

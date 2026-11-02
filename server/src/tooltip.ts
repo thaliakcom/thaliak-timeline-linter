@@ -187,7 +187,7 @@ export async function getStatusIcon(id: number, iconOverride: unknown, stacks: n
 }
 
 /** The hitbox radius in yalms of the battle NPC `source` (thaliak's `getHitboxRadius()`). */
-async function hitboxRadius(source: number | undefined): Promise<number> {
+export async function hitboxRadius(source: number | undefined): Promise<number> {
     const bnpcBase = source != null ? await getGameBNpcBase(source) : null;
 
     if (bnpcBase == null) {
@@ -209,7 +209,7 @@ async function hitboxRadius(source: number | undefined): Promise<number> {
 }
 
 /** The action's `effectRange`, plus the caster's hitbox radius for padded cast types (thaliak's `paddedEffectRange()`). */
-function paddedEffectRange(action: GameAction, radius: number): number {
+export function paddedEffectRange(action: GameAction, radius: number): number {
     const padding = action.effectRange > 0 && PADDED_CAST_TYPES.includes(action.castType) ? radius : 0;
 
     return Math.round((action.effectRange + padding) * 1000) / 1000;

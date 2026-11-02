@@ -16,8 +16,8 @@ interface ResolvedAction {
 }
 
 /**
- * Builds the timeline tree view of a timeline file: its `status`, `actions`, `timeline` (grouped
- * by `<phase>`) and `graphing` sections, in the order they appear in the file. `null` if the
+ * Builds the timeline tree view of a timeline file: its `status`, `actions` and `timeline` (grouped
+ * by `<phase>`) sections, in the order they appear in the file. `null` if the
  * file isn't a timeline. Status rows get their in-game icon, if game data is on.
  */
 export default function outlineProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: OutlineParams) => Promise<OutlineNode[] | null> {
@@ -225,61 +225,6 @@ export default function outlineProvider(documents: TextDocuments<TextDocument>, 
             return nodes;
         }
 
-        function graphingNodes(graphing: yaml.YAMLMap): OutlineNode[] {
-            const nodes: OutlineNode[] = [];
-
-            for (const pair of graphing.items) {
-                if (!yaml.isScalar(pair.key) || pair.key.range == null || !yaml.isMap(pair.value)) {
-                    continue;
-                }
-
-                if (pair.key.value === 'elements') {
-                    nodes.push(sectionNode(pair, elementNodes(pair.value)));
-                } else if (pair.key.value === 'graphs') {
-                    nodes.push(sectionNode(pair, graphNodes(pair.value)));
-                }
-            }
-
-            return nodes;
-        }
-
-        function elementNodes(elements: yaml.YAMLMap): OutlineNode[] {
-            return elements.items.filter(pair => yaml.isScalar(pair.key) && pair.key.range != null).map(pair => {
-                const value = yaml.isMap(pair.value) ? pair.value : null;
-                const type = value?.get('type');
-                const rawLook = value?.get('look');
-                const look = yaml.isMap(rawLook) ? rawLook.get('type') : rawLook;
-
-                return {
-                    label: String((pair.key as yaml.Scalar).value),
-                    description: typeof look === 'string' ? look : undefined,
-                    icon: { kind: 'element', key: String((pair.key as yaml.Scalar).value), type: typeof type === 'string' ? type : undefined, look: typeof look === 'string' ? look : undefined },
-                    range: getRange(textDocument!, pairRange(pair)),
-                    selection: getRange(textDocument!, keyRange(pair)),
-                    references: textDocument!.positionAt(keyRange(pair)[0])
-                };
-            });
-        }
-
-        function graphNodes(graphs: yaml.YAMLMap): OutlineNode[] {
-            return graphs.items.filter(pair => yaml.isScalar(pair.key) && pair.key.range != null).map(pair => {
-                const steps = yaml.isSeq(pair.value) ? pair.value.items : [];
-
-                return {
-                    label: String((pair.key as yaml.Scalar).value),
-                    icon: { kind: 'graph' },
-                    range: getRange(textDocument!, pairRange(pair)),
-                    selection: getRange(textDocument!, keyRange(pair)),
-                    references: textDocument!.positionAt(keyRange(pair)[0]),
-                    children: steps.filter(step => yaml.isNode(step) && step.range != null).map((step, i) => {
-                        const stepRange = getRange(textDocument!, (step as yaml.Node).range!);
-
-                        return { label: `step ${i + 1}`, icon: { kind: 'step' }, range: stepRange, selection: stepRange };
-                    })
-                };
-            });
-        }
-
         const sections: OutlineNode[] = [];
 
         for (const pair of document.contents.items) {
@@ -293,8 +238,6 @@ export default function outlineProvider(documents: TextDocuments<TextDocument>, 
                 sections.push(sectionNode(pair, actionNodes(pair.value)));
             } else if (pair.key.value === 'timeline' && yaml.isSeq(pair.value)) {
                 sections.push(sectionNode(pair, timelineNodes(pair.value)));
-            } else if (pair.key.value === 'graphing' && yaml.isMap(pair.value)) {
-                sections.push(sectionNode(pair, graphingNodes(pair.value)));
             }
         }
 

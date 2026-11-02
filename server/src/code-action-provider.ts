@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { fixableDiagnostics, ThaliakTimelineLinterSettings } from './server';
-import { getIfType, getLineAt, getLineLength, getRange, getRangeFromNode, isInRange, isOffsetInRange, isPositionInRange, isPositionInYamlRange } from './util';
+import { getIfType, getLineLength, getRange, getRangeFromNode, isInRange, isOffsetInRange, isPositionInRange, isPositionInYamlRange } from './util';
 
 const stringifyOptions: yaml.ToStringOptions = {
     collectionStyle: 'block',
@@ -257,88 +257,10 @@ export function childActionProvider(documents: TextDocuments<TextDocument>, docu
     return codeActions;
 }
 
-function graphingActionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, params: CodeActionParams): CodeAction[] {
-    const textDocument = documents.get(params.textDocument.uri);
-    const document = documentCache.get(params.textDocument);
-    
-    if (textDocument == null || document == null) {
-        return [];
-    }
-
-    const graphing = getIfType(document, 'graphing', yaml.isMap);
-
-    if (graphing == null || !isInRange(textDocument, params.range, graphing.range!)) {
-        return [];
-    }
-    
-    const codeActions: CodeAction[] = [];
-    const { lineBefore, lineAfter } = getLineAt(textDocument, params.range.start);
-    const squareBracketIndex = lineBefore.lastIndexOf('[');
-    const squareBracketIndexEnd = lineAfter.lastIndexOf(']');
-
-    if (squareBracketIndex > -1 && squareBracketIndexEnd > -1) {
-        const arrayString = lineBefore.slice(squareBracketIndex).concat(lineAfter.slice(0, squareBracketIndexEnd + 1));
-        let json: unknown[];
-
-        try {
-            json = JSON.parse(arrayString);
-        } catch {
-            json = [];
-        }
-
-        if ((json.length === 2 || json.length === 3) && json.every(x => typeof x === 'number')) {
-            codeActions.push({
-                title: `Convert to object notation`,
-                kind: `${CodeActionKind.RefactorInline}.convert-notation.array`,
-                edit: {
-                    changes: {
-                        [params.textDocument.uri]: [{
-                            range: { start: { line: params.range.start.line, character: squareBracketIndex }, end: { line: params.range.start.line, character: lineBefore.length + squareBracketIndexEnd + 1 } },
-                            newText: json.length === 3 ? `{ x: ${json[0]}, y: ${json[1]}, rotate: ${json[2]} }` : `{ x: ${json[0]}, y: ${json[1]} }`
-                        }]
-                    }
-                }
-            });
-        }
-    } else {
-        const curlyBracketIndex = lineBefore.lastIndexOf('{');
-        const curlyBracketIndexEnd = lineAfter.lastIndexOf('}');
-
-        if (curlyBracketIndex > -1 && curlyBracketIndexEnd > -1) {
-            const objectString = lineBefore.slice(curlyBracketIndex).concat(lineAfter.slice(0, curlyBracketIndexEnd + 1));
-            let json: Record<string, unknown>;
-    
-            try {
-                json = yaml.parse(objectString);
-            } catch {
-                json = {};
-            }
-    
-            if (typeof json.x === 'number' && typeof json.y === 'number') {
-                codeActions.push({
-                    title: `Convert to array notation`,
-                    kind: `${CodeActionKind.RefactorInline}.convert-notation.object`,
-                    edit: {
-                        changes: {
-                            [params.textDocument.uri]: [{
-                                range: { start: { line: params.range.start.line, character: curlyBracketIndex }, end: { line: params.range.start.line, character: lineBefore.length + curlyBracketIndexEnd + 1 } },
-                                newText: typeof json.rotate === 'number' ? `[${json.x}, ${json.y}, ${json.rotate}]` : `[${json.x}, ${json.y}]`
-                            }]
-                        }
-                    }
-                });
-            }
-        }
-    }
-
-    return codeActions;
-}
-
 export default function codeActionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CodeActionParams) => (Command | CodeAction)[] | null {
     return (params) => {
         return [
             ...autoFixerProvider(params),
-            ...graphingActionProvider(documents, documentCache, params),
             ...childActionProvider(documents, documentCache, params)
         ];
     };

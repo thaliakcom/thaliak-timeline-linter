@@ -29,12 +29,17 @@ import { getParserCache } from './parser-cache';
 import referenceProvider from './reference-provider';
 import { renameProvider, prepareRenameProvider } from './rename-provider';
 import type { Common, DamageTypes, MechanicShapes, MechanicTypes, StatusTypes, Terms } from './types/enum-schema';
+import type { DiagramSchema } from './types/diagram-schema';
+import type { OutlineNode, OutlineParams } from './types/outline';
 import documentColorProvider from './document-color-provider';
 import colorPresentationProvider from './color-presentation-provider';
 import inlayHintProvider from './inlay-hint-provider';
 import outlineProvider from './outline-provider';
 import statusIconProvider from './status-icon-provider';
 import { configureIronworks, type IronworksOptions } from './ironworks';
+import { isDiagramUri } from './diagram-context';
+import { lintDiagram } from './diagram-linter';
+import { diagramCompletionProvider, diagramDefinitionProvider, diagramHoverProvider, diagramInlayHintProvider, diagramOutlineProvider, diagramReferenceProvider, diagramStatusIconProvider } from './diagram-providers';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -119,14 +124,6 @@ export interface PropertyOrder {
     relations: Map<string, Map<string, Range>>;
 }
 
-/** The looks and animations of diagram elements, from `schemas/raid.schema.json`. */
-export interface DiagramEnums {
-    /** The looks by kind of element (the `LookType`, `TetherLookType` and `MarkerLookType` enums). */
-    looks: Record<'aoes' | 'tethers' | 'markers', string[]>;
-    /** The element types each animation is allowed on (`x-elements` of `EnterAnimation` and `ExitAnimation`): all of them, only shapes, or a list of types. */
-    animations: Record<'enter' | 'exit', Record<string, 'all' | 'shapes' | string[]>>;
-}
-
 export interface LinterOptions extends ThaliakTimelineLinterSettings {
     enums: {
         'common'?: ParsedYAML<Common>,
@@ -137,7 +134,8 @@ export interface LinterOptions extends ThaliakTimelineLinterSettings {
         'status-types'?: ParsedYAML<StatusTypes>,
         'terms'?: ParsedYAML<Terms>
     };
-    diagramEnums?: DiagramEnums;
+    /** From `schemas/diagram.schema.json`, once the client has opened it. */
+    diagramSchema?: DiagramSchema;
     propOrder: Map<string, PropertyOrder>;
 }
 
@@ -181,6 +179,9 @@ documents.onDidChangeContent(e => {
         if (documentCache.getOpenDocument() != null) {
             connection.languages.diagnostics.refresh();
         }
+    } else if (e.document.uri.endsWith('.yaml') && documents.get(e.document.uri.replace(/\.yaml$/, '.diagram')) != null) {
+        // A `.diagram` file's diagnostics depend on its timeline.
+        connection.languages.diagnostics.refresh();
     }
 });
 
@@ -196,7 +197,12 @@ connection.onShutdown(() => {
 
 connection.languages.diagnostics.on(async (params) => {
     const document = documents.get(params.textDocument.uri);
-    if (document !== undefined && document.getText().trimStart().startsWith('id:')) {
+    if (document !== undefined && isDiagramUri(document.uri)) {
+        return {
+            kind: DocumentDiagnosticReportKind.Full,
+            items: await lintDiagram(document, documents, documentCache.getLinterOptions(globalSettings))
+        } satisfies DocumentDiagnosticReport;
+    } else if (document !== undefined && document.getText().trimStart().startsWith('id:')) {
         return {
             kind: DocumentDiagnosticReportKind.Full,
             items: await validateTextDocument(document)
@@ -234,19 +240,27 @@ connection.onDidChangeWatchedFiles(_change => {
     connection.console.log('File change event received.');
 });
 
-connection.onCompletion(completionProvider(documents, documentCache, globalSettings));
+/** Sends requests about `.diagram` files to `diagram`, and all others to `timeline`. */
+function byFileType<P, R>(uriOf: (params: P) => string, diagram: (params: P) => R, timeline: (params: P) => R): (params: P) => R {
+    return params => isDiagramUri(uriOf(params)) ? diagram(params) : timeline(params);
+}
 
-connection.onHover(hoverProvider(documents, documentCache, globalSettings));
-connection.onDefinition(definitionProvider(documents, documentCache, globalSettings));
-connection.onReferences(referenceProvider(documents, documentCache, globalSettings));
+const textDocumentUri = (params: { textDocument: { uri: string } }) => params.textDocument.uri;
+const outlineUri = (params: { uri: string }) => params.uri;
+
+connection.onCompletion(byFileType(textDocumentUri, diagramCompletionProvider(documents, documentCache, globalSettings), completionProvider(documents, documentCache, globalSettings)));
+
+connection.onHover(byFileType(textDocumentUri, diagramHoverProvider(documents, documentCache, globalSettings), hoverProvider(documents, documentCache, globalSettings)));
+connection.onDefinition(byFileType(textDocumentUri, diagramDefinitionProvider(documents), definitionProvider(documents, documentCache, globalSettings)));
+connection.onReferences(byFileType(textDocumentUri, diagramReferenceProvider(documents), referenceProvider(documents, documentCache, globalSettings)));
 connection.onRenameRequest(renameProvider(documents, documentCache, globalSettings));
 connection.onPrepareRename(prepareRenameProvider(documents, documentCache, globalSettings));
 connection.onCodeAction(codeActionProvider(documents, documentCache, globalSettings));
 connection.onDocumentColor(documentColorProvider(documents, documentCache, globalSettings));
 connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));
-connection.languages.inlayHint.on(inlayHintProvider(documents, documentCache, globalSettings));
-connection.onRequest('thaliak/outline', outlineProvider(documents, documentCache, globalSettings));
-connection.onRequest('thaliak/statusIcons', statusIconProvider(documents, documentCache, globalSettings));
+connection.languages.inlayHint.on(byFileType(textDocumentUri, diagramInlayHintProvider(documents), inlayHintProvider(documents, documentCache, globalSettings)));
+connection.onRequest('thaliak/outline', byFileType<OutlineParams, Promise<OutlineNode[] | null>>(outlineUri, async params => diagramOutlineProvider(documents)(params), outlineProvider(documents, documentCache, globalSettings)));
+connection.onRequest('thaliak/statusIcons', byFileType(outlineUri, diagramStatusIconProvider(documents, documentCache, globalSettings), statusIconProvider(documents, documentCache, globalSettings)));
 connection.onRequest('thaliak/tooltip', tooltipProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection

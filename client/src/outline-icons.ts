@@ -20,7 +20,7 @@ const SHAPE_FILES: Record<string, string> = {
     'star': 'star'
 };
 
-/** The icon file in `media/shapes` of each graphing element type drawn as an AoE. */
+/** The icon file in `media/shapes` of each `.diagram` element type drawn as an AoE. */
 const ELEMENT_SHAPE_FILES: Record<string, string> = {
     'donut': 'donut',
     'ellipse': 'circle',
@@ -33,15 +33,13 @@ const SECTION_CODICONS: Record<string, string> = {
     'status': 'pulse',
     'actions': 'flame',
     'timeline': 'history',
-    'graphing': 'graph',
-    'elements': 'symbol-misc',
-    'graphs': 'graph'
+    'elements': 'symbol-misc'
 };
 
 /** The keys of the untyped elements that are drawn as the boss (`media/boss.svg`, from `thaliak/www/images/boss.svg`). */
 const BOSS_KEYS = ['boss', 'enemy'];
 
-/** The codicons of the other graphing element types. Elements without a type get `person`. */
+/** The codicons of the other `.diagram` element types. Elements without a type get `person`. */
 const ELEMENT_CODICONS: Record<string, string> = {
     'image': 'file-media',
     'link': 'link',
@@ -100,9 +98,8 @@ export function iconFor(icon: OutlineIcon, extensionUri: vscode.Uri): vscode.The
 
             return new vscode.ThemeIcon(icon.type != null ? ELEMENT_CODICONS[icon.type] ?? 'symbol-misc' : 'person');
         }
-        case 'graph': return new vscode.ThemeIcon('graph');
         case 'phase': return new vscode.ThemeIcon('milestone');
-        case 'step': return new vscode.ThemeIcon('list-ordered');
+        case 'keyframe': return new vscode.ThemeIcon('debug-breakpoint-log');
         case 'section': return new vscode.ThemeIcon(SECTION_CODICONS[icon.name] ?? 'symbol-namespace');
     }
 }

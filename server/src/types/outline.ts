@@ -8,15 +8,15 @@ export type OutlineIcon =
     | { kind: 'status', statusId?: number, dot: boolean, path?: string }
     /** An action, by its mechanic shape (`undefined` for actions without a shape). */
     | { kind: 'shape', shape?: string }
-    /** A graphing element, by its key, its type and, for markers, its look. */
+    /** A `.diagram` element, by its key, its type and, for markers, its look. */
     | { kind: 'element', key: string, type?: string, look?: string }
-    /** A section header, by its key (`status`, `actions`, `timeline`, `graphing`, `elements`, `graphs`). */
+    /** A section header, by its key (`status`, `actions`, `timeline`, `elements`). */
     | { kind: 'section', name: string }
-    | { kind: 'graph' } | { kind: 'phase' } | { kind: 'step' };
+    | { kind: 'phase' } | { kind: 'keyframe' };
 
 /** A row of the timeline tree view. */
 export interface OutlineNode {
-    /** The key, a timestamp (`m:ss.mmm`) or `step n`. */
+    /** The key or a timestamp (`m:ss.mmm`). */
     label: string;
     /** The dimmed text after the label. */
     description?: string;

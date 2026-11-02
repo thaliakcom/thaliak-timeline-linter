@@ -7,6 +7,18 @@ refactors, and has built-in syntax highlighting.
 
 ![Demo](https://github.com/thaliakcom/thaliak-timeline-linter/blob/master/demo.webp?raw=true)
 
+## Diagrams
+
+`.diagram` files next to a timeline get syntax highlighting, the errors thaliak's build would report, completion,
+tooltips, Go to Definition, Find All References, the timeline tree view and hints that show which timeline action a
+time is near. Renaming an action or status in the timeline also renames it in the `.diagram` file.
+
+The language's verbs, clauses and `define` fields, with their descriptions, are read from
+`schemas/diagram.schema.json` in the data repository, so changing them needs no rebuild of the extension.
+
+Sizes and speeds use the size of the fight's arena image, looked for in `www/` in a folder above the file. Without
+game data (below), a telegraph's timing and an action's size aren't checked.
+
 ## Game data (optional)
 
 With [ironworks-cli](https://github.com/thaliakcom/ironworks-cli) installed, the extension shows the

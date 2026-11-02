@@ -3,11 +3,11 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { formatTime, getAtPathIfType, getIfType } from './util';
+import { formatTime, getIfType } from './util';
 
 /**
  * Shows the `at` of timeline items as a timestamp (children's as an offset with `+`, since
- * theirs is relative to the parent) and the number of each step in a graph.
+ * theirs is relative to the parent).
  */
 export default function inlayHintProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: InlayHintParams) => InlayHint[] {
     return (params) => {
@@ -44,18 +44,6 @@ export default function inlayHintProvider(documents: TextDocuments<TextDocument>
 
             if (children != null) {
                 addTimestamps(children, '+');
-            }
-        }
-
-        for (const graph of getAtPathIfType(document, 'graphing.graphs', yaml.isMap)?.items ?? []) {
-            if (!yaml.isSeq(graph.value)) {
-                continue;
-            }
-
-            for (const [i, step] of graph.value.items.entries()) {
-                if (yaml.isNode(step) && inRange(step.range)) {
-                    hints.push({ position: textDocument.positionAt(step.range[0]), label: `step ${i + 1}:`, paddingRight: true });
-                }
             }
         }
 

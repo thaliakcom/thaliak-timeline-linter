@@ -2,7 +2,8 @@ import { PrepareRenameParams, Range, RenameParams, TextDocumentPositionParams, T
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
-import { findPlaceholders, getElementActions, getIfType, getRange, getSymbolAt, SymbolRange } from './util';
+import { diagramOf, occurrencesOf } from './diagram-context';
+import { findPlaceholders, getIfType, getRange, getSymbolAt, SymbolRange } from './util';
 import * as yaml from 'yaml';
 
 export function renameProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: RenameParams) => WorkspaceEdit | null {
@@ -66,12 +67,6 @@ export function renameProvider(documents: TextDocuments<TextDocument>, documentC
                 }
             }
 
-            for (const action of getElementActions(document)) {
-                if (action.value === actionId) {
-                    edits.push(TextEdit.replace(getRange(textDocument, action.range!), params.newName));
-                }
-            }
-
             for (const placeholder of findPlaceholders(textDocument, symbol.text)) {
                 edits.push(TextEdit.replace(placeholder, `a:${params.newName}`));
             }
@@ -89,6 +84,17 @@ export function renameProvider(documents: TextDocuments<TextDocument>, documentC
 
             for (const placeholder of findPlaceholders(textDocument, symbol.text)) {
                 edits.push(TextEdit.replace(placeholder, `s:${params.newName}`));
+            }
+        }
+
+        const diagram = diagramOf(documents, textDocument.uri);
+
+        if (diagram != null) {
+            const kind = symbol.text.startsWith('a:') ? 'action' : 'status';
+            const diagramEdits = occurrencesOf(diagram, kind, symbol.text.slice(2)).map(range => TextEdit.replace(range, params.newName));
+
+            if (diagramEdits.length > 0) {
+                edit.changes![diagram.uri] = diagramEdits;
             }
         }
 

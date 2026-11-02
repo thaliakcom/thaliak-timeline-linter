@@ -80,7 +80,21 @@
                 }
             }
         },
+        "languages": [
+            {
+                "id": "thaliak-diagram",
+                "aliases": ["Thaliak Diagram"],
+                "extensions": [".diagram"],
+                "configuration": "./syntax/diagram.language-configuration.json",
+                "icon": { "light": "./media/diagram-file.svg", "dark": "./media/diagram-file.svg" }
+            }
+        ],
         "grammars": [
+            {
+                "language": "thaliak-diagram",
+                "scopeName": "source.diagram.thaliak",
+                "path": "./syntax/diagram.tmLanguage.json"
+            },
             {
                 "injectTo": [
                     "source.yaml"

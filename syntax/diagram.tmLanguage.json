@@ -1,0 +1,245 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Thaliak Diagram",
+    "scopeName": "source.diagram.thaliak",
+    "patterns": [
+        { "include": "#comment" },
+        { "include": "#define-gradient" },
+        { "include": "#define" },
+        { "include": "#text-statement" },
+        { "include": "#statement" },
+        { "include": "#bare-statement" },
+        { "include": "#time" },
+        { "include": "#continuation" }
+    ],
+    "repository": {
+        "comment": {
+            "match": "//.*$",
+            "name": "comment.line.double-slash.thaliak-diagram"
+        },
+        "define-gradient": {
+            "begin": "^(define)\\s+(gradient)\\s+(\\S+)",
+            "beginCaptures": {
+                "1": { "name": "keyword.other.define.thaliak-diagram" },
+                "2": { "name": "storage.modifier.thaliak-diagram" },
+                "3": { "name": "entity.name.type.thaliak-diagram" }
+            },
+            "end": "^(?=\\S)",
+            "patterns": [
+                { "include": "#comment" },
+                { "include": "#values" }
+            ]
+        },
+        "define": {
+            "begin": "^(define)\\s+(?:(strategy)\\s+)?(\\S+)",
+            "beginCaptures": {
+                "1": { "name": "keyword.other.define.thaliak-diagram" },
+                "2": { "name": "storage.modifier.thaliak-diagram" },
+                "3": { "name": "entity.name.type.thaliak-diagram" }
+            },
+            "end": "^(?=\\S)",
+            "patterns": [
+                { "include": "#comment" },
+                { "include": "#hook" },
+                { "include": "#element-field" },
+                { "include": "#values" }
+            ]
+        },
+        "hook": {
+            "begin": "(?<![\\w-])([+-][a-z][a-z-]*)(:)",
+            "beginCaptures": {
+                "1": { "name": "entity.name.tag.thaliak-diagram" },
+                "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
+            },
+            "end": "$",
+            "patterns": [{ "include": "#arguments" }]
+        },
+        "element-field": {
+            "begin": "(?<![\\w-])(telegraph|flash|use)\\s*(:)",
+            "beginCaptures": {
+                "1": { "name": "entity.name.tag.thaliak-diagram" },
+                "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
+            },
+            "end": "$",
+            "patterns": [
+                { "include": "#comment" },
+                { "include": "#id" }
+            ]
+        },
+        "time": {
+            "match": "^\\d+(?=\\s*(?://|$))",
+            "name": "constant.numeric.time.thaliak-diagram"
+        },
+        "text-statement": {
+            "match": "^(\\d+)?\\s*([+-](?:hint|branch|strategy)|thumbnail)(:)\\s*((?:(?!//).)*)",
+            "captures": {
+                "1": { "name": "constant.numeric.time.thaliak-diagram" },
+                "2": { "name": "entity.name.tag.thaliak-diagram" },
+                "3": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" },
+                "4": { "name": "string.unquoted.plain.thaliak-diagram" }
+            }
+        },
+        "statement": {
+            "begin": "^(\\d+)?\\s*([+-]?[a-z][a-z-]*)(:)",
+            "beginCaptures": {
+                "1": { "name": "constant.numeric.time.thaliak-diagram" },
+                "2": { "name": "entity.name.tag.thaliak-diagram" },
+                "3": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
+            },
+            "end": "$",
+            "patterns": [{ "include": "#arguments" }]
+        },
+        "bare-statement": {
+            "match": "^(\\d+)?\\s*([+-][a-z][a-z-]*|keyframe|skip|thumbnail|set|depart|arrive|move)(?=\\s*(?://|$))",
+            "captures": {
+                "1": { "name": "constant.numeric.time.thaliak-diagram" },
+                "2": { "name": "entity.name.tag.thaliak-diagram" }
+            }
+        },
+        "continuation": {
+            "begin": "^(\\d+)?\\s+(?=\\S)",
+            "beginCaptures": {
+                "1": { "name": "constant.numeric.time.thaliak-diagram" }
+            },
+            "end": "$",
+            "patterns": [{ "include": "#arguments" }]
+        },
+        "arguments": {
+            "patterns": [
+                { "include": "#comment" },
+                { "include": "#string" },
+                { "match": "(?<![\\w#-])(to|on|at|toward|rotate|over|offset|as|hits)(?![\\w#-])", "name": "keyword.operator.expression.thaliak-diagram" },
+                { "match": "(?<![\\w#\\]-])[A-Za-z][\\w-]*(?=\\s+(?:-?\\.?\\d|\"|\\(|\\[|\\{|#|true\\b|false\\b))", "name": "variable.parameter.thaliak-diagram" },
+                { "include": "#placeholder" },
+                { "include": "#scalars" },
+                {
+                    "begin": "\\(",
+                    "beginCaptures": { "0": { "name": "punctuation.section.parens.begin.thaliak-diagram" } },
+                    "end": "\\)",
+                    "endCaptures": { "0": { "name": "punctuation.section.parens.end.thaliak-diagram" } },
+                    "patterns": [{ "include": "#arguments" }]
+                },
+                {
+                    "begin": "\\[",
+                    "beginCaptures": { "0": { "name": "punctuation.section.brackets.begin.thaliak-diagram" } },
+                    "end": "\\]",
+                    "endCaptures": { "0": { "name": "punctuation.section.brackets.end.thaliak-diagram" } },
+                    "patterns": [{ "include": "#arguments" }]
+                },
+                { "include": "#id" },
+                { "include": "#separators" }
+            ]
+        },
+        "id": {
+            "patterns": [
+                {
+                    "begin": "((?:(?<=\\])-)?[A-Za-z][\\w-]*)(#)",
+                    "beginCaptures": {
+                        "1": { "name": "entity.name.type.thaliak-diagram" },
+                        "2": { "name": "punctuation.separator.hash.thaliak-diagram" }
+                    },
+                    "end": "(?=[\\s,)\\]]|//|$)",
+                    "patterns": [{ "include": "#sub-id" }]
+                },
+                { "match": "(?:(?<=\\])-)?[A-Za-z][\\w-]*", "name": "entity.name.type.thaliak-diagram" },
+                { "include": "#placeholder" },
+                { "include": "#template" },
+                { "include": "#separators" }
+            ]
+        },
+        "sub-id": {
+            "patterns": [
+                { "include": "#template" },
+                { "include": "#placeholder" },
+                { "match": "/", "name": "punctuation.separator.slash.thaliak-diagram" },
+                { "match": "\\.\\.", "name": "keyword.operator.range.thaliak-diagram" },
+                { "match": "[\\w*-]+", "name": "entity.name.variable.template.thaliak-diagram" }
+            ]
+        },
+        "template": {
+            "begin": "\\[",
+            "beginCaptures": { "0": { "name": "punctuation.section.brackets.begin.thaliak-diagram" } },
+            "end": "\\]",
+            "endCaptures": { "0": { "name": "punctuation.section.brackets.end.thaliak-diagram" } },
+            "patterns": [
+                { "include": "#separators" },
+                { "include": "#sub-id" }
+            ]
+        },
+        "placeholder": {
+            "match": "<[^>\\s]+>",
+            "name": "variable.language.placeholder.thaliak-diagram"
+        },
+        "string": {
+            "begin": "\"",
+            "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.thaliak-diagram" } },
+            "end": "\"|$",
+            "endCaptures": { "0": { "name": "punctuation.definition.string.end.thaliak-diagram" } },
+            "name": "string.quoted.double.thaliak-diagram",
+            "patterns": [
+                { "include": "#hex-color" },
+                { "include": "#function" },
+                { "match": "(#)([A-Za-z][\\w-]*)", "captures": {
+                    "1": { "name": "punctuation.separator.hash.thaliak-diagram" },
+                    "2": { "name": "entity.name.type.thaliak-diagram" }
+                } },
+                { "match": "[()]", "name": "punctuation.section.parens.thaliak-diagram" }
+            ]
+        },
+        "hex-color": {
+            "match": "(?<![\\w-])(#)([0-9a-fA-F]{3,8})(?![\\w-])",
+            "captures": {
+                "1": { "name": "punctuation.definition.constant.thaliak-diagram" },
+                "2": { "name": "constant.other.color.rgb-value.hex.thaliak-diagram" }
+            }
+        },
+        "function": {
+            "match": "(?<![\\w-])[a-zA-Z][\\w-]*(?=\\()",
+            "name": "entity.name.function.thaliak-diagram"
+        },
+        "scalars": {
+            "patterns": [
+                { "include": "#hex-color" },
+                { "include": "#function" },
+                { "match": "(?<![\\w-])(?:true|false)(?![\\w-])", "name": "constant.language.boolean.thaliak-diagram" },
+                { "match": "(?<![\\w-])null(?![\\w-])", "name": "constant.language.null.thaliak-diagram" },
+                { "match": "(?<![\\w.#-])-?\\d+(?:\\.\\d+)?(?:ms|s|%|deg)?(?![\\w-])", "name": "constant.numeric.thaliak-diagram" }
+            ]
+        },
+        "separators": {
+            "patterns": [
+                { "match": ",", "name": "punctuation.separator.comma.thaliak-diagram" },
+                { "match": ":", "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
+            ]
+        },
+        "values": {
+            "patterns": [
+                { "include": "#string" },
+                {
+                    "match": "(?<![\\w-])(type|look|shape)\\s*(:)\\s*([a-zA-Z][\\w-]*)",
+                    "captures": {
+                        "1": { "name": "entity.name.tag.thaliak-diagram" },
+                        "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" },
+                        "3": { "name": "variable.other.enummember.thaliak-diagram" }
+                    }
+                },
+                {
+                    "match": "(?<![\\w-])([a-zA-Z][\\w-]*)\\s*(:)",
+                    "captures": {
+                        "1": { "name": "entity.name.tag.thaliak-diagram" },
+                        "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
+                    }
+                },
+                { "include": "#scalars" },
+                { "match": "[{]", "name": "punctuation.section.braces.begin.thaliak-diagram" },
+                { "match": "[}]", "name": "punctuation.section.braces.end.thaliak-diagram" },
+                { "match": "\\(", "name": "punctuation.section.parens.begin.thaliak-diagram" },
+                { "match": "\\)", "name": "punctuation.section.parens.end.thaliak-diagram" },
+                { "match": "\\[", "name": "punctuation.section.brackets.begin.thaliak-diagram" },
+                { "match": "\\]", "name": "punctuation.section.brackets.end.thaliak-diagram" },
+                { "include": "#separators" },
+                { "match": "[^\\s,:{}\\[\\]()\"]+", "name": "string.unquoted.plain.thaliak-diagram" }
+            ]
+        }
+    }
+}

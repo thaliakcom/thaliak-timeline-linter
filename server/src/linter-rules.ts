@@ -1,12 +1,11 @@
 import { Diagnostic, DiagnosticSeverity, DiagnosticTag, TextEdit } from 'vscode-languageserver';
 import { Range, TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
-import { DEFAULT_GRAPHICS_KEYS, KeyResolverResult, RESERVED_ELEMENTS, resolveKey, SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
 import { LinterInput } from './linter';
 import { LinterOptions, PropertyOrder } from './server';
 import { SpecialStatuses } from './types/graphing';
 import { UnprocessedRaidData, WipKind } from './types/raids';
-import { getElementActions, getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, getStrategyKeys, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 
 function* diagnostics(diagnostic: Diagnostic): Generator<Diagnostic> {
     diagnostic.source = 'thaliak';
@@ -143,15 +142,6 @@ function* validateTimelineItems(items: yaml.YAMLSeq, textDocument: TextDocument,
     return true;
 }
 
-/** The diagram elements that the graph step key `key` sets, or `key` itself if it isn't a valid diagram key. */
-function elementsOf(key: string, elements: Set<string>): string[] {
-    try {
-        return resolveKey(key, elements).elements;
-    } catch {
-        return [key];
-    }
-}
-
 /** The offset where the value of `pair` (or its key, if it has no value) ends. */
 function valueEndOf(pair: yaml.Pair<yaml.Scalar, unknown>): number {
     return (yaml.isNode(pair.value) ? pair.value.range?.[1] : undefined) ?? pair.key.range![1];
@@ -252,37 +242,18 @@ function pathOf(order: PropertyOrder, a: string, b: string): [string, string, Ra
 
 /**
  * Warns about keys of `map` that come after a key that should come after them, by the order of
- * the maps of the same `itemKind` before it. `orderKey` separates the orders of maps of one kind
- * that don't share their keys (by default, all maps of `itemKind` share one order).
- *
- * `resolve` maps a key to the names whose order it follows (for graph steps, its diagram
- * elements). A key only conflicts with a key whose names must all come after all of its own, so
- * keys that share names never conflict. The order only holds relations seen in a map (never ones
- * contradicting earlier maps), so it never has cycles and every warning can be resolved. If
- * `learn` is `false`, only the first map establishes the order (graph steps follow their first
- * step); otherwise, every map adds its relations.
+ * the maps of the same `itemKind` before it. The order only holds relations seen in a map (never
+ * ones contradicting earlier maps), so it never has cycles and every warning can be resolved.
  */
-function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: boolean, textDocument: TextDocument, options: LinterOptions, orderKey: string = itemKind, learn: boolean = true, resolve: (key: string, known: Set<string>) => string[] = key => [key]): Generator<Diagnostic> {
-    const isFirst = !options.propOrder.has(orderKey);
-
-    if (isFirst) {
-        options.propOrder.set(orderKey, { successors: new Map(), relations: new Map() });
+function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction: boolean, textDocument: TextDocument, options: LinterOptions): Generator<Diagnostic> {
+    if (!options.propOrder.has(itemKind)) {
+        options.propOrder.set(itemKind, { successors: new Map(), relations: new Map() });
     }
 
-    const order = options.propOrder.get(orderKey)!;
+    const order = options.propOrder.get(itemKind)!;
     const pairs = map.items.filter((pair): pair is yaml.Pair<yaml.Scalar, unknown> => yaml.isScalar(pair.key) && pair.key.range != null);
 
-    // Wildcards also match the names of the keys before them in this map.
-    const known = new Set(order.successors.keys());
-    const names = pairs.map(pair => {
-        const resolved = resolve(String(pair.key.value), known);
-
-        for (const name of resolved) {
-            known.add(name);
-        }
-
-        return resolved;
-    });
+    const names = pairs.map(pair => [String(pair.key.value)]);
     const knownNames = names.map(keyNames => keyNames.filter(name => order.successors.has(name)));
 
     /** Whether all known names of the key at `j` must come after all known names of the key at `i`. */
@@ -350,22 +321,20 @@ function* validatePropertyOrder(map: yaml.YAMLMap, itemKind: string, codeAction:
         i = end;
     }
 
-    if (isFirst || learn) {
-        // A name set by several keys (`players`, then `T1`) belongs to the first one.
-        const seen = new Set<string>();
-        const ownNames = names.map(keyNames => keyNames.filter(name => !seen.has(name) && seen.add(name) != null));
-        const ranges = pairs.map(pair => getRange(textDocument, pair.key.range!));
+    // A name set by several keys belongs to the first one.
+    const seen = new Set<string>();
+    const ownNames = names.map(keyNames => keyNames.filter(name => !seen.has(name) && seen.add(name) != null));
+    const ranges = pairs.map(pair => getRange(textDocument, pair.key.range!));
 
-        for (let j: number = 0; j < pairs.length; j++) {
-            for (const b of ownNames[j]) {
-                getOrCreate(order.successors, b, () => new Set());
+    for (let j: number = 0; j < pairs.length; j++) {
+        for (const b of ownNames[j]) {
+            getOrCreate(order.successors, b, () => new Set());
 
-                // Nearest first: once `b` follows the key right before it, it also follows the
-                // keys before that, so their calls don't have to update the closure.
-                for (let i: number = j - 1; i >= 0; i--) {
-                    for (const a of ownNames[i]) {
-                        relate(order, a, b, ranges[i]);
-                    }
+            // Nearest first: once `b` follows the key right before it, it also follows the
+            // keys before that, so their calls don't have to update the closure.
+            for (let i: number = j - 1; i >= 0; i--) {
+                for (const a of ownNames[i]) {
+                    relate(order, a, b, ranges[i]);
                 }
             }
         }
@@ -812,431 +781,6 @@ export function* validateTimeline({ textDocument, document, js, options }: Linte
     }
 }
 
-export function* validateGraphingItems({ textDocument, document, js: json, options }: LinterInput): Generator<Diagnostic> {
-    const graphing = getIfType(document, 'graphing', yaml.isMap);
-
-    if (graphing != null) {
-        const elements = getIfType(graphing, 'elements', yaml.isMap);
-        const graphs = getIfType(graphing, 'graphs', yaml.isMap);
-        
-        if (elements != null && graphs != null) {
-            const resolvedElements = new Set<string>();
-
-            for (const item of elements.items) {
-                if (yaml.isScalar(item.key) && typeof item.key.value === 'string') {
-                    if (RESERVED_ELEMENTS.has(item.key.value)) {
-                        yield* diagnostics({
-                            code: 'reserved-graphing-element',
-                            severity: DiagnosticSeverity.Error,
-                            message: `'${item.key.value}' is a reserved element.`,
-                            range: getRange(textDocument, (item.key as yaml.Node).range!)
-                        });
-                    } else {
-                        resolvedElements.add(item.key.value);
-                    }
-                }
-            }
-
-            for (const graph of graphs.items) {
-                if (yaml.isSeq(graph.value)) {
-                    let first = true;
-                    const firstStepElements = new Set<string>();
-
-                    for (const step of graph.value.items) {
-                        if (yaml.isMap(step)) {
-                            for (const item of step.items) {
-                                const key = textDocument.getText(getRange(textDocument, (item.key as yaml.Node).range!));
-                                let result: KeyResolverResult;
-
-                                try {
-                                    result = resolveKey(key, firstStepElements);
-                                } catch (e) {
-                                    yield* diagnostics({
-                                        code: 'graphing-error',
-                                        severity: DiagnosticSeverity.Error,
-                                        message: (e as Error).message,
-                                        range: getRange(textDocument, (item.key as yaml.Node).range!)
-                                    });
-
-                                    continue;
-                                }
-
-                                if (result.wildcard && first) {
-                                    yield* diagnostics({
-                                        code: 'first-step-wildcard',
-                                        severity: DiagnosticSeverity.Error,
-                                        message: 'Wildcards in element identifiers may only be used in step 2 and onwards.',
-                                        range: getRange(textDocument, (item.key as yaml.Node).range!)
-                                    });
-                                }
-
-                                const definitions = result.definition != null ? [result.definition] : result.elements;
-
-                                for (const definition of definitions) {
-                                    if (!resolvedElements.has(definition) && !SPECIAL_ELEMENT_KEYS.has(definition)) {
-                                        yield* diagnostics({
-                                            code: 'unresolved-graphing-element',
-                                            severity: DiagnosticSeverity.Error,
-                                            message: `Failed to resolve '${definition}'. Did you remember to add the element definition to 'elements'?`,
-                                            range: getRange(textDocument, (item.key as yaml.Node).range!)
-                                        });
-                                    }
-                                }
-
-                                for (const element of result.elements) {
-                                    if (DEFAULT_GRAPHICS_KEYS.has(element)) {
-                                        continue;
-                                    }
-
-                                    if (first) {
-                                        firstStepElements.add(element);
-                                    } else if (!firstStepElements.has(element)) {
-                                        yield* diagnostics({
-                                            code: 'uninitialized-graphing-element',
-                                            severity: DiagnosticSeverity.Error,
-                                            message: `Found uninitialized element '${element}'. All elements must be initialized in the first step of a graph.`,
-                                            range: getRange(textDocument, (item.key as yaml.Node).range!)
-                                        });
-                                    }
-                                }
-
-                                if (yaml.isMap(item.value)) {
-                                    const status = getIfType(item.value, 'status', yaml.isSeq);
-
-                                    if (status != null) {
-                                        for (const id of status.items) {
-                                            if (yaml.isScalar(id) && typeof id.value === 'string') {
-                                                // Without the stack count (`key:<n>`), which selects the icon.
-                                                const key = id.value.replace(/:\d+$/, '');
-                                                const exists = (json.status != null && key in json.status) || (options.enums.common != null && key in options.enums.common.yaml.status) || id.value in SpecialStatuses;
-
-                                                if (!exists) {
-                                                    yield* diagnostics({
-                                                        code: 'invalid-id',
-                                                        severity: DiagnosticSeverity.Error,
-                                                        message: `Unresolved status effect ${id.value}. Did you forget to define it?`,
-                                                        range: getRange(textDocument, id.range ?? item.value.range ?? [0, 0, 0])
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // After the step's keys, so that a hit can target an element initialized later in the first step.
-                            yield* validateHits(step, first, firstStepElements, textDocument);
-                        }
-
-                        first = false;
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Checks the `hits` of a graph step's elements: each entry must be a valid step key whose elements
- * are initialized in the first step of the graph (`firstStepElements`), without wildcards in the first step.
- */
-function* validateHits(step: yaml.YAMLMap, first: boolean, firstStepElements: Set<string>, textDocument: TextDocument): Generator<Diagnostic> {
-    for (const item of step.items) {
-        const hits = yaml.isMap(item.value) ? getIfType(item.value, 'hits', yaml.isSeq) : undefined;
-
-        for (const entry of hits?.items ?? []) {
-            if (!yaml.isScalar(entry) || typeof entry.value !== 'string') {
-                continue;
-            }
-
-            const range = getRange(textDocument, entry.range!);
-            let result: KeyResolverResult;
-
-            try {
-                result = resolveKey(entry.value, firstStepElements);
-            } catch (e) {
-                yield* diagnostics({ code: 'graphing-error', severity: DiagnosticSeverity.Error, message: (e as Error).message, range });
-                continue;
-            }
-
-            if (result.wildcard && first) {
-                yield* diagnostics({
-                    code: 'first-step-wildcard',
-                    severity: DiagnosticSeverity.Error,
-                    message: 'Wildcards in element identifiers may only be used in step 2 and onwards.',
-                    range
-                });
-            }
-
-            for (const element of result.elements) {
-                if (!firstStepElements.has(element) && !SPECIAL_ELEMENT_KEYS.has(element)) {
-                    yield* diagnostics({
-                        code: 'unresolved-graphing-element',
-                        severity: DiagnosticSeverity.Error,
-                        message: `Failed to resolve hit target '${element}'. All elements must be initialized in the first step of a graph.`,
-                        range
-                    });
-                }
-            }
-        }
-    }
-}
-
-/** The diagram element types that `shapes` in an animation's `x-elements` (in the raid schema) refers to. */
-const SHAPE_TYPES: string[] = ['donut', 'ellipse', 'cone', 'rectangle'];
-
-/**
- * The node holding the type of a look or animation given as its name (`look: ripple`) or
- * as `{ type, ...parameters }` (`look: { type: ripple, speed: 2 }`).
- */
-function typeNodeOf(node: unknown): yaml.Scalar | undefined {
-    const type = yaml.isMap(node) ? node.get('type', true) : node;
-
-    return yaml.isScalar(type) && typeof type.value === 'string' ? type : undefined;
-}
-
-/**
- * The build-time diagram checks from `processGraphing()` in thaliak's `data.ts`, except
- * for those that need game data (an action's `effectRange` and `XAxisModifier`) or the
- * arena image's size (`margin`).
- */
-export function* validateDiagramElements({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
-    const graphing = getIfType(document, 'graphing', yaml.isMap);
-    const elements = getIfType(graphing, 'elements', yaml.isMap);
-    const graphs = getIfType(graphing, 'graphs', yaml.isMap);
-    const actions = getIfType(document, 'actions', yaml.isMap);
-    const looks = options.diagramEnums?.looks;
-    const animations = options.diagramEnums?.animations;
-    /** Step keys with several elements check the same node more than once. */
-    const reported = new Set<string>();
-
-    function* error(code: string, range: yaml.Range, message: string): Generator<Diagnostic> {
-        const id = `${range[0]}:${message}`;
-
-        if (!reported.has(id)) {
-            reported.add(id);
-
-            yield* diagnostics({ code, severity: DiagnosticSeverity.Error, message, range: getRange(textDocument, range) });
-        }
-    }
-
-    /** The definition in `elements` that a step key (or one element of it) refers to. */
-    function getDefinition(key: string): yaml.YAMLMap | undefined {
-        const definition = elements?.get(key.trim().split('#')[0]!, true);
-
-        return yaml.isMap(definition) ? definition : undefined;
-    }
-
-    function getType(key: string): string | undefined {
-        const type = getDefinition(key)?.get('type');
-
-        return typeof type === 'string' ? type : undefined;
-    }
-
-    function* checkDonutSize(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
-        const size = data.get('size', true);
-
-        if (getType(key) === 'donut' && yaml.isSeq(size)) {
-            const [inner, outer] = size.items.map(x => yaml.isScalar(x) ? x.value : undefined);
-
-            if (typeof inner === 'number' && typeof outer === 'number' && inner >= outer) {
-                yield* error('invalid-donut-size', size.range!, `Donut size [${inner}, ${outer}] must be [inner diameter, outer diameter].`);
-            }
-        }
-    }
-
-    /** Reports `enter`/`exit` animations that aren't allowed on the type of the element(s) `key` refers to. */
-    function* checkAnimations(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
-        for (const field of ['enter', 'exit'] as const) {
-            const node = typeNodeOf(data.get(field, true));
-            const allowed = node != null ? animations?.[field]?.[node.value as string] : undefined;
-
-            if (allowed == null || allowed === 'all') {
-                continue;
-            }
-
-            for (const part of key.split(',')) {
-                // Predefined IDs (boss, players, ...) without a definition are images.
-                const type = getType(part) ?? 'image';
-                const ok = allowed === 'shapes' ? SHAPE_TYPES.includes(type) : allowed.includes(type);
-
-                if (!ok) {
-                    yield* error('invalid-animation', node!.range!, `'${field}: ${node!.value}' is only allowed on ${allowed === 'shapes' ? 'shapes' : allowed.join(', ')}, but '${part.trim()}' has type ${type}.`);
-                }
-            }
-        }
-    }
-
-    /**
-     * Reports a `width` on a link whose look isn't `plain`, which ignores it. `look` is the look
-     * the element had before, if `data` doesn't set one.
-     */
-    function* checkWidth(data: yaml.YAMLMap, key: string, look: string | undefined): Generator<Diagnostic> {
-        const resolved = (typeNodeOf(data.get('look', true))?.value as string | undefined) ?? look ?? 'plain';
-        const entry = getEntry(data, 'width');
-
-        if (getType(key) === 'link' && resolved !== 'plain' && entry != null) {
-            yield* error('ignored-by-look', entry.key.range!, `'width' is ignored with 'look: ${resolved}'; remove it or use 'look: plain'.`);
-        }
-    }
-
-    /** Reports a `color` on a shape or link, which takes its colour from its `look` instead. */
-    function* checkColor(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
-        const type = getType(key);
-        const entry = getEntry(data, 'color');
-
-        if (type != null && (SHAPE_TYPES.includes(type) || type === 'link') && entry != null) {
-            const value = yaml.isScalar(entry.value) ? String(entry.value.value) : '...';
-
-            yield* error('color-in-look', entry.key.range!, `'color' moved into the look: 'look: { type: plain, color: ${value} }'.`);
-        }
-    }
-
-    /** Reports a `look` that isn't one of the looks of its element's type. */
-    function* checkLook(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
-        const type = getType(key);
-        const look = typeNodeOf(data.get('look', true));
-
-        if (type == null || look == null) {
-            return;
-        }
-
-        const list = SHAPE_TYPES.includes(type) ? 'aoes' : type === 'link' ? 'tethers' : type === 'marker' ? 'markers' : undefined;
-
-        if (list == null) {
-            yield* error('invalid-look', look.range!, `${type} elements have no look.`);
-        } else if (looks != null && !looks[list].includes(look.value as string)) {
-            yield* error('invalid-look', look.range!, `'${look.value}' isn't one of the ${list}: '${looks[list].join('\', \'')}'`);
-        }
-    }
-
-    /** Reports an `image` that is the URL a marker used to be referenced by (`/images/markers/stack.svg`). */
-    function* checkImage(data: yaml.YAMLMap): Generator<Diagnostic> {
-        const image = data.get('image', true);
-        const name = yaml.isScalar(image) && typeof image.value === 'string' ? /^\/images\/(?:markers|other)\/([a-z-]+)\.svg$/.exec(image.value)?.[1] : undefined;
-
-        if (name != null && looks != null && looks.markers.includes(name)) {
-            yield* error('marker-image', image!.range!, `${image!.value} is a marker; use 'type: marker' with 'look: ${name}'.`);
-        }
-    }
-
-    function* checkMargin(data: yaml.YAMLMap, key: string): Generator<Diagnostic> {
-        const margin = getEntry(data, 'margin');
-
-        if (margin != null && key !== 'arena') {
-            yield* error('invalid-margin', margin.key.range!, `Only the arena can have a margin.`);
-        }
-    }
-
-    for (const item of elements?.items ?? []) {
-        if (!yaml.isScalar(item.key) || !yaml.isMap(item.value)) {
-            continue;
-        }
-
-        const id = String(item.key.value);
-
-        yield* checkDonutSize(item.value, id);
-        yield* checkAnimations(item.value, id);
-        yield* checkWidth(item.value, id, undefined);
-        yield* checkColor(item.value, id);
-        yield* checkLook(item.value, id);
-        yield* checkImage(item.value);
-        yield* checkMargin(item.value, id);
-
-        const action = item.value.get('action', true);
-
-        if (yaml.isScalar(action) && action.value != null) {
-            if (actions == null || !actions.has(action.value)) {
-                yield* error('invalid-id', action.range!, `Unresolved action ${action.value}. Diagram elements can only be sized by actions defined in this file.`);
-            } else if (getType(id) === 'donut' && !item.value.has('size')) {
-                yield* error('missing-donut-size', action.range!, `Game data has no inner radius; specify a size [inner diameter, outer diameter].`);
-            }
-        }
-    }
-
-    for (const graph of graphs?.items ?? []) {
-        if (!yaml.isSeq(graph.value)) {
-            continue;
-        }
-
-        /** The looks set by this graph's steps so far, by step key. */
-        const stepLooks = new Map<string, string>();
-
-        for (const [i, step] of graph.value.items.entries()) {
-            if (!yaml.isMap(step)) {
-                continue;
-            }
-
-            for (const item of step.items) {
-                if (!yaml.isMap(item.value)) {
-                    continue;
-                }
-
-                // Unquoted keys like `[M2, T2]` are sequences, which the build (js-yaml) joins into `M2,T2`.
-                const id = yaml.isScalar(item.key) ? String(item.key.value)
-                    : yaml.isSeq(item.key) ? item.key.items.map(x => yaml.isScalar(x) ? String(x.value) : '').join(',')
-                    : undefined;
-
-                if (id == null) {
-                    continue;
-                }
-
-                yield* checkDonutSize(item.value, id);
-                yield* checkAnimations(item.value, id);
-                yield* checkImage(item.value);
-                yield* checkMargin(item.value, id);
-
-                const lookEntry = getEntry(item.value, 'look');
-                const look = typeNodeOf(lookEntry?.value)?.value as string | undefined;
-
-                if (i > 0 && lookEntry != null) {
-                    yield* error('look-after-first-step', lookEntry.key.range!, `'look' can only be set in the element definition or the first step; use separate elements to change it.`);
-                }
-
-                // Only exact keys are tracked; wildcard and range keys fall back to the definition's look.
-                for (const key of id.includes('#') ? [id] : id.split(',').map(x => x.trim())) {
-                    const base = typeNodeOf(getDefinition(key)?.get('look', true))?.value as string | undefined;
-
-                    yield* checkWidth(item.value, key, stepLooks.get(key) ?? base);
-                    yield* checkColor(item.value, key);
-                    yield* checkLook(item.value, key);
-
-                    if (look != null) {
-                        stepLooks.set(key, look);
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Warns when the properties of an element definition aren't in the order of the definitions before
- * it, and when the elements of a graph's step aren't in the order of the steps before it (so
- * every step follows the order of the first one).
- */
-export function* validateGraphingOrder({ textDocument, document, options }: LinterInput): Generator<Diagnostic> {
-    const graphing = getIfType(document, 'graphing', yaml.isMap);
-
-    for (const definition of getIfType(graphing, 'elements', yaml.isMap)?.items ?? []) {
-        if (yaml.isMap(definition.value)) {
-            yield* validatePropertyOrder(definition.value, 'element definition', true, textDocument, options);
-        }
-    }
-
-    for (const graph of getIfType(graphing, 'graphs', yaml.isMap)?.items ?? []) {
-        if (!yaml.isScalar(graph.key) || !yaml.isSeq(graph.value)) {
-            continue;
-        }
-
-        for (const step of graph.value.items) {
-            if (yaml.isMap(step)) {
-                yield* validatePropertyOrder(step, 'graph step', true, textDocument, options, `graph step ${graph.key.value}`, false, elementsOf);
-            }
-        }
-    }
-}
-
 export function* actionsMustBeUsed({ textDocument, document }: LinterInput): Generator<Diagnostic> {
     const actions = getIfType(document, 'actions', yaml.isMap);
 
@@ -1254,10 +798,6 @@ export function* actionsMustBeUsed({ textDocument, document }: LinterInput): Gen
         }
     }
 
-    for (const action of getElementActions(document)) {
-        used.add(String(action.value));
-    }
-
     for (const match of textDocument.getText().matchAll(PLACEHOLDER_REGEX)) {
         const text = match[1] ?? match[2];
 
@@ -1272,7 +812,7 @@ export function* actionsMustBeUsed({ textDocument, document }: LinterInput): Gen
                 code: 'unused-action',
                 severity: DiagnosticSeverity.Hint,
                 tags: [DiagnosticTag.Unnecessary],
-                message: `Action '${action.key.value}' is never used in the timeline, in children, in diagrams or in placeholders.`,
+                message: `Action '${action.key.value}' is never used in the timeline, in children or in placeholders.`,
                 range: getRange(textDocument, action.key.range)
             });
         }
@@ -1318,27 +858,6 @@ export function* mustNotHavePlaceholderDescriptions({ textDocument, document }: 
                     range: getRange(textDocument, description.range!)
                 });
             }
-        }
-    }
-}
-
-export function* graphsMustBeUsed({ textDocument, document }: LinterInput): Generator<Diagnostic> {
-    const graphs = getIfType(getIfType(document, 'graphing', yaml.isMap), 'graphs', yaml.isMap);
-
-    if (graphs == null) {
-        return;
-    }
-
-    const strategies = getStrategyKeys(document);
-
-    for (const graph of graphs.items) {
-        if (yaml.isScalar(graph.key) && graph.key.range != null && !strategies.has(String(graph.key.value))) {
-            yield* diagnostics({
-                code: 'unused-graph',
-                severity: DiagnosticSeverity.Warning,
-                message: `No action has a strategy named '${graph.key.value}', so this diagram is never shown.`,
-                range: getRange(textDocument, graph.key.range)
-            });
         }
     }
 }

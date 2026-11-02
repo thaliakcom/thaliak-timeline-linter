@@ -15,6 +15,7 @@ export const SPECIAL_TIMELINE_IDS: Array<{ id: string, description: string }> = 
     { id: '<endphase>', description: 'Indicates that a phase previously started with <phase> ends. Only use this kind of item if the timeline items immediately following this item should not be part of any phase.' },
     { id: '<addstatus>', description: 'Indicates that status effects are inflicted on players. Only use this kind of item if the statuses are not inflicted by an enemy action.' },
     { id: '<removestatus>', description: 'Indicates that status effects fall off from players. Only use this kind of item if the statuses do not have a fixed duration and instead fall off as a result of some other condition. Do not use this kind of item if the status is consumed by some other enemy action.' },
+    { id: '<arena>', description: 'Sets the arena image for diagrams from this time on. Only diagrams see this item.' },
     { id: '<loop>', description: 'Indicates that all mechanics or a subset of mechanics up until now will loop until the boss enrages or a specific condition is met.' }
 ];
 
@@ -141,21 +142,6 @@ export function isInRange(textDocument: TextDocument, textRange: Range, yamlRang
 
 type GuardedType<T> = T extends (node: unknown) => node is infer U ? U : never;
 
-export function getAtPathIfType<T extends (node: unknown) => boolean>(node: yaml.YAMLMap | yaml.Document | undefined | null, path: string, typeFn: T): GuardedType<T> | null {
-    const segments = path.split('.');
-    let currentMap = node;
-
-    for (let i: number = 0; i < segments.length - 1; i++) {
-        const segment = segments[i];
-        currentMap = getIfType(currentMap, segment, yaml.isMap);
-
-        if (currentMap == null) {
-            return null;
-        }
-    }
-
-    return getIfType(currentMap, segments[segments.length - 1], typeFn);
-}
 
 export function getIfType<T extends (node: unknown) => boolean>(node: yaml.YAMLMap | yaml.Document | undefined | null, key: string, typeFn: T): GuardedType<T> | null {
     if (node == null) {
@@ -222,20 +208,6 @@ export function getSymbolAt(document: yaml.Document, textDocument: TextDocument,
             }
         }
         
-        return null;
-    }
-
-    const elementAction = getKeyValueAt(textDocument, position, 'action');
-
-    if (elementAction != null) {
-        const elements = getAtPathIfType(document, 'graphing.elements', yaml.isMap);
-
-        if (elements != null && isInRange(textDocument, elementAction.range, elements.range!)) {
-            console.log(`[symbol-resolver]: found graphing element action '${elementAction.text}' at cursor position`);
-            elementAction.text = `a:${elementAction.text}`;
-            return elementAction;
-        }
-
         return null;
     }
 
@@ -408,20 +380,7 @@ export function getStatus(document: yaml.Document | undefined, key: string): yam
     return null;
 }
 
-/** Yields the `action` values of all definitions under `graphing.elements`. */
-export function* getElementActions(document: yaml.Document): Generator<yaml.Scalar> {
-    const elements = getAtPathIfType(document, 'graphing.elements', yaml.isMap);
-
-    for (const element of elements?.items ?? []) {
-        const action = yaml.isMap(element.value) ? element.value.get('action', true) : null;
-
-        if (yaml.isScalar(action) && action.range != null) {
-            yield action;
-        }
-    }
-}
-
-/** The keys of all actions' `strategies`, which are also the IDs of the strategies' graphs. */
+/** The keys of all actions' `strategies`, which a `.diagram` file's strategies cover. */
 export function getStrategyKeys(document: yaml.Document): Set<string> {
     const keys = new Set<string>();
 
@@ -436,24 +395,6 @@ export function getStrategyKeys(document: yaml.Document): Set<string> {
     }
 
     return keys;
-}
-
-export function getGraphingElement(document: yaml.Document | undefined, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | null {
-    const graphing = getIfType(document, 'graphing', yaml.isMap);
-
-    if (graphing != null) {
-        const elements = getIfType(document, 'elements', yaml.isMap);
-
-        if (elements != null) {
-            const element = getEntry(elements, key);
-
-            if (element != null) {
-                return element as yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>>;
-            }
-        }
-    }
-
-    return null;
 }
 
 interface Prefixes<T> {

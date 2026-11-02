@@ -111,7 +111,7 @@ class OutlineView implements vscode.TreeDataProvider<OutlineNode> {
         const requestId = ++this.requestId;
         let nodes: OutlineNode[] | null = null;
 
-        if (editor.document.languageId === 'yaml') {
+        if (editor.document.languageId === 'yaml' || editor.document.languageId === 'thaliak-diagram') {
             try {
                 nodes = await this.client.sendRequest<OutlineNode[] | null>('thaliak/outline', { uri: editor.document.uri.toString() } satisfies OutlineParams);
             } catch (e) {

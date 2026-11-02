@@ -3,24 +3,16 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { UnprocessedRaidData } from './types/raids';
-import { getAtPathIfType, getKeyValueAt, getLineAt, getNodeAt, getStrategyKeys, getSymbolAt, ICONS, isInRange, isPositionInYamlRange, NodeWrapper, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
+import { getKeyValueAt, getNodeAt, getSymbolAt, ICONS, NodeWrapper, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 import * as yaml from 'yaml';
-import { ElementDefinition, SpecialStatus, SpecialStatuses } from './types/graphing';
-import { resolveKey, SPECIAL_ELEMENT_KEYS } from './graphing-resolution';
+import { SpecialStatus, SpecialStatuses } from './types/graphing';
 
 const base = {
     kind: CompletionItemKind.EnumMember
 };
 
-/** Whether `result` is in the `hits` list of a graph step's element: the list itself or one of its entries. */
-function isInHits(result: NodeWrapper): boolean {
-    const list = yaml.isSeq(result.node) ? result : yaml.isScalar(result.node) && yaml.isSeq(result.parent?.node) ? result.parent : undefined;
-    const pair = list?.parent?.node;
-    return yaml.isPair(pair) && yaml.isScalar(pair.key) && pair.key.value === 'hits';
-}
-
 /**
- * Whether `result` is in a `status` list (e.g. of a graph step's element): the list itself or one of
+ * Whether `result` is in a `status` list: the list itself or one of
  * its entries. Its entries are bare status keys, without the `s:` prefix of placeholders.
  */
 function isInStatusList(result: NodeWrapper): boolean {
@@ -38,124 +30,12 @@ export default function completionProvider(documents: TextDocuments<TextDocument
             return [];
         }
 
-        const elementAction = getKeyValueAt(textDocument, params.position, 'action');
-        const elements = getAtPathIfType(document, 'graphing.elements', yaml.isMap);
-
-        // Element sizes only come from the file's own actions (not common ones or special IDs).
-        if (elementAction != null && elements != null && isInRange(textDocument, elementAction.range, elements.range!)) {
-            const actions = (document.toJS() as UnprocessedRaidData).actions ?? {};
-
-            return Object.entries(actions).map(([key, action]) => ({
-                label: key,
-                labelDetails: { description: action.description },
-                ...base
-            }));
-        }
-
         const result = getNodeAt(document, textDocument, params.position);
         let isStatusId = false;
         let isActionId = false;
 
         if (result == null) {
             return [];
-        }
-
-        // The map whose key is being typed: at a key, or on an empty line indented like the map's keys.
-        const lineBefore = getLineAt(textDocument, params.position).lineBefore;
-        let keyMap: NodeWrapper | null | undefined = null;
-
-        if (yaml.isScalar(result.node) && yaml.isPair(result.parent?.node) && result.parent.node.key === result.node) {
-            keyMap = result.parent.parent;
-        } else if (lineBefore.trim().length === 0) {
-            // At the end of a map, the position belongs to its last value, so look upwards.
-            for (let current: NodeWrapper | undefined = result; current != null && keyMap == null; current = current.parent) {
-                const firstKey = yaml.isMap(current.node) ? current.node.items[0]?.key : null;
-
-                if (yaml.isNode(firstKey) && firstKey.range != null && textDocument.positionAt(firstKey.range[0]).character === lineBefore.length) {
-                    keyMap = current;
-                }
-            }
-        }
-
-        const keyMapParent = keyMap != null && yaml.isMap(keyMap.node) && yaml.isPair(keyMap.parent?.node) && yaml.isScalar(keyMap.parent.node.key)
-            ? keyMap.parent.node.key.value
-            : null;
-        const graphs = getAtPathIfType(document, 'graphing.graphs', yaml.isMap);
-
-        // Strategy keys are graph IDs and vice versa; offer the ones the other side has but this one doesn't.
-        if (keyMapParent === 'strategies' || (keyMapParent === 'graphs' && keyMap!.node === graphs)) {
-            const existing = new Set((keyMap!.node as yaml.YAMLMap).items.map(x => yaml.isScalar(x.key) ? String(x.key.value) : null));
-            const candidates = keyMapParent === 'strategies'
-                ? (graphs?.items ?? []).map(x => yaml.isScalar(x.key) ? String(x.key.value) : null)
-                : Array.from(getStrategyKeys(document));
-
-            return candidates
-                .filter(x => x != null && !existing.has(x))
-                .map(x => ({ label: x!, labelDetails: { description: keyMapParent === 'strategies' ? 'graph' : 'strategy' }, ...base }));
-        }
-
-        // Hit targets: the elements initialized in the first step of the graph, and the special keys.
-        if (isInHits(result)) {
-            const graph = graphs?.items.find(x => yaml.isSeq(x.value) && isPositionInYamlRange(textDocument, params.position, x.value.range));
-            const firstStep = yaml.isSeq(graph?.value) ? graph.value.items[0] : undefined;
-            const targets = new Set([...SPECIAL_ELEMENT_KEYS].filter(x => x !== 'cast' && x !== 'hint'));
-
-            if (yaml.isMap(firstStep)) {
-                for (const item of firstStep.items) {
-                    if (yaml.isScalar(item.key) && typeof item.key.value === 'string') {
-                        try {
-                            resolveKey(item.key.value, new Set()).elements.forEach(x => targets.add(x));
-                        } catch {
-                            // Invalid keys are reported by the linter.
-                        }
-                    }
-                }
-            }
-
-            return [...targets].map(x => ({ label: x, ...base }));
-        }
-
-        if ((yaml.isScalar(result.node) && typeof result.node.value === 'string' && yaml.isPair(result.parent?.node) && result.parent.node.key === result.node)
-         || (yaml.isMap(result.node) && getLineAt(textDocument, params.position).lineBefore.trim().length === 0)) {
-            const isScalar = yaml.isScalar(result.node);
-            const possibleGraphsKeys = isScalar ? [result.parent?.parent?.parent?.parent?.parent?.parent] : [
-                    result.parent?.parent?.parent?.parent?.parent?.parent,
-                    result.parent?.parent?.parent?.parent
-                ];
-            const graphsKeyPair = possibleGraphsKeys.findIndex(x => yaml.isPair(x?.node) && yaml.isScalar(x.node.key) && x.node.key.value === 'graphs');
-
-            if (graphsKeyPair !== -1) {
-                const steps = graphsKeyPair === 0 ? result.parent?.parent?.parent : result.parent;
-
-                if (yaml.isSeq(steps?.node) && yaml.isMap(steps.node.items[0])) {
-                    const eligibleKeys = new Set<string>(SPECIAL_ELEMENT_KEYS);
-
-                    if (isPositionInYamlRange(textDocument, params.position, steps.node.items[0].range)) {
-                        const js = document.toJS();
-                        const elements = js.graphing.elements as Record<string, ElementDefinition>;
-
-                        for (const key in elements) {
-                            eligibleKeys.add(key);
-                        }
-                    } else {
-                        const firstStepKeys = new Set<string>();
-
-                        for (const item of steps.node.items[0].items) {
-                            if (yaml.isScalar(item.key) && typeof item.key.value === 'string') {
-                                const definitionKey = item.key.value.split('#')[0] ?? item.key.value;
-
-                                firstStepKeys.add(definitionKey);
-                            }
-                        }
-
-                        for (const key of firstStepKeys) {
-                            eligibleKeys.add(key);
-                        }
-                    }
-
-                    return eligibleKeys[Symbol.iterator]().map(x => ({ label: x, ...base })).toArray();
-                }
-            }
         }
 
         const keyValue = getKeyValueAt(textDocument, params.position, 'id');
