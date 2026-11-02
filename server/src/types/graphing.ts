@@ -35,12 +35,12 @@ interface Colored {
 /** The look of a shape. Only in its definition and in the first step of a graph. */
 interface AoeLook {
     /**
-     * How the shape is drawn. The values are listed in `enums/looks.yaml` (under `aoes`), with the
-     * parameters each takes (described in `enums/parameters.yaml`). Default is `plain` in the default
-     * colour. Parameters are given as `{ type, ...parameters }`: `look: { type: plain, color: '#f00' }`,
-     * `look: { type: ripple, speed: 2, color: '#4af' }`. Looks without a `color` parameter can be tinted
-     * with `filter` (e.g. `hue-rotate`). Can only be set in the definition and in the first step of a
-     * graph; to change it later, show another element instead.
+     * How the shape is drawn; each value is described on completion and hover. Default is `plain`
+     * in the default colour. Parameters are given as `{ type, ...parameters }`:
+     * `look: { type: plain, color: '#f00' }`, `look: { type: ripple, speed: 2, color: '#4af' }`.
+     * Looks without a `color` parameter can be tinted with `filter` (e.g. `hue-rotate`). Can only be
+     * set in the definition and in the first step of a graph; to change it later, show another
+     * element instead.
      */
     look?: LookTypeValue;
 }
@@ -48,7 +48,7 @@ interface AoeLook {
 /** For the shapes that can be drawn as an animated AoE. */
 interface AoeCapable {
     /**
-     * For every look except `plain`: merges this AoE with the AoEs of the same group (same ID
+     * For every look except `plain` and `none`: merges this AoE with the AoEs of the same group (same ID
      * before `#`, or the same `group`) that come right before or after it in drawing order, also
      * merge and have the same `look`, into one outline with a single rim. Defaults to `false`:
      * the AoE is drawn on its own.
@@ -74,10 +74,9 @@ interface AoeCapable {
 /** The look of a link. Only in its definition and in the first step of a graph. */
 interface TetherLook {
     /**
-     * How the link is drawn. The values are listed in `enums/looks.yaml` (under `tethers`), with
-     * the parameters each takes (described in `enums/parameters.yaml`). Default is `plain`: a band
-     * in the default colour, `width` wide. Every other look has a fixed size, so `width` is only
-     * allowed with `plain`. Parameters are given as `{ type, ...parameters }`:
+     * How the link is drawn; each value is described on completion and hover. Default is `plain`:
+     * a band in the default colour, `width` wide. Every other look has a fixed size, so `width` is
+     * only allowed with `plain`. Parameters are given as `{ type, ...parameters }`:
      * `look: { type: plain, color: '#f00' }`, `look: { type: glow, color: '#4af' }`,
      * `look: { type: pulse, speed: 2 }`. Looks without a `color` parameter can be tinted with
      * `filter` (e.g. `hue-rotate`). The moving looks (`pulse`, `strands`, `braid`, `coil`) move
@@ -144,16 +143,16 @@ export interface SharedElementData extends BaseElementData {
      */
     visible?: boolean | 'resolve';
     /**
-     * The animation that plays when the element becomes visible. The values are listed in
-     * `enums/animations.yaml` (under `enter`). Default is `fade`. Takes parameters as
-     * `{ type, ...parameters }`, e.g. `enter: { type: scale, speed: 2 }` (see `enums/parameters.yaml`).
+     * The animation that plays when the element becomes visible; each value is described on completion
+     * and hover. Default is `fade`. Takes parameters as
+     * `{ type, ...parameters }`, e.g. `enter: { type: scale, speed: 2 }`.
      */
     enter?: EnterAnimationValue;
     /**
-     * The animation that plays when the element becomes hidden. The values are listed in
-     * `enums/animations.yaml` (under `exit`). Default is `fade`. Resolve animations (e.g. `rocks`) replace the
+     * The animation that plays when the element becomes hidden; each value is described on completion
+     * and hover. Default is `fade`. Resolve animations (e.g. `rocks`) replace the
      * element with an effect that is drawn above all elements, players included. Takes parameters as
-     * `{ type, ...parameters }`, e.g. `exit: { type: tornado, speed: 0.5, height: 1.5 }` (see `enums/parameters.yaml`).
+     * `{ type, ...parameters }`, e.g. `exit: { type: tornado, speed: 0.5, height: 1.5 }`.
      */
     exit?: ExitAnimationValue;
     /** 
@@ -244,7 +243,9 @@ export interface StepElementData extends SharedElementData {
      * The elements this element hits in this step, as element IDs or in the forms of step keys
      * (`players`, `DPS`, `tanks`, `healers`, `supports`, `aoe#2`, `aoe#1..3`, `aoe#[1,2]`, `aoe#*`).
      * Each target flashes red and shakes briefly when this element's `exit` resolve animation lands
-     * (e.g. at the meteor's impact), or at the start of the step if this element doesn't resolve in it.
+     * (e.g. at the meteor's impact). Otherwise, with a `scale` animation, each target is hit when the
+     * `enter` animation grows the element over it, or when the `exit` animation shrinks it off it;
+     * else at the start of the step.
      * Applies only to the step that sets it.
      */
     hits?: string[];
@@ -285,7 +286,7 @@ export interface ImageDefinition extends DefinitionElementData {
 
 export interface MarkerDefinition extends DefinitionElementData {
     type: 'marker';
-    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). Takes a `speed`: `look: { type: stack, speed: 2 }`. */
+    /** Which marker to draw. Each value is described on completion and hover. Takes a `speed`: `look: { type: stack, speed: 2 }`. */
     look: MarkerLookTypeValue;
 }
 
@@ -375,7 +376,7 @@ export interface LinkFirstDelta extends LinkDelta, TetherLook {
 }
 
 export interface MarkerFirstDelta extends MarkerDelta {
-    /** Which marker to draw. The values are listed in `enums/looks.yaml` (under `markers`). Takes a `speed`: `look: { type: stack, speed: 2 }`. Can only be set in the definition and in the first step of a graph. */
+    /** Which marker to draw. Each value is described on completion and hover. Takes a `speed`: `look: { type: stack, speed: 2 }`. Can only be set in the definition and in the first step of a graph. */
     look?: MarkerLookTypeValue;
 }
 

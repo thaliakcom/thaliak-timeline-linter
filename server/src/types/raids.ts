@@ -1,5 +1,6 @@
 import { MechanicType, DamageType, StatusType, ShapeType } from './enums';
-import { Graphing, PositiveNumber, PositivePoint } from './graphing';
+import { Graphing, Margin, PositiveNumber, PositivePoint } from './graphing';
+import type { CompiledDiagram } from '../utility/diagram-ddl/seek';
 
 /** 
  * @minimum 0
@@ -94,6 +95,8 @@ export interface Action extends Omit<UnprocessedAction, 'children'> {
     effectRange: number;
     /** The width in yalms of the action's rectangular AoE, if it has one (`XAxisModifier` in game data). */
     xAxisModifier: number;
+    /** Whether the action has a telegraph in game data. */
+    hasOmen?: boolean;
     strategies: Record<string, Strategy>;
     children: (ProcessedChildItem | SpecialChildTimelineItem)[];
 }
@@ -350,6 +353,12 @@ export interface UnprocessedAction {
      * some helper actors, so it's missing on many generated actions.
      */
     source?: integer;
+    /**
+     * How long after its cast starts the action's telegraph appears, in ms. Telegraphs rarely
+     * start with the cast. No game sheet has this value: it comes from the action's cast packet
+     * in a replay or ACT log. If omitted, the telegraph appears as the cast starts.
+     */
+    'omen-delay'?: integer;
 }
 
 export interface ProcessedTimelineItem extends UnprocessedTimelineItem {
@@ -564,7 +573,19 @@ export interface LoopItem extends Pick<BaseTimelineItem, 'at' | 'description'> {
     id: '<loop>';
 }
 
-export type SpecialTimelineItem = PhaseShiftItem | EndPhaseItem | SpecialChildTimelineItem | LoopItem;
+/**
+ * Changes the arena image that diagrams show. It's separate from `<phase>`
+ * because an arena can change in the middle of a mechanic.
+ */
+export interface ArenaItem extends Pick<BaseTimelineItem, 'at'> {
+    id: '<arena>';
+    /** The image's path. */
+    image: string;
+    /** The image's margin, as `margin` on the `arena` element. */
+    margins?: Margin;
+}
+
+export type SpecialTimelineItem = PhaseShiftItem | EndPhaseItem | SpecialChildTimelineItem | LoopItem | ArenaItem;
 export type SpecialChildTimelineItem = TargetableItem | StatusTimelineItem;
 
 export type TimelineItem = ProcessedTimelineItem | SpecialTimelineItem;
@@ -586,6 +607,8 @@ export interface RaidData extends Omit<UnprocessedRaidData, 'actions' | 'timelin
     phases?: RaidDataPhase[];
     macros: Macro[];
     spoiler: boolean;
+    /** The compiled `.diagram` file next to the timeline, if it has one. */
+    diagram?: CompiledDiagram;
 }
 
 export type ContributorRole = 'author' | 'editor' | 'helper';
@@ -765,6 +788,12 @@ export interface UnprocessedRaidData {
     arena?: PositiveNumber | PositivePoint;
     /** The graphing information. Can be supplied to create diagrams. */
     graphing?: Graphing;
+    /**
+     * Named sets of waymarks for the diagram player, such as `lpdu`. A strategy in the `.diagram`
+     * file uses the set with its key. Each `waymark-<id>` is `[distance, degrees]`; a group key
+     * such as `waymark-letters` is a placeholder call such as `clocks(63)`.
+     */
+    waymarks?: Record<string, Record<string, [number, number] | string>>;
     /**
      * If set, this encounter will be marked as a spoiler encounter. Spoiler
      * encounters will have their image blurred in any listing in which it appears

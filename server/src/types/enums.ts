@@ -2,17 +2,17 @@ export type MechanicType = 'unknown' | 'raidwide' | 'raidwide.lb' | 'raidwide.pr
 export type ShapeType = 'chariot' | 'defamation' | 'dynamo' | 'in-or-out' | 'cone' | '270°' | 'line' | 'grid' | 'plus' | 'cross' | 'sides' | 'rect' | 'halfroom' | 'star';
 export type StatusType = 'dot' | 'vuln' | 'resistance' | 'condition' | 'delay' | 'form' | 'impairment' | 'impairment.pyretic' | 'indicator' | 'damage-up' | 'rot' | 'rot.pass' | 'rot.immunity';
 export type DamageType = 'physical' | 'magic' | 'dark' | 'mixed';
-export type LookType = 'plain' | 'aoe' | 'landslide' | 'sludge' | 'ripple' | 'cracks' | 'flame' | 'wormhole';
+export type LookType = 'none' | 'plain' | 'aoe' | 'landslide' | 'sludge' | 'ripple' | 'cracks' | 'flame' | 'wormhole';
 export type TetherLookType = 'plain' | 'glow' | 'flicker' | 'pulse' | 'strands' | 'braid' | 'coil' | 'chain' | 'jagged';
 export type MarkerLookType = 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower';
 export type EnterAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y';
 export type ExitAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'sweep' | 'feather-rain' | 'wind' | 'tornado' | 'vortex' | 'ice' | 'splash';
-export type ParameterName = 'speed' | 'height' | 'color';
-/** The look, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
+export type ParameterName = 'speed' | 'height' | 'length' | 'opacity' | 'color';
+/** The look, as its name or as `{ type, ...parameters }`. */
 export type LookTypeValue = LookType | {
     /** The look. */
     type: 'plain' | 'cracks';
-    /** The colour it's drawn in, as an HTML color string. Replaces the look's own colour; with `plain`, the fill. */
+    /** The colour it's drawn in, as an HTML color string. Replaces its own colour; with the `plain` look, the fill. */
     color?: string;
 } | {
     /** The look. */
@@ -23,7 +23,7 @@ export type LookTypeValue = LookType | {
      * @maximum 10
      */
     speed?: number;
-    /** The colour it's drawn in, as an HTML color string. Replaces the look's own colour; with `plain`, the fill. */
+    /** The colour it's drawn in, as an HTML color string. Replaces its own colour; with the `plain` look, the fill. */
     color?: string;
 } | {
     /** The look. */
@@ -35,11 +35,11 @@ export type LookTypeValue = LookType | {
      */
     speed?: number;
 };
-/** The tether look, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
+/** The tether look, as its name or as `{ type, ...parameters }`. */
 export type TetherLookTypeValue = TetherLookType | {
     /** The tether look. */
     type: 'plain' | 'glow' | 'chain';
-    /** The colour it's drawn in, as an HTML color string. Replaces the look's own colour; with `plain`, the fill. */
+    /** The colour it's drawn in, as an HTML color string. Replaces its own colour; with the `plain` look, the fill. */
     color?: string;
 } | {
     /** The tether look. */
@@ -59,10 +59,10 @@ export type TetherLookTypeValue = TetherLookType | {
      * @maximum 10
      */
     speed?: number;
-    /** The colour it's drawn in, as an HTML color string. Replaces the look's own colour; with `plain`, the fill. */
+    /** The colour it's drawn in, as an HTML color string. Replaces its own colour; with the `plain` look, the fill. */
     color?: string;
 };
-/** The marker, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
+/** The marker, as its name or as `{ type, ...parameters }`. */
 export type MarkerLookTypeValue = MarkerLookType | {
     /** The marker. */
     type: 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower';
@@ -73,7 +73,7 @@ export type MarkerLookTypeValue = MarkerLookType | {
      */
     speed?: number;
 };
-/** The animation, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
+/** The animation, as its name or as `{ type, ...parameters }`. */
 export type EnterAnimationValue = EnterAnimation | {
     /** The animation. */
     type: 'fade' | 'scale' | 'scale-x' | 'scale-y';
@@ -84,10 +84,10 @@ export type EnterAnimationValue = EnterAnimation | {
      */
     speed?: number;
 };
-/** The animation, as its name or as `{ type, ...parameters }` (see `enums/parameters.yaml`). */
+/** The animation, as its name or as `{ type, ...parameters }`. */
 export type ExitAnimationValue = ExitAnimation | {
     /** The animation. */
-    type: 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'sweep' | 'feather-rain' | 'wind' | 'splash';
+    type: 'fade' | 'scale' | 'scale-x' | 'scale-y';
     /**
      * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
      * @minimum 0.1
@@ -109,4 +109,53 @@ export type ExitAnimationValue = ExitAnimation | {
      * @maximum 5
      */
     height?: number;
+    /**
+     * The opacity of the effect. If omitted, the opacity of the element itself is used.
+     * @minimum 0
+     * @maximum 1
+     */
+    opacity?: number;
+} | {
+    /** The animation. */
+    type: 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'feather-rain' | 'wind' | 'splash';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+    /**
+     * The opacity of the effect. If omitted, the opacity of the element itself is used.
+     * @minimum 0
+     * @maximum 1
+     */
+    opacity?: number;
+} | {
+    /** The animation. */
+    type: 'flash';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+    /** The colour it's drawn in, as an HTML color string. Replaces its own colour; with the `plain` look, the fill. */
+    color?: string;
+} | {
+    /** The animation. */
+    type: 'sweep';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+    /**
+     * How long its moving part is, as a factor of its normal length (2 is twice as long).
+     * @minimum 0.1
+     * @maximum 20
+     */
+    length?: number;
+    /** The colour it's drawn in, as an HTML color string. Replaces its own colour; with the `plain` look, the fill. */
+    color?: string;
 };

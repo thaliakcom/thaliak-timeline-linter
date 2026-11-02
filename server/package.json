@@ -8,9 +8,14 @@
 		"node": "*"
 	},
 	"dependencies": {
+		"image-size": "^2.0.2",
+		"js-yaml": "^4.1.1",
 		"vscode-languageserver": "^9.0.1",
 		"vscode-languageserver-textdocument": "^1.0.11",
 		"yaml": "^2.4.5"
+	},
+	"devDependencies": {
+		"@types/js-yaml": "^4.0.9"
 	},
 	"scripts": {}
 }

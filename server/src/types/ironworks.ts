@@ -1,0 +1,114 @@
+import { Job } from './jobs.js';
+
+export interface Status {
+    name: string;
+    description: string;
+    icon: number;
+    maxStacks: number;
+    statusCategory: number;
+    hitEffect: number;
+    transfiguration: number;
+    isGaze: boolean;
+    canDispel: boolean;
+    inflictedByActor: boolean;
+    isPermanent: boolean;
+}
+
+export interface Action {
+    name: string;
+    icon: number;
+    actionCategory: number;
+    classJob: number;
+    classJobCategory: number;
+    behaviourType: number;
+    classJobLevel: number;
+    isRoleAction: boolean;
+    range: number;
+    canTargetSelf: boolean;
+    canTargetParty: boolean;
+    canTargetFriendly: boolean;
+    canTargetHostile: boolean;
+    targetArea: boolean;
+    canTargetDead: boolean;
+    castType: number;
+    effectRange: number;
+    actionCombo: number;
+    preservesCombo: number;
+    cast100ms: number;
+    recast100ms: number;
+    cooldownGroup: number;
+    maxCharges: number;
+    attackType: number;
+    aspect: number;
+    isPlayerAction: boolean;
+    description?: string;
+    actionTimelineHit: number;
+    animationStart: number;
+    animationEnd: number;
+    extraCastTime100ms: number;
+    XAxisModifier: number;
+    omenPath?: string;
+    omenType?: number;
+    omenAltPath?: string;
+    omenAltType?: number;
+}
+
+export interface BNpcBase {
+    scale: number;
+    modelChara: number;
+    isOmnidirectional: boolean;
+    /** The linked ModelChara's hitbox radius, or 0 if its model skeleton's radius applies. */
+    modelCharaRadius: number;
+    modelCharaModel: number;
+    /** The linked ModelChara's model type: 1 human, 2 demihuman, 3 monster. */
+    modelCharaType: number;
+}
+
+export interface ModelSkeleton {
+    radius: number;
+    height: number;
+    VFXScale: number;
+}
+
+export interface ContentFinderCondition {
+    name: string;
+    nameShort: string;
+    shortCode: string;
+    territoryType: number;
+    classJobLevelRequired: number;
+    classJobLevelSync: number;
+    itemLevelRequired: number;
+    itemLevelSync: number;
+    allowUndersized: boolean;
+    allowExplorerMode: boolean;
+    highEndDuty: boolean;
+    contentType: number;
+    image: number;
+    icon: number;
+}
+
+export type ClassJobCategory = { name: string } & Record<Job, boolean>;
+
+export interface ClassJob {
+    name: string;
+    abbreviation: string;
+    classJobCategory: number;
+    startingLevel: number;
+    partyBonus: number;
+    jobType: number;
+    isLimitedJob: boolean;
+    canQueueForDuty: boolean;
+    modifierHitPoints: number;
+    modifierManaPoints: number;
+    modifierStrength: number;
+    modifierVitality: number;
+    modifierDexterity: number;
+    modifierIntelligence: number;
+    modifierMind: number;
+    modifierPiety: number;
+    classJobParent: number;
+    primaryStat: number;
+    limitBreak1: number;
+    limitBreak2: number;
+    limitBreak3: number;
+}
