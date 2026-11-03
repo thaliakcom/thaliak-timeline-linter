@@ -35,7 +35,7 @@ import documentColorProvider from './document-color-provider';
 import colorPresentationProvider from './color-presentation-provider';
 import inlayHintProvider from './inlay-hint-provider';
 import outlineProvider from './outline-provider';
-import statusIconProvider from './status-icon-provider';
+import statusIconProvider, { iconSpacers } from './status-icon-provider';
 import { configureIronworks, type IronworksOptions } from './ironworks';
 import { diagramOf, isDiagramUri, statusKeysOf } from './diagram-context';
 import { lintDiagram } from './diagram-linter';
@@ -263,9 +263,12 @@ connection.onPrepareRename(prepareRenameProvider(documents, documentCache, globa
 connection.onCodeAction(codeActionProvider(documents, documentCache, globalSettings));
 connection.onDocumentColor(documentColorProvider(documents, documentCache, globalSettings));
 connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));
-connection.languages.inlayHint.on(byFileType(textDocumentUri, diagramInlayHintProvider(documents), inlayHintProvider(documents, documentCache, globalSettings)));
+const inlayHints = byFileType(textDocumentUri, diagramInlayHintProvider(documents), inlayHintProvider(documents, documentCache, globalSettings));
+const statusIcons = byFileType(outlineUri, diagramStatusIconProvider(documents, documentCache, globalSettings), statusIconProvider(documents, documentCache, globalSettings));
+
+connection.languages.inlayHint.on(async params => [...inlayHints(params), ...iconSpacers(await statusIcons({ uri: params.textDocument.uri }), params.range)]);
 connection.onRequest('thaliak/outline', byFileType<OutlineParams, Promise<OutlineNode[] | null>>(outlineUri, async params => diagramOutlineProvider(documents)(params), outlineProvider(documents, documentCache, globalSettings)));
-connection.onRequest('thaliak/statusIcons', byFileType(outlineUri, diagramStatusIconProvider(documents, documentCache, globalSettings), statusIconProvider(documents, documentCache, globalSettings)));
+connection.onRequest('thaliak/statusIcons', statusIcons);
 connection.onRequest('thaliak/tooltip', tooltipProvider(documents, documentCache, globalSettings));
 
 // Make the text document manager listen on the connection

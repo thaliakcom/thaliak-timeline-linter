@@ -1,4 +1,4 @@
-import { TextDocuments } from 'vscode-languageserver';
+import { InlayHint, Range, TextDocuments } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
@@ -9,6 +9,19 @@ import { getIfType, getStatus, PLACEHOLDER_REGEX } from './util';
 
 /** The stack count suffix (`:<n>`) at the start of what follows the key of a placeholder, as opposed to a duration (`:<n>s`). */
 const STACKS_REGEX = /^:(\d+)(?=[:\])])/;
+
+/** What reserves room for a status icon: blank, and wider than the icon at any inlay hint font size up to the editor's. */
+const ICON_SPACER = '   ';
+
+/**
+ * Blank inlay hints at `icons`, inside of `range`. Word wrap ignores the width of decorations and only counts
+ * injected text, and inlay hints are the only injected text that extensions can add. The client draws the icons over them.
+ */
+export function iconSpacers(icons: StatusIcon[] | null, range: Range): InlayHint[] {
+    return (icons ?? [])
+        .filter(icon => icon.range.start.line >= range.start.line && icon.range.start.line <= range.end.line)
+        .map(icon => ({ position: icon.range.start, label: ICON_SPACER }));
+}
 
 /**
  * The in-game icons of the statuses in a timeline file: one after the colon of each key in `status`,

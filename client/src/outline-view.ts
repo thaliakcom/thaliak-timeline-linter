@@ -219,6 +219,12 @@ export function registerOutlineView(context: vscode.ExtensionContext, client: La
         vscode.commands.registerCommand('thaliak-timeline-linter.outline.findReferences', (node: OutlineNode) => view.findReferences(node)),
         vscode.commands.registerCommand('thaliak-timeline-linter.outline.goToDefinition', (node: OutlineNode) => view.goToDefinition(node)),
         vscode.window.onDidChangeActiveTextEditor(() => view.refresh()),
+        // Status icons only show with inlay hints.
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('editor.inlayHints.enabled')) {
+                view.refresh();
+            }
+        }),
         vscode.workspace.onDidChangeTextDocument(e => {
             if (e.document === vscode.window.activeTextEditor?.document) {
                 refresh();
