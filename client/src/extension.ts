@@ -11,6 +11,7 @@ import {
     LanguageClient,
     LanguageClientOptions,
     ServerOptions,
+    State,
     TransportKind
 } from 'vscode-languageclient/node';
 import { registerOutlineView } from './outline-view';
@@ -36,6 +37,25 @@ function ironworksOptions(context: ExtensionContext) {
 async function isThaliakProject(): Promise<boolean> {
     return (await vscode.workspace.findFiles('**/{calender,metadata,recent}.yaml', '**/node_modules')).length === 3
         && (await vscode.workspace.findFiles('**/{ultimates,raids,extremes}/.yaml', '**/node_modules')).length > 0;
+}
+
+/** Opens the files that the server reads besides the file being edited, which sends them to it. */
+function openSecondaryFiles(): void {
+    vscode.workspace.findFiles('**/schemas/diagram.schema.json', '**/node_modules', 1)
+        .then(uris => uris.forEach(uri => vscode.workspace.openTextDocument(uri)));
+
+    vscode.workspace.findFiles('**/enums/*.yaml', '**/node_modules')
+        .then(async uris => {
+            for (const uri of uris) {
+                vscode.workspace.openTextDocument(uri);
+            }
+
+            if (uris.length === 0 && await isThaliakProject()) {
+                // Due to the activation event, which checks for the presence of an enum file,
+                // this branch should never be reached.
+                vscode.window.showErrorMessage('The Thaliak language server failed to find enums in the current workspace. This will limit the language server\'s functionality. Please make sure your workspace contains the enums from the https://github.com/thaliakcom/data repository.');
+            }
+        });
 }
 
 export function activate(context: ExtensionContext) {
@@ -72,26 +92,17 @@ export function activate(context: ExtensionContext) {
         clientOptions
     );
 
+    // On every start, as a new server knows nothing yet, and VS Code closes these documents when nothing shows them.
+    context.subscriptions.push(client.onDidChangeState(({ newState }) => {
+        if (newState === State.Running) {
+            openSecondaryFiles();
+        }
+    }));
+
     // Start the client. This will also launch the server
     const started = client.start();
 
     registerOutlineView(context, client, started);
-
-    vscode.workspace.findFiles('**/schemas/diagram.schema.json', '**/node_modules', 1)
-        .then(uris => uris.forEach(uri => vscode.workspace.openTextDocument(uri)));
-
-    vscode.workspace.findFiles('**/enums/*.yaml', '**/node_modules')
-        .then(async uris => {
-            for (const uri of uris) {
-                vscode.workspace.openTextDocument(uri);
-            }
-
-            if (uris.length === 0 && await isThaliakProject()) {
-                // Due to the activation event, which checks for the presence of an enum file,
-                // this branch should never be reached.
-                vscode.window.showErrorMessage('The Thaliak language server failed to find enums in the current workspace. This will limit the language server\'s functionality. Please make sure your workspace contains the enums from the https://github.com/thaliakcom/data repository.');
-            }
-        });
 
     vscode.commands.registerCommand('thaliak-timeline-linter.restart', () => client.restart());
 
