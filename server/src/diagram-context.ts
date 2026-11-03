@@ -333,6 +333,13 @@ export function liveIdsOf(tokens: DiagramToken[]): Set<string> {
     return ids;
 }
 
+/** The keys of the status effects that the `.diagram` file `textDocument` names. */
+export function statusKeysOf(textDocument: TextDocument): Set<string> {
+    return new Set(tokensOf(textDocument.getText())
+        .filter(token => token.statement?.verb === 'status' && token.kind === 'subject')
+        .map(token => token.text.replace(/:\d+$/, '')));
+}
+
 /** Whether a token names the status effect or action `key`, as opposed to an element with the same name. */
 function namesAs(token: DiagramToken, kind: 'action' | 'status', key: string): boolean {
     const isStatus = token.statement?.verb === 'status';

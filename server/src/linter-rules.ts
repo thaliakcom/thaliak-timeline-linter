@@ -5,7 +5,7 @@ import { LinterInput } from './linter';
 import { LinterOptions, PropertyOrder } from './server';
 import { SpecialStatuses } from './types/graphing';
 import { UnprocessedRaidData, WipKind } from './types/raids';
-import { getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, getStatusValues, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 
 function* diagnostics(diagnostic: Diagnostic): Generator<Diagnostic> {
     diagnostic.source = 'thaliak';
@@ -814,6 +814,36 @@ export function* actionsMustBeUsed({ textDocument, document }: LinterInput): Gen
                 tags: [DiagnosticTag.Unnecessary],
                 message: `Action '${action.key.value}' is never used in the timeline, in children or in placeholders.`,
                 range: getRange(textDocument, action.key.range)
+            });
+        }
+    }
+}
+
+export function* statusesMustBeUsed({ textDocument, document, diagramStatuses }: LinterInput): Generator<Diagnostic> {
+    const statuses = getIfType(document, 'status', yaml.isMap);
+
+    if (statuses == null) {
+        return;
+    }
+
+    const used = new Set<string>([...diagramStatuses, ...getStatusValues(document).map(value => value.key)]);
+
+    for (const match of textDocument.getText().matchAll(PLACEHOLDER_REGEX)) {
+        const text = match[1] ?? match[2];
+
+        if (text.startsWith('s:')) {
+            used.add(text.slice(2));
+        }
+    }
+
+    for (const status of statuses.items) {
+        if (yaml.isScalar(status.key) && status.key.range != null && !used.has(String(status.key.value))) {
+            yield* diagnostics({
+                code: 'unused-status',
+                severity: DiagnosticSeverity.Hint,
+                tags: [DiagnosticTag.Unnecessary],
+                message: `Status effect '${status.key.value}' is never used in the timeline, in placeholders or in the .diagram file.`,
+                range: getRange(textDocument, status.key.range)
             });
         }
     }

@@ -11,14 +11,17 @@ export interface LinterInput {
     /** `document` as plain JavaScript, converted once per lint since the conversion is expensive. */
     js: UnprocessedRaidData;
     options: LinterOptions;
+    /** The status effects that the timeline's `.diagram` file names. */
+    diagramStatuses: Set<string>;
 }
 
-export function lintDocument(textDocument: TextDocument, document: yaml.Document, settings: LinterOptions): Diagnostic[] {
+export function lintDocument(textDocument: TextDocument, document: yaml.Document, settings: LinterOptions, diagramStatuses: Set<string>): Diagnostic[] {
     const input: LinterInput = {
         textDocument,
         document,
         js: document.toJS() as UnprocessedRaidData,
-        options: settings
+        options: settings,
+        diagramStatuses
     };
 
     settings.propOrder.clear();

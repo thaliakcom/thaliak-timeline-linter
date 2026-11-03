@@ -37,7 +37,7 @@ import inlayHintProvider from './inlay-hint-provider';
 import outlineProvider from './outline-provider';
 import statusIconProvider from './status-icon-provider';
 import { configureIronworks, type IronworksOptions } from './ironworks';
-import { isDiagramUri } from './diagram-context';
+import { diagramOf, isDiagramUri, statusKeysOf } from './diagram-context';
 import { lintDiagram } from './diagram-linter';
 import { diagramCompletionProvider, diagramDefinitionProvider, diagramHoverProvider, diagramInlayHintProvider, diagramOutlineProvider, diagramReferenceProvider, diagramStatusIconProvider } from './diagram-providers';
 
@@ -233,7 +233,10 @@ async function validateTextDocument(textDocument: TextDocument): Promise<Diagnos
     // Parse enums as TextDocuments
     const options = documentCache.getLinterOptions(globalSettings);
 
-    return lintDocument(textDocument, document, options);
+    const diagram = diagramOf(documents, textDocument.uri);
+    const diagramStatuses = diagram != null ? statusKeysOf(diagram) : new Set<string>();
+
+    return lintDocument(textDocument, document, options, diagramStatuses);
 }
 
 connection.onDidChangeWatchedFiles(_change => {
