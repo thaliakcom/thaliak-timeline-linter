@@ -139,7 +139,8 @@ export interface LinterOptions extends ThaliakTimelineLinterSettings {
     propOrder: Map<string, PropertyOrder>;
 }
 
-export const fixableDiagnostics: Diagnostic[] = [];
+/** The diagnostics with an automatic fix, by document, from each document's last lint. */
+export const fixableDiagnostics = new Map<string, Diagnostic[]>();
 
 // The global settings, used when the `workspace/configuration` request is not supported by the client.
 // Please note that this is not the case when using this server with the client provided in this example

@@ -1,12 +1,12 @@
 // Diagnostics of `.diagram` files: whatever thaliak's build would report, plus the checks of what `define` blocks draw.
-import { Diagnostic, DiagnosticSeverity, TextDocuments } from 'vscode-languageserver';
+import { Diagnostic, DiagnosticSeverity, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { diagramInputOf, DefinitionField, fieldsOf, hasBalancedBrackets, isDiagramWip, linesOf, timelineOf } from './diagram-context';
-import { LinterOptions } from './server';
+import { fixableDiagnostics, LinterOptions } from './server';
 import { DiagramField, DiagramSchema, DiagramValueType } from './types/diagram-schema';
 import { compileDiagram } from './utility/diagram-ddl/compile';
-import { Definition, parse } from './utility/diagram-ddl/parse';
+import { Definition, parse, Statement } from './utility/diagram-ddl/parse';
 
 /** The element IDs that mean something by themselves, and so can't be defined. `boss`, `enemy` and `arena` can. */
 const RESERVED_ELEMENTS = new Set(['players', 'DPS', 'tanks', 'healers', 'supports', 'T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2', 'cast', 'hint', 'marker-a', 'marker-1', 'marker-b', 'marker-2', 'marker-c', 'marker-3', 'marker-d', 'marker-4']);
@@ -39,7 +39,7 @@ function typeOf(value: unknown): string | undefined {
  * The checks of what `define` blocks draw, which `processGraphing()` in thaliak's `data.ts` and the viewer rely on,
  * except for those that need game data or an arena image's size. An action's block draws the element its `telegraph` names.
  */
-function* validateDefinitions(definitions: Definition[], lines: string[], options: LinterOptions): Generator<Diagnostic> {
+function* validateDefinitions(textDocument: TextDocument, definitions: Definition[], lines: string[], options: LinterOptions): Generator<Diagnostic> {
     const schema = options.diagramSchema;
     const looks = schema != null ? { aoes: Object.keys(schema.looks.aoes), tethers: Object.keys(schema.looks.tethers), markers: Object.keys(schema.looks.markers) } : undefined;
     const animations = schema?.animations.elements;
@@ -109,7 +109,7 @@ function* validateDefinitions(definitions: Definition[], lines: string[], option
         }
     }
 
-    yield* validateFieldOrder(blocks.map(block => block.fields));
+    yield* validateFieldOrder(textDocument, blocks);
 }
 
 /** The name of a value's type, as the schema names it. */
@@ -158,8 +158,58 @@ function* validateFields(definitions: Definition[], lines: string[], schema: Dia
     }
 }
 
+/** The text edits that move `field`, with its further lines, to right before `target`, which must come before it. */
+function moveFieldBefore(textDocument: TextDocument, fields: DefinitionField[], field: DefinitionField, target: DefinitionField): TextEdit[] {
+    const next = fields.slice(fields.indexOf(field) + 1).find(other => other.key !== field.key);
+    const lastLine = (next != null ? fields[fields.indexOf(next) - 1]! : fields.at(-1)!).line;
+    const end = { line: lastLine + 1, character: 0 };
+    const text = textDocument.getText({ start: { line: field.line, character: 0 }, end });
+    // The last line of a file may have no line break of its own, and then the one before it goes instead.
+    const isLast = !text.endsWith('\n');
+    const newline = textDocument.getText().includes('\r\n') ? '\r\n' : '\n';
+    const start = isLast ? { line: field.line - 1, character: Number.MAX_SAFE_INTEGER } : { line: field.line, character: 0 };
+
+    return [
+        TextEdit.del({ start, end }),
+        TextEdit.insert({ line: target.line, character: 0 }, isLast ? text + newline : text)
+    ];
+}
+
+/** Where a signed verb starts. One without a sign starts a column later, so that the two line up by their letters. */
+const SIGNED_VERB_COLUMN = 8;
+/** Where a statement's arguments start, unless its verb is too long for that. */
+const ARGUMENTS_COLUMN = 18;
+
+/** Warns about statements whose verb or arguments aren't in their column, with the edit that puts them there. */
+function* validateAlignment(statements: Statement[], lines: string[]): Generator<Diagnostic> {
+    for (const statement of statements) {
+        const line = statement.line - 1;
+        const text = lines[line]!.trimEnd();
+        const [, time, rest] = /^(\d*)\s*(.*)$/.exec(text)!;
+        const verb = `${statement.sign}${statement.verb}`;
+        const label = rest === verb ? verb : rest!.startsWith(`${verb}:`) ? `${verb}:` : '';
+        const args = rest!.slice(label.length).trimStart();
+        const verbColumn = Math.max(SIGNED_VERB_COLUMN, time!.length + 1) + (statement.sign === '' ? 1 : 0);
+        const head = label !== '' ? time!.padEnd(verbColumn) + label : time!;
+        const expected = args !== '' ? head.padEnd(Math.max(ARGUMENTS_COLUMN, head.length + 1)) : head;
+        const actual = text.slice(0, text.length - args.length);
+
+        if (actual !== expected) {
+            const isVerbOff = label !== '' && actual.indexOf(label) !== verbColumn;
+            const range = { start: { line, character: 0 }, end: { line, character: actual.length } };
+
+            yield {
+                ...diagnostic(DiagnosticSeverity.Warning, 'diagram-alignment', isVerbOff
+                    ? `'${verb}' should start at column ${verbColumn + 1}: signed verbs start at column ${SIGNED_VERB_COLUMN + 1}, and others one column later.`
+                    : `The arguments should start at column ${expected.length + 1}.`, line, 0, actual.length),
+                data: { textEdits: [TextEdit.replace(range, expected)] }
+            };
+        }
+    }
+}
+
 /** Warns about fields that come after a field that an earlier block has after them, so every block follows one order. */
-function* validateFieldOrder(blocks: DefinitionField[][]): Generator<Diagnostic> {
+function* validateFieldOrder(textDocument: TextDocument, blocks: { definition: Definition, fields: DefinitionField[] }[]): Generator<Diagnostic> {
     /** For every field, the fields seen after it. */
     const successors = new Map<string, Set<string>>();
     const comesAfter = (a: string, b: string, seen: Set<string> = new Set()): boolean => {
@@ -172,14 +222,18 @@ function* validateFieldOrder(blocks: DefinitionField[][]): Generator<Diagnostic>
         return false;
     };
 
-    for (const fields of blocks) {
+    for (const { definition, fields } of blocks) {
         const keys = fields.filter((field, i) => fields.findIndex(x => x.key === field.key) === i);
 
         for (const [i, field] of keys.entries()) {
             const target = keys.slice(0, i).find(earlier => comesAfter(earlier.key, field.key));
 
             if (target != null) {
-                yield diagnostic(DiagnosticSeverity.Warning, 'inconsistent-prop-order/element-definition', `The order of this '${field.key}' is inconsistent: it should come before '${target.key}'.`, field.line, field.start);
+                yield {
+                    ...diagnostic(DiagnosticSeverity.Warning, 'inconsistent-prop-order/element-definition', `The order of this '${field.key}' is inconsistent: it should come before '${target.key}'.`, field.line, field.start),
+                    // Moves shift each other's lines, so "fix all" only does one per block at a time.
+                    data: { textEdits: moveFieldBefore(textDocument, fields, field, target), uniqueness: String(definition.line) }
+                };
             }
         }
 
@@ -236,7 +290,8 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
         }
     }
 
-    found.push(...validateDefinitions(parsed.definitions, lines, options));
+    found.push(...validateDefinitions(textDocument, parsed.definitions, lines, options), ...validateAlignment(parsed.statements, lines));
+    fixableDiagnostics.set(textDocument.uri, found.filter(item => item.data?.textEdits != null));
 
     return found;
 }

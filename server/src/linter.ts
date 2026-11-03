@@ -22,13 +22,14 @@ export function lintDocument(textDocument: TextDocument, document: yaml.Document
     };
 
     settings.propOrder.clear();
-    fixableDiagnostics.length = 0;
+    const fixable: Diagnostic[] = [];
+    fixableDiagnostics.set(textDocument.uri, fixable);
     const diagnostics: Diagnostic[] = [];
 
     for (const rule of Object.values(linterRules)) {
         for (const diagnostic of rule(input)) {
             if (diagnostic.data != null && diagnostic.data.textEdits != null) {
-                fixableDiagnostics.push(diagnostic);
+                fixable.push(diagnostic);
             }
 
             diagnostics.push(diagnostic);

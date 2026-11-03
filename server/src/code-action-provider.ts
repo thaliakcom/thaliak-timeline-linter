@@ -43,7 +43,7 @@ function autoFixerProvider(params: CodeActionParams): CodeAction[] {
         });
     }
 
-    for (const diagnostic of fixableDiagnostics) {
+    for (const diagnostic of fixableDiagnostics.get(params.textDocument.uri) ?? []) {
         if (diagnostic.data == null || diagnostic.data.textEdits == null || diagnostic.code == null) {
             continue;
         }
