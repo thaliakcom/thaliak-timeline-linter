@@ -2,8 +2,73 @@
     "scopeName": "source.timeline.id-expression.thaliak",
     "injectionSelector": "L:source",
     "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-    "patterns": [{ "include": "#id-expression" }],
+    "patterns": [
+        { "include": "#special-untargetable" },
+        { "include": "#special-targetable" },
+        { "include": "#special-phase" },
+        { "include": "#special-endphase" },
+        { "include": "#special-addstatus" },
+        { "include": "#special-removestatus" },
+        { "include": "#special-arena" },
+        { "include": "#special-loop" },
+        { "include": "#status-expression" },
+        { "include": "#id-expression" }
+    ],
     "repository": {
+        "status-expression": {
+            "match": "(?<=\\sstatus:\\s)([A-Za-z][\\w\\-.]*)(?=(?::\\d+)?\\s*(?:#.*)?$)",
+            "captures": {
+                "1": { "name": "entity.name.variable.template.status.thaliak" }
+            }
+        },
+        "special-untargetable": {
+            "match": "(?<=id:\\s)(<untargetable>)",
+            "captures": {
+                "1": { "name": "entity.name.variable.template.special.untargetable.thaliak" }
+            }
+        },
+        "special-targetable": {
+            "match": "(?<=id:\\s)(<targetable>)",
+            "captures": {
+                "1": { "name": "entity.name.variable.template.special.targetable.thaliak" }
+            }
+        },
+        "special-phase": {
+            "match": "(?<=id:\\s)(<phase>)",
+            "captures": {
+                "1": { "name": "entity.name.variable.template.special.phase.thaliak" }
+            }
+        },
+        "special-endphase": {
+            "match": "(?<=id:\\s)(<endphase>)",
+            "captures": {
+                "1": { "name": "entity.name.variable.template.special.endphase.thaliak" }
+            }
+        },
+        "special-addstatus": {
+            "match": "(?<=id:\\s)(<addstatus>)",
+            "captures": {
+                "1": { "name": "entity.name.variable.template.special.addstatus.thaliak" }
+            }
+        },
+        "special-removestatus": {
+            "match": "(?<=id:\\s)(<removestatus>)",
+            "captures": {
+                "1": { "name": "entity.name.variable.template.special.removestatus.thaliak" }
+            }
+        },
+        "special-arena": {
+            "match": "(?<=id:\\s)(<arena>)",
+            "captures": {
+                "1": { "name": "entity.name.variable.template.special.arena.thaliak" }
+            }
+        },
+        "special-loop": {
+            "match": "(?<=id:\\s)(<loop>)",
+            "captures": {
+                "1": { "name": "entity.name.variable.template.special.loop.thaliak" }
+            }
+        },
         "id-expression": {
             "match": "(?<=id:\\s)([A-z<][A-z0-9\\-._\\(\\)<>]+)",
             "captures": {
