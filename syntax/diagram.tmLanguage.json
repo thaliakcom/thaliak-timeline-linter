@@ -218,6 +218,24 @@
             "name": "variable.language.placeholder.thaliak-diagram"
         },
         "string": {
+            "patterns": [
+                { "include": "#quoted-url" },
+                { "include": "#quoted-text" }
+            ]
+        },
+        "quoted-url": {
+            "match": "(\")(url)(\\()(#)([A-Za-z][\\w-]*)(\\))(\")",
+            "captures": {
+                "1": { "name": "string.quoted.double.thaliak-diagram punctuation.definition.string.begin.thaliak-diagram" },
+                "2": { "name": "entity.name.function.thaliak-diagram" },
+                "3": { "name": "punctuation.section.parens.begin.thaliak-diagram" },
+                "4": { "name": "punctuation.separator.hash.thaliak-diagram" },
+                "5": { "name": "entity.name.type.thaliak-diagram" },
+                "6": { "name": "punctuation.section.parens.end.thaliak-diagram" },
+                "7": { "name": "string.quoted.double.thaliak-diagram punctuation.definition.string.end.thaliak-diagram" }
+            }
+        },
+        "quoted-text": {
             "begin": "\"",
             "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.thaliak-diagram" } },
             "end": "\"|$",
