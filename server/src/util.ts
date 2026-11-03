@@ -111,7 +111,8 @@ export function getKeyValueAt(textDocument: TextDocument, position: Position, ke
 
     // We don't want to match if the key is at the top level of the document
     // to avoid false positives.
-    if (trimmedLineBefore === lineBefore || !trimmedLineBefore.startsWith(`${key}: `)) {
+    // The key can be the first of a sequence item (`- status: x`), which isn't at the top level.
+    if ((trimmedLineBefore === lineBefore && !lineBefore.startsWith('- ')) || !trimmedLineBefore.replace(/^(?:-\s+)+/, '').startsWith(`${key}: `)) {
         return null;
     }
 
@@ -209,6 +210,24 @@ export function getSymbolAt(document: yaml.Document, textDocument: TextDocument,
         }
         
         return null;
+    }
+
+    const statusValue = getKeyValueAt(textDocument, position, 'status');
+
+    if (statusValue != null) {
+        // Only a single key, without its stack count. Flow lists have several on a line.
+        const statusKey = /^[^\s[{#:]+/.exec(statusValue.text)?.[0];
+
+        if (statusKey == null) {
+            return null;
+        }
+
+        console.log(`[symbol-resolver]: found status effect '${statusKey}' at cursor position`);
+
+        return {
+            text: `s:${statusKey}`,
+            range: { start: statusValue.range.start, end: { line: position.line, character: statusValue.range.start.character + statusKey.length } }
+        };
     }
 
     const mechanic = getKeyValueAt(textDocument, position, 'mechanic');
@@ -378,6 +397,36 @@ export function getStatus(document: yaml.Document | undefined, key: string): yam
     }
 
     return null;
+}
+
+/**
+ * The status effects named by the values of `status` keys anywhere in `document`: in `inflicts`, special timeline
+ * items and graph steps, alone or in a list. Each is without its stack count (`:<n>`), and `range` only covers its key.
+ */
+export function getStatusValues(document: yaml.Document): { key: string, range: yaml.Range }[] {
+    const values: { key: string, range: yaml.Range }[] = [];
+    const add = (node: unknown) => {
+        if (yaml.isScalar(node) && typeof node.value === 'string' && node.range != null) {
+            const key = node.value.replace(/:\d+$/, '');
+            const start = node.range[0] + (node.type === yaml.Scalar.QUOTE_DOUBLE || node.type === yaml.Scalar.QUOTE_SINGLE ? 1 : 0);
+
+            values.push({ key, range: [start, start + key.length, start + key.length] });
+        }
+    };
+
+    yaml.visit(document, {
+        Pair(_, pair) {
+            if (yaml.isScalar(pair.key) && pair.key.value === 'status') {
+                add(pair.value);
+
+                if (yaml.isSeq(pair.value)) {
+                    pair.value.items.forEach(add);
+                }
+            }
+        }
+    });
+
+    return values;
 }
 
 /** The keys of all actions' `strategies`, which a `.diagram` file's strategies cover. */

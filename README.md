@@ -23,7 +23,7 @@ game data (below), a telegraph's timing and an action's size aren't checked.
 
 With [ironworks-cli](https://github.com/thaliakcom/ironworks-cli) installed, the extension shows the
 in-game names, descriptions and icons of actions and statuses in hovers, tree view tooltips, the tree
-view and in front of status keys and `s:` placeholders.
+view and in front of status keys, `inflicts` statuses and `s:` placeholders.
 
 1. Install the CLI: `cargo install --git https://github.com/thaliakcom/ironworks-cli`
 2. Set `thaliak-timeline-linter.gameDirectory` to the FFXIV install directory (the one containing

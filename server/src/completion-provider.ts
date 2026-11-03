@@ -255,7 +255,8 @@ export default function completionProvider(documents: TextDocuments<TextDocument
             }
         }
 
-        if (isStatusId) {
+        // Only real statuses can be inflicted.
+        if (isStatusId && !result.hasAncestor(x => yaml.isPair(x) && yaml.isScalar(x.key) && x.key.value === 'inflicts')) {
             for (const key in SpecialStatuses) {
                 items.push({
                     label: key,

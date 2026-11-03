@@ -11,9 +11,9 @@ import { getIfType, getStatus, PLACEHOLDER_REGEX } from './util';
 const STACKS_REGEX = /^:(\d+)(?=[:\])])/;
 
 /**
- * The in-game icons of the statuses in a timeline file: one after the colon of each key in `status`
- * and one in front of each `s:` placeholder, which shows the icon for its stack count. Empty if game
- * data is off, `null` if the file isn't a timeline.
+ * The in-game icons of the statuses in a timeline file: one after the colon of each key in `status`,
+ * one in front of each status of an action's `inflicts`, and one in front of each `s:` placeholder,
+ * which shows the icon for its stack count. Empty if game data is off, `null` if the file isn't a timeline.
  */
 export default function statusIconProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: OutlineParams) => Promise<StatusIcon[] | null> {
     return async (params) => {
@@ -53,6 +53,18 @@ export default function statusIconProvider(documents: TextDocuments<TextDocument
 
                 if (id?.range != null) {
                     add(id.range[0], String(pair.key.value), 1);
+                }
+            }
+        }
+
+        for (const action of getIfType(document, 'actions', yaml.isMap)?.items ?? []) {
+            const inflicts = yaml.isMap(action.value) ? getIfType(action.value, 'inflicts', yaml.isSeq) : null;
+
+            for (const inflicted of inflicts?.items ?? []) {
+                const status = yaml.isMap(inflicted) ? inflicted.get('status', true) : null;
+
+                if (yaml.isScalar(status) && typeof status.value === 'string' && status.range != null) {
+                    add(status.range[0], status.value, 1);
                 }
             }
         }

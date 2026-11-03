@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { diagramOf, occurrencesOf } from './diagram-context';
-import { findPlaceholders, getIfType, getRange, getSymbolAt, SymbolRange } from './util';
+import { findPlaceholders, getIfType, getRange, getStatusValues, getSymbolAt, SymbolRange } from './util';
 import * as yaml from 'yaml';
 
 export function renameProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: RenameParams) => WorkspaceEdit | null {
@@ -79,6 +79,12 @@ export function renameProvider(documents: TextDocuments<TextDocument>, documentC
                     if (yaml.isScalar(effect.key) && effect.key.range != null && effect.key.value === actionId) {
                         edits.push(TextEdit.replace(getRange(textDocument, effect.key.range), params.newName));
                     }
+                }
+            }
+
+            for (const value of getStatusValues(document)) {
+                if (value.key === actionId) {
+                    edits.push(TextEdit.replace(getRange(textDocument, value.range), params.newName));
                 }
             }
 

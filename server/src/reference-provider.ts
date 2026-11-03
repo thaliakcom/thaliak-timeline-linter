@@ -4,7 +4,7 @@ import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { diagramOf, occurrencesOf } from './diagram-context';
-import { findPlaceholders, getAction, getKeyValueAt, getRange, getStatus, getSymbolAt, KEY_REGEX, perPrefix, TextRange } from './util';
+import { findPlaceholders, getAction, getKeyValueAt, getRange, getStatus, getStatusValues, getSymbolAt, KEY_REGEX, perPrefix, TextRange } from './util';
 
 function escapeRegExp(string: string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
@@ -102,6 +102,12 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
     
                 if (status != null) {
                     locations.push(makeLocation(textDocument, status.key.range!));
+                }
+
+                for (const value of getStatusValues(document)) {
+                    if (value.key === key) {
+                        locations.push(makeLocation(textDocument, value.range));
+                    }
                 }
 
                 addDiagramOccurrences('status', key);
