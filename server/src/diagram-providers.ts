@@ -10,7 +10,7 @@ import { actionTooltip, getStatusIcon, statusTooltip, type TooltipContext } from
 import { DiagramDefineKind, DiagramField, DiagramSchema, valuesOf } from './types/diagram-schema';
 import { OutlineNode, OutlineParams, StatusIcon } from './types/outline';
 import { UnprocessedRaidData } from './types/raids';
-import { parse, tokenize } from './utility/diagram-ddl/parse';
+import { Definition, parse, tokenize } from './utility/diagram-ddl/parse';
 import { formatTime, getAction, getRange, getStatus, getStrategyKeys } from './util';
 
 const PLAYERS = ['T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2'];
@@ -91,7 +91,7 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
         const wordStart = before.search(/[^\s,:]*$/);
         const edit = (label: string) => TextEdit.replace({ start: { line, character: wordStart }, end: params.position }, label);
         const timeline = timelineOf(documents, textDocument.uri);
-        const elementDefinitions = parsed.definitions.filter(definition => definition.kind === 'element' && timeline?.js.actions?.[definition.id] == null).map(definition => definition.id);
+        const elementDefinitions = parsed.definitions.filter(definition => definition.kind === 'element').map(definition => definition.id);
         const strategies = parsed.definitions.filter(definition => definition.kind === 'strategy').map(definition => definition.id);
         const schema = documentCache.getLinterOptions(settings).diagramSchema;
         const groups = groupsOf(schema);
@@ -103,7 +103,16 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 
         // The header of a `define` block.
         if (/^define\s+\S*$/.test(before)) {
-            return [...keyword(['gradient', 'strategy'], label => schema?.define[label as 'gradient' | 'strategy'].description), ...member(keysOf(timeline, 'actions'), 'b')];
+            return keyword(['element', 'action', 'gradient', 'strategy'], label => schema?.define[label as Definition['kind']].description);
+        }
+
+        if (/^define\s+action\s+\S*$/.test(before)) {
+            return member(keysOf(timeline, 'actions'));
+        }
+
+        // The ID of anything else is new, so there's nothing to suggest.
+        if (/^define\s+\S+\s+\S*$/.test(before)) {
+            return [];
         }
 
         // Inside a `define` block, which runs until the next line in the first column.
@@ -119,18 +128,16 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 
             if (field == null) {
                 // Without a colon yet, it's a key, unless the line continues `exit`.
-                const isAction = timeline?.js.actions?.[definition.id] != null;
-
                 if (schema == null) {
                     return [];
                 }
 
-                const known = fieldsOfKind(schema, definition.kind, isAction);
+                const known = fieldsOfKind(schema, definition.kind);
 
                 return keyword(Object.keys(known), label => known[label]?.description);
             }
 
-            const spec = schema != null ? fieldsOfKind(schema, definition.kind, true)[field[1]!] : undefined;
+            const spec = schema != null ? fieldsOfKind(schema, definition.kind)[field[1]!] : undefined;
 
             switch (field[1]) {
                 case 'telegraph':
@@ -230,11 +237,12 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 }
 
 /** The fields a `define` block of `kind` can have. Only an action's has the action fields. */
-function fieldsOfKind(schema: DiagramSchema, kind: 'element' | 'gradient' | 'strategy', isAction: boolean): DiagramDefineKind['fields'] {
+function fieldsOfKind(schema: DiagramSchema, kind: Definition['kind']): DiagramDefineKind['fields'] {
     switch (kind) {
         case 'gradient': return {};
         case 'strategy': return schema.define.strategy.fields;
-        case 'element': return { ...(isAction ? schema.define.action.fields : {}), ...schema.define.element.fields };
+        case 'action': return { ...schema.define.action.fields, ...schema.define.element.fields };
+        case 'element': return schema.define.element.fields;
     }
 }
 
@@ -317,10 +325,9 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
             const definition = parsed.definitions.find(x => x.line - 1 === line);
 
             if (word === 'define') return hover(`**define**\n\n${schema.define.description}`);
-            if (word === 'gradient' && definition?.kind === 'gradient') return hover(`**define gradient**\n\n${schema.define.gradient.description}`);
-            if (word === 'strategy' && definition?.kind === 'strategy') return hover(`**define strategy**\n\n${schema.define.strategy.description}`);
+            if (definition != null && word === definition.kind) return hover(`**define ${word}**\n\n${schema.define[definition.kind].description}`);
 
-            return definition != null && isAction(definition.id) ? hover(await actionTooltip(context, definition.id)) : null;
+            return definition?.kind === 'action' && isAction(definition.id) ? hover(await actionTooltip(context, definition.id)) : null;
         }
 
         const token = tokensOf(source, parsed).find(x => x.line === line && character >= x.start && character <= x.end);
@@ -335,7 +342,7 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
         if (definition != null && !/^\s*[+-][a-z]/.test(text)) {
             const fields = fieldsOf(definition, lines);
             const field = fields.findLast(x => x.line <= line);
-            const known = fieldsOfKind(schema, definition.kind, true);
+            const known = fieldsOfKind(schema, definition.kind);
 
             if (field == null) {
                 return null;
@@ -474,7 +481,8 @@ export function diagramDefinitionProvider(documents: TextDocuments<TextDocument>
         }
 
         const base = baseOf(idsOf(token.text)[0]!);
-        const action = token.statement?.verb === 'aoe' || token.kind === 'definition' ? (timeline != null ? getAction(timeline.document, base) : null) : null;
+        const namesAction = token.statement?.verb === 'aoe' || (token.kind === 'definition' && parsed.definitions.some(x => x.kind === 'action' && x.line - 1 === token.line));
+        const action = namesAction && timeline != null ? getAction(timeline.document, base) : null;
 
         if (action != null) {
             return [linkTo(token, timeline!.textDocument, action)];

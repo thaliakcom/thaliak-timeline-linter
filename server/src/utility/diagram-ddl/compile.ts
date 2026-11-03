@@ -286,7 +286,13 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
             }
         }
 
-        (actions[definition.id] != null ? actionDefs : elementDefs)[definition.id] = values;
+        if (definition.kind === 'action') {
+            if (actions[definition.id] == null) error(definition.line, `"${definition.id}" isn't an action of the timeline`);
+
+            actionDefs[definition.id] = values;
+        } else {
+            elementDefs[definition.id] = values;
+        }
     }
 
     return { actionDefs, elementDefs, gradients, strategies };
@@ -643,6 +649,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 break;
             }
             case 'thumbnail':
+                if (thumbnails[s.text] != null) error(s.line, `"${s.text}" already has a thumbnail at ${thumbnails[s.text]}`);
+
                 thumbnails[s.text] = s.at;
                 break;
             case 'hint': {

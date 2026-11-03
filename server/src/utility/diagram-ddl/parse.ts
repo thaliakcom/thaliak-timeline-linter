@@ -28,7 +28,7 @@ export interface Statement {
 /** A `define` block. */
 export interface Definition {
     line: number;
-    kind: 'element' | 'gradient' | 'strategy';
+    kind: 'element' | 'action' | 'gradient' | 'strategy';
     id: string;
     /** The block's `key: value` lines. A key's later lines (such as a second `exit` statement) are extra entries. */
     fields: Record<string, string[]>;
@@ -46,7 +46,7 @@ export interface ParseResult {
 const TEXT_VERBS = new Set(['hint', 'branch', 'strategy', 'thumbnail']);
 const VERBS = new Set(['keyframe', 'skip', 'thumbnail', 'hint', 'branch', 'strategy', 'actor', 'marker', 'tether', 'status', 'aoe', 'effect', 'set', 'depart', 'arrive', 'move']);
 const VERB_LINE = /^([+-]?)([a-z][a-z-]*)(:)?(?:\s+(.*))?$/;
-const DEFINE_LINE = /^define\s+(?:(gradient|strategy)\s+)?(\S+)$/;
+const DEFINE_LINE = /^define\s+(?:(element|action|gradient|strategy)\s+)?(\S+)$/;
 const FIELD_LINE = /^([a-zA-Z][\w-]*):\s*(.*)$/;
 
 /** Removes a `//` comment that isn't inside a string. */
@@ -168,6 +168,9 @@ export function parse(source: string): ParseResult {
         const define = DEFINE_LINE.exec(text);
 
         if (define != null && !/^\s/.test(raw)) {
+            // Read as an element anyway, so that the one mistake doesn't also report everything that refers to it.
+            if (define[1] == null) diagnostics.push({ line, message: `"define ${define[2]}" needs a kind: define element, action, gradient or strategy` });
+
             definition = { line, kind: (define[1] as Definition['kind'] | undefined) ?? 'element', id: define[2]!, fields: {}, body: [] };
             definitions.push(definition);
             field = null;

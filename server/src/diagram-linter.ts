@@ -43,7 +43,7 @@ function* validateDefinitions(definitions: Definition[], lines: string[], option
     const schema = options.diagramSchema;
     const looks = schema != null ? { aoes: Object.keys(schema.looks.aoes), tethers: Object.keys(schema.looks.tethers), markers: Object.keys(schema.looks.markers) } : undefined;
     const animations = schema?.animations.elements;
-    const blocks = definitions.filter(definition => definition.kind === 'element').map(definition => ({ definition, fields: fieldsOf(definition, lines) }));
+    const blocks = definitions.filter(definition => definition.kind === 'element' || definition.kind === 'action').map(definition => ({ definition, fields: fieldsOf(definition, lines) }));
 
     if (schema != null) {
         yield* validateFields(definitions, lines, schema);
@@ -124,7 +124,9 @@ function* validateFields(definitions: Definition[], lines: string[], schema: Dia
             continue;
         }
 
-        const known: Record<string, DiagramField> = definition.kind === 'strategy' ? schema.define.strategy.fields : { ...schema.define.action.fields, ...schema.define.element.fields };
+        const known: Record<string, DiagramField> = definition.kind === 'strategy'
+            ? schema.define.strategy.fields
+            : { ...(definition.kind === 'action' ? schema.define.action.fields : {}), ...schema.define.element.fields };
         const fields = fieldsOf(definition, lines);
 
         for (const key of new Set(fields.map(field => field.key))) {
