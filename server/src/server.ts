@@ -39,6 +39,7 @@ import statusIconProvider from './status-icon-provider';
 import { configureIronworks, type IronworksOptions } from './ironworks';
 import { diagramOf, isDiagramUri, statusKeysOf } from './diagram-context';
 import { lintDiagram } from './diagram-linter';
+import { lintGameData } from './game-data-rules';
 import { diagramCompletionProvider, diagramDefinitionProvider, diagramHoverProvider, diagramInlayHintProvider, diagramOutlineProvider, diagramReferenceProvider, diagramStatusIconProvider } from './diagram-providers';
 
 // Create a connection for the server, using Node's IPC as a transport.
@@ -236,7 +237,7 @@ async function validateTextDocument(textDocument: TextDocument): Promise<Diagnos
     const diagram = diagramOf(documents, textDocument.uri);
     const diagramStatuses = diagram != null ? statusKeysOf(diagram) : new Set<string>();
 
-    return lintDocument(textDocument, document, options, diagramStatuses);
+    return [...lintDocument(textDocument, document, options, diagramStatuses), ...await lintGameData(textDocument, document, options)];
 }
 
 connection.onDidChangeWatchedFiles(_change => {
