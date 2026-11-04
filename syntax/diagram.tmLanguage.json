@@ -180,6 +180,16 @@
             "patterns": [
                 { "include": "#player" },
                 {
+                    "comment": "A tether, which refers to its two ends: far-tether@T1>R2, plume-tether@enemy#satin-1>R1.",
+                    "begin": "((?:(?<=\\])-)?[A-Za-z][\\w-]*)(@)",
+                    "beginCaptures": {
+                        "1": { "name": "entity.name.type.thaliak-diagram" },
+                        "2": { "name": "punctuation.separator.at.thaliak-diagram" }
+                    },
+                    "end": "(?=[\\s,)\\]]|//|$)",
+                    "patterns": [{ "include": "#tether-ends" }]
+                },
+                {
                     "begin": "((?:(?<=\\])-)?[A-Za-z][\\w-]*)(#)",
                     "beginCaptures": {
                         "1": { "name": "entity.name.type.thaliak-diagram" },
@@ -198,9 +208,25 @@
             "patterns": [
                 { "include": "#template" },
                 { "include": "#placeholder" },
-                { "match": "/", "name": "punctuation.separator.slash.thaliak-diagram" },
                 { "match": "\\.\\.", "name": "keyword.operator.range.thaliak-diagram" },
                 { "match": "[\\w*-]+", "name": "entity.name.variable.template.thaliak-diagram" }
+            ]
+        },
+        "tether-ends": {
+            "patterns": [
+                { "include": "#template" },
+                { "include": "#placeholder" },
+                { "include": "#player" },
+                { "match": ">", "name": "punctuation.separator.arrow.thaliak-diagram" },
+                {
+                    "match": "([A-Za-z][\\w-]*)(#)([\\w*-]+)",
+                    "captures": {
+                        "1": { "name": "entity.name.type.thaliak-diagram" },
+                        "2": { "name": "punctuation.separator.hash.thaliak-diagram" },
+                        "3": { "name": "entity.name.variable.template.thaliak-diagram" }
+                    }
+                },
+                { "match": "[A-Za-z][\\w-]*", "name": "entity.name.type.thaliak-diagram" }
             ]
         },
         "template": {
