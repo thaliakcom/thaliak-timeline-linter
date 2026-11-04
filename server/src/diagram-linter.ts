@@ -114,8 +114,13 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
 
 /** The name of a value's type, as the schema names it. */
 function valueTypeOf(value: unknown): DiagramValueType {
+    if (typeof value === 'string' && POINT.test(value)) return 'point';
+
     return value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value as DiagramValueType;
 }
+
+/** A fixed-size list of numbers, written like a coordinate. YAML reads it as a string. */
+const POINT = /^\(\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+\s*\)$/;
 
 /** Warns about the fields of `define` blocks that `schema` doesn't know, and values that aren't what it says. */
 function* validateFields(definitions: Definition[], lines: string[], schema: DiagramSchema): Generator<Diagnostic> {

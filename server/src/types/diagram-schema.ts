@@ -10,7 +10,8 @@ export interface DiagramField {
     reference?: 'element';
 }
 
-export type DiagramValueType = 'string' | 'number' | 'boolean' | 'array' | 'object' | 'null';
+/** `point` is a fixed-size list of numbers, written like a coordinate: `(0.5, 0)`. */
+export type DiagramValueType = 'string' | 'number' | 'boolean' | 'array' | 'object' | 'null' | 'point';
 
 /** A kind of `define` block in `schemas/diagram.schema.json`. */
 export interface DiagramDefineKind {
