@@ -36,6 +36,10 @@ export interface CompiledElement {
     turns: Turn[];
     sets: PropSet[];
     link?: { from: string, to: string };
+    /** Where its front points when it's drawn unrotated, in degrees clockwise from north. Absent for north. */
+    facing?: number;
+    /** When it follows something (`+follow`), which decides its position and rotation then. `line` is the `+follow`'s. */
+    follows?: { from: number, to: number, target: string, line: number }[];
 }
 
 /** One placement of an action's AoE at one use. */
@@ -65,7 +69,10 @@ export interface CompiledAoe extends Scope {
     on?: string;
     /** A fixed spot, or an element to snapshot at {@link show}. */
     at?: XY | string;
-    toward?: number;
+    /** Where its front points, in degrees clockwise from north, or an element that it aims at as that stands at {@link show}. */
+    toward?: number | string;
+    /** Where its front points when it's drawn unrotated, in degrees clockwise from north. Absent for north. */
+    facing?: number;
     /** What it covers, in plane units, to work out who it hits. A raidwide has none, since it hits everyone. */
     area?: AoeArea;
     /** Who it hits, if the file says so. Otherwise that's whoever stands in its {@link area}. */
@@ -317,13 +324,14 @@ export function rotationAt(diagram: CompiledDiagram, id: string, t: number): num
 
         let target = current;
 
-        if (turn.abs != null) target = turn.abs;
+        // `toward` says where the front points, and the element is drawn turned by that minus where its front points unturned.
+        if (turn.abs != null) target = turn.abs - (element!.facing ?? 0);
         if (turn.by != null) target = current + turn.by;
 
         if (turn.look != null) {
             const [x0, y0] = positionAt(diagram, id, turn.t);
             const [x1, y1] = positionAt(diagram, turn.look, turn.t);
-            const angle = Math.atan2(-(x1 - x0), y1 - y0) * 180 / Math.PI;
+            const angle = Math.atan2(x1 - x0, -(y1 - y0)) * 180 / Math.PI - (element!.facing ?? 0);
             // A derived angle has no turn count of its own, so it turns the short way.
             target = angle + 360 * Math.round((current - angle) / 360);
         }
@@ -335,9 +343,24 @@ export function rotationAt(diagram: CompiledDiagram, id: string, t: number): num
     return current;
 }
 
-/** The rotation of an AoE at `t`, in degrees: its actor's until it hits, otherwise its own. */
+/** Where an AoE's front points to aim at `target`, both as they stand when the AoE appears, in degrees clockwise from north. */
+function aimAt(diagram: CompiledDiagram, aoe: CompiledAoe, target: string): number {
+    const [x0, y0] = aoeAt(diagram, aoe, aoe.show);
+    const [x1, y1] = positionAt(diagram, target, aoe.show);
+
+    return Math.atan2(x1 - x0, -(y1 - y0)) * 180 / Math.PI;
+}
+
+/**
+ * The angle an AoE is drawn at, at `t`, in degrees: its front points where its actor's front points until it hits,
+ * or where its own `toward` says.
+ */
 export function aoeRotationAt(diagram: CompiledDiagram, aoe: CompiledAoe, t: number): number {
-    return aoe.use != null ? rotationAt(diagram, aoe.use, Math.min(t, aoe.hit)) : aoe.toward ?? 0;
+    const front = aoe.use != null
+        ? rotationAt(diagram, aoe.use, Math.min(t, aoe.hit)) + (diagram.elements[aoe.use]?.facing ?? 0)
+        : typeof aoe.toward === 'string' ? aimAt(diagram, aoe, aoe.toward) : aoe.toward ?? 0;
+
+    return front - (aoe.facing ?? 0);
 }
 
 /** The value of an element's property at `t`. Numbers change gradually over a `set`'s `over`. */

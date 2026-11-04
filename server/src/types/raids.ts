@@ -97,6 +97,8 @@ export interface Action extends Omit<UnprocessedAction, 'children'> {
     xAxisModifier: number;
     /** Whether the action has a telegraph in game data. */
     hasOmen?: boolean;
+    /** The action's targeting in game data (`CastType`): 1 is a single target, and anything above is an AoE. */
+    castType?: number;
     strategies: Record<string, Strategy>;
     children: (ProcessedChildItem | SpecialChildTimelineItem)[];
 }

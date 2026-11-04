@@ -44,7 +44,7 @@ export interface ParseResult {
 
 /** Verbs whose argument is free text rather than a subject and clauses. */
 const TEXT_VERBS = new Set(['hint', 'branch', 'strategy', 'thumbnail']);
-const VERBS = new Set(['keyframe', 'skip', 'thumbnail', 'hint', 'branch', 'strategy', 'actor', 'marker', 'tether', 'status', 'aoe', 'effect', 'set', 'depart', 'arrive', 'move']);
+const VERBS = new Set(['keyframe', 'skip', 'thumbnail', 'hint', 'branch', 'strategy', 'actor', 'marker', 'tether', 'status', 'aoe', 'effect', 'set', 'depart', 'arrive', 'move', 'follow', 'turn']);
 const VERB_LINE = /^([+-]?)([a-z][a-z-]*)(:)?(?:\s+(.*))?$/;
 const DEFINE_LINE = /^define\s+(?:(element|action|gradient|strategy)\s+)?(\S+)$/;
 const FIELD_LINE = /^([a-zA-Z][\w-]*):\s*(.*)$/;
@@ -61,10 +61,13 @@ function stripComment(line: string): string {
     return line;
 }
 
-/** Splits arguments on whitespace outside of `()`, `[]`, `<>` and strings. Commas outside of those are their own tokens. */
+/**
+ * Splits arguments on whitespace outside of `()`, `[]`, `<>` and strings. Commas outside of those are their own tokens.
+ * A `>` without an open `<`, as in the tether `far-tether@T1>R2`, is part of its token.
+ */
 export function tokenize(text: string): string[] {
     const tokens: string[] = [];
-    let current = '', depth = 0, quoted = false;
+    let current = '', depth = 0, angles = 0, quoted = false;
     const flush = () => {
         if (current !== '') tokens.push(current);
         current = '';
@@ -74,8 +77,16 @@ export function tokenize(text: string): string[] {
         if (c === '"') quoted = !quoted;
 
         if (!quoted) {
-            if ('([<'.includes(c)) depth++;
-            if (')]>'.includes(c)) depth--;
+            if ('(['.includes(c)) depth++;
+            if (')]'.includes(c)) depth--;
+
+            if (c === '<') {
+                angles++;
+                depth++;
+            } else if (c === '>' && angles > 0) {
+                angles--;
+                depth--;
+            }
 
             if (depth === 0 && /\s/.test(c)) {
                 flush();

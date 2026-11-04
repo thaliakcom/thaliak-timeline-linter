@@ -6,9 +6,9 @@ import type { ElementDefinition } from '../../types/graphing';
 import { actionYalms, planeUnitsPerYalm } from '../diagram-sizing';
 import { expandMargin } from '../margin';
 import { Definition, Diagnostic, parse, Statement } from './parse';
-import { resolveWaymarks } from './placeholders';
+import { callPlaceholder, PLAYER_GROUPS, resolveWaymarks } from './placeholders';
 import type { Margin } from '../../types/graphing';
-import { AoeArea, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, GhostTrack, MOTION_RAMP, Pose, Scope, XY } from './seek';
+import { AoeArea, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, XY } from './seek';
 
 /** Run speed in yalms per ms. */
 const RUN_SPEED = 6 / 1000;
@@ -17,11 +17,64 @@ const DEFAULT_UNITS_PER_YALM: XY = [5, 5];
 /** The size of the arena's box unless its definition says otherwise, as in `DEFAULT_GRAPHICS.arena`. */
 const DEFAULT_ARENA_BOX = 200;
 const MIN_KEYFRAME_GAP = 1000;
+/** How fast an actor chases what it follows, in yalms per second, unless it says otherwise. Provisional, until tested against logs. */
+const DEFAULT_FOLLOW_SPEED = 6;
+/** How close an actor comes to what it follows, in yalms from its hitbox's edge to the player icon's, unless it says otherwise. */
+const DEFAULT_REACH = 1;
+/** The radius of a player icon in yalms: `PLAYER_SIZE` at `ICON_REFERENCE_SCALE`, where icons have their defined size. */
+const PLAYER_ICON_RADIUS = 7.5 / 2 / 4.39;
+/** How often a follow is played out, in ms. */
+const FOLLOW_STEP = 50;
+/** A fixed-size list of numbers in round brackets, `(0.5, 0)`, not right after a name, so that `rgba(0, 0, 0, 1)` stays as it is. */
+const ROUND_TUPLE = /(?<![\w-])\(\s*(-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+)\s*\)/g;
+/** The same in square brackets, which are only for placeholders. */
+const SQUARE_TUPLE = /(?<![\w-])\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+\s*\]/;
+
+/** The BNpcBase IDs that a `.diagram` file's actors name with `bnpc`, whose hitboxes {@link DiagramInput.hitboxes} needs. */
+export function bnpcIdsOf(source: string): number[] {
+    return [...new Set([...source.matchAll(/\bbnpc:?\s+(\d+)/g)].map(match => Number(match[1])))];
+}
+
+/**
+ * Where an element's front points when it's drawn unrotated, in degrees clockwise from north, as the old renderer's
+ * `facing()` has it: a cone opens north, and anything else points from its origin through its centre. A centred
+ * element faces north, which images are drawn to match.
+ */
+function facingOf(definition: Record<string, unknown>): number {
+    if (definition.type === 'cone') return 0;
+
+    const size = definition.size as number | number[] | undefined;
+    const [width, height] = typeof size === 'number' ? [size, size] : Array.isArray(size) ? [size[0] ?? 1, size[1] ?? 1] : [1, 1];
+    const origin = (definition.origin ?? 0.5) as number | number[];
+    const [x, y] = typeof origin === 'number' ? [origin, origin] : [origin[0] ?? 0.5, origin[1] ?? 0.5];
+    let dx = (0.5 - x) * width;
+    let dy = (0.5 - y) * height;
+
+    // A zero size in one direction; the origin alone decides.
+    if (dx === 0 && dy === 0) [dx, dy] = [0.5 - x, 0.5 - y];
+
+    return dx === 0 && dy === 0 ? 0 : Math.atan2(dx, -dy) * 180 / Math.PI;
+}
+
+/**
+ * Reads the value of a `define` field, which is YAML flow except that fixed-size values are written like
+ * coordinates, `origin: (0.5, 0)`. Throws on the square form, since square brackets only insert elements.
+ */
+function readFieldValue(text: string): unknown {
+    if (SQUARE_TUPLE.test(text)) throw new Error('fixed-size values take round brackets, as in (0.5, 0)');
+
+    return yaml.load(text.replace(ROUND_TUPLE, '[$1]'));
+}
 /** How long the hit's element of an AoE stays, unless its definition says otherwise. */
 const DEFAULT_HOLD = 800;
 /** The definition of ghosts: slightly transparent and desaturated. */
 const GHOST_BASE = 'ghost';
 const GHOST_SIZE = 7.5;
+/**
+ * Whether enemies get ghosts. Off for now (the author's decision, 2026-11-04): they don't work yet, and a log's
+ * unknown enemies show up as tiny ghosts that never move. Players keep theirs.
+ */
+const SHOW_ENEMY_GHOSTS = false;
 const RAIDWIDE_BASE = 'diagram-raidwide';
 /** The element that shows an action's name as it hits. */
 const LABEL_BASE = 'diagram-label';
@@ -29,19 +82,17 @@ const LABEL_BASE = 'diagram-label';
 const RAIDWIDE_SIZE = 420;
 const DASHED = { look: { type: 'none' }, stroke: { style: 'dashed', color: '#fce76e' } };
 /** Definition keys that describe a placement rather than the drawn element. */
-const NON_VISUAL_KEYS = new Set(['telegraph', 'flash', 'hold', 'hidden', 'use', 'hooks', 'flashLook']);
+const NON_VISUAL_KEYS = new Set(['telegraph', 'flash', 'hold', 'hidden', 'use', 'hooks', 'flashLook', 'tracks']);
 /** Effect names without a preset of their own yet. */
 const EFFECT_ALIASES: Record<string, string> = { laser: 'wave-cannon' };
 /** Elements that the viewer defines by itself. */
 const BUILT_IN_BASES = new Set(['boss', 'enemy']);
-const PLAYERS = ['T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2'];
-const GROUPS: Record<string, string[]> = {
-    '<players>': PLAYERS,
-    '<tanks>': ['T1', 'T2'],
-    '<healers>': ['H1', 'H2'],
-    '<melees>': ['M1', 'M2'],
-    '<rangeds>': ['R1', 'R2']
-};
+/** The icon that `boss` and `enemy` draw. */
+const BOSS_IMAGE = '/images/boss.svg';
+/** How far out the ring of {@link BOSS_IMAGE} runs, as a fraction of the icon's half-width: its centre line, at 55.5 of 62. */
+const BOSS_RING = 55.5 / 62;
+const PLAYERS: string[] = PLAYER_GROUPS['players']!;
+const GROUPS: Record<string, string[]> = Object.fromEntries(Object.entries(PLAYER_GROUPS).map(([group, players]) => [`<${group}>`, players]));
 
 /** The facts about an action that a diagram needs. */
 export interface ActionFacts {
@@ -49,6 +100,10 @@ export interface ActionFacts {
     shape?: string;
     mechanic?: string;
     count?: number;
+    /** The damage of one hit. An action with children, none of its own and no AoE in game data only groups them. */
+    damage?: number;
+    /** The targeting in game data: 1 is a single target, and anything above is an AoE. */
+    castType?: number;
     /** The cast in ms. */
     cast?: number;
     /** The radius or length in yalms. */
@@ -113,11 +168,18 @@ export interface DiagramInput {
     waymarks?: Record<string, Record<string, unknown>>;
     /** When the timeline says that bosses can't be targeted, which is when {@link ghosts} don't draw them. */
     targetability?: TargetabilityChange[];
+    /** Hitbox radii in yalms, by the BNpcBase IDs that actors name with `bnpc`. */
+    hitboxes?: Record<number, number>;
 }
 
 const toXY = ([d, a]: number[]): XY => [d! * Math.sin(a! * Math.PI / 180), -d! * Math.cos(a! * Math.PI / 180)];
-const subIdOf = (id: string) => id.includes('#') ? id.slice(id.indexOf('#') + 1) : id;
-const baseOf = (id: string) => id.includes('#') ? id.slice(0, id.indexOf('#')) : id;
+/** Where an ID's own name ends: at the `#` before a sub-ID, or at the `@` before a tether's ends. */
+const nameEnd = (id: string) => {
+    const end = id.search(/[#@]/);
+    return end < 0 ? id.length : end;
+};
+const subIdOf = (id: string) => nameEnd(id) === id.length ? id : id.slice(nameEnd(id) + 1);
+const baseOf = (id: string) => id.slice(0, nameEnd(id));
 const duration = (value: string) => value.endsWith('ms') ? parseFloat(value) : value.endsWith('s') ? parseFloat(value) * 1000 : Number(value);
 const isRaidwide = (action: ActionFacts | undefined) => action?.mechanic?.startsWith('raidwide') === true || action?.mechanic === 'enrage';
 
@@ -274,15 +336,19 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
 
                 values.hooks = hooks;
 
-                if (animations.length > 0) values.exit = yaml.load(animations.join(' '));
+                try {
+                    if (animations.length > 0) values.exit = readFieldValue(animations.join(' '));
+                } catch (e) {
+                    error(definition.line, `"${key}" of "${definition.id}" can't be read: ${e instanceof Error ? e.message : e}`);
+                }
 
                 continue;
             }
 
             try {
-                values[key] = yaml.load(lines.join(' '));
+                values[key] = readFieldValue(lines.join(' '));
             } catch (e) {
-                error(definition.line, `"${key}" of "${definition.id}" can't be read: ${e}`);
+                error(definition.line, `"${key}" of "${definition.id}" can't be read: ${e instanceof Error ? e.message : e}`);
             }
         }
 
@@ -450,6 +516,16 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
     const clauseOf = (s: Statement, key: string) => s.clauses.find(c => c.key === key)?.values;
 
+    /** Reads the value of an `at` or `to` clause. A placeholder such as `clocks(63)` gets the spot of the subject, or of its sub-ID in `fist#T1`. */
+    const positionOf = (value: string, id: string, line: number): number | string | number[] => {
+        try {
+            return callPlaceholder(value, subIdOf(id))?.[0] ?? literal(value);
+        } catch (e) {
+            error(line, `"${id}": ${e instanceof Error ? e.message : e}`);
+            return [0, 0];
+        }
+    };
+
     /** Plane units per yalm at `t`, from the arena image of that time. */
     const unitsPerYalm = (t: number): XY => {
         const arena = arenas.findLast(item => item.at <= t) ?? arenas[0];
@@ -516,7 +592,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const to = clauseOf(s, 'to');
 
         if (to != null) {
-            const raw = literal(valueFor(to, index, ids, s, within)!);
+            const raw = positionOf(valueFor(to, index, ids, s, within)!, id, s.line);
             const target: XY | string = Array.isArray(raw) ? toXY(raw) : String(raw);
             const isPlayer = PLAYERS.includes(id);
 
@@ -626,10 +702,22 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             }
         }
 
+        if (!raidwide) {
+            const drawn = aoe.renderId != null ? base : def.flash as string | undefined;
+            const yalms = aoe.props.yalms as XY | undefined;
+            const facing = drawn == null ? 0 : facingOf({ ...elementDefs[drawn], ...visual, ...(yalms != null ? { size: yalms } : {}) });
+
+            if (facing !== 0) aoe.facing = facing;
+        }
+
         aoes.push(aoe);
         return aoe;
     };
 
+    /** Each `+follow`, until its `-follow`, the next `+follow` of the same actor, or the end. */
+    const follows: { id: string, from: number, to: number, target: string, chase: boolean, line: number, within: Scope }[] = [];
+    /** Each `turn`: toward something for `over`, held for `hold`, and back over `over` again. */
+    const awayTurns: { id: string, at: number, toward: string, over: number, hold: number, line: number }[] = [];
     const openHints = new Map<string, CompiledDiagram['hints'][number]>();
     const lastKeyframes = new Map<string, number>();
 
@@ -735,10 +823,11 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     element.spawns.push({ ...within, from: s.at, to: Infinity });
 
                     if (s.verb === 'tether') {
-                        const [from, to] = subIdOf(id).split('/');
+                        // `far-tether@T1>R2`: a tether refers to its two ends, and points from the first to the second.
+                        const [from, to, ...rest] = id.includes('@') ? id.slice(id.indexOf('@') + 1).split('>') : [];
 
-                        if (from == null || to == null) {
-                            error(s.line, `tether "${id}" needs a sub-ID of the form A/B`);
+                        if (from == null || to == null || from === '' || to === '' || rest.length > 0) {
+                            error(s.line, `tether "${id}" needs the form name@A>B, such as far-tether@T1>R2`);
                         } else {
                             element.link = { from, to };
                         }
@@ -750,7 +839,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                         const value = valueFor(clause.values, index, ids, s, within)!;
 
                         if (clause.key === 'at') {
-                            const raw = literal(value);
+                            const raw = positionOf(value, id, s.line);
                             const offset = clauseOf(s, 'offset');
                             const xy = offset == null ? [0, 0] : literal(valueFor(offset, index, ids, s, within)!) as number[];
                             element.poses.push(Array.isArray(raw)
@@ -798,11 +887,15 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     if (on != null) fields.on = valueFor(on, index, ids, s, within);
 
                     if (at != null) {
-                        const raw = literal(valueFor(at, index, ids, s, within)!);
-                        fields.at = Array.isArray(raw) ? toXY(raw) : String(raw);
+                        const raw = positionOf(valueFor(at, index, ids, s, within)!, id, s.line);
+                        fields.at =Array.isArray(raw) ? toXY(raw) : String(raw);
                     }
 
-                    if (toward != null) fields.toward = Number(valueFor(toward, index, ids, s, within));
+                    if (toward != null) {
+                        // An angle, or an element to aim at as it stands when the telegraph appears.
+                        const value = literal(valueFor(toward, index, ids, s, within)!);
+                        fields.toward = typeof value === 'number' ? value : String(value);
+                    }
 
                     // Unlike the other clauses, this one lists who it hits rather than pairing up with the subjects.
                     const hits = clauseOf(s, 'hits');
@@ -840,10 +933,163 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 });
                 break;
             }
+            case 'follow':
+                for (const id of subjects()) {
+                    ensure(id, s.line);
+                    const open = follows.find(f => f.id === id && f.to === Infinity && compatible(f.within, within));
+
+                    if (s.sign === '-') {
+                        if (open == null) error(s.line, `"${id}" isn't following anything at ${s.at}`);
+                        else open.to = s.at;
+
+                        continue;
+                    }
+
+                    const [on, toward] = [clauseOf(s, 'on')?.[0], clauseOf(s, 'toward')?.[0]];
+
+                    if ((on == null) === (toward == null)) {
+                        error(s.line, '+follow needs either "on" (to chase and turn) or "toward" (to turn only)');
+                        continue;
+                    }
+
+                    // A new target replaces the old one, as in a tank swap.
+                    if (open != null) open.to = s.at;
+
+                    follows.push({ id, from: s.at, to: Infinity, target: (on ?? toward)!, chase: on != null, line: s.line, within });
+                }
+
+                break;
+            case 'turn':
+                subjects().forEach((id, index, ids) => {
+                    const [toward, over, hold] = [clauseOf(s, 'toward'), clauseOf(s, 'over'), clauseOf(s, 'for')];
+
+                    if (toward == null) {
+                        error(s.line, 'turn needs "toward"');
+                        return;
+                    }
+
+                    awayTurns.push({
+                        id,
+                        at: s.at,
+                        toward: valueFor(toward, index, ids, s, within)!,
+                        over: over == null ? 0 : duration(valueFor(over, index, ids, s, within)!),
+                        hold: hold == null ? 0 : duration(valueFor(hold, index, ids, s, within)!),
+                        line: s.line
+                    });
+                });
+
+                break;
             default:
                 error(s.line, `"${s.verb}" isn't supported`);
         }
     };
+
+    /**
+     * Plays out each `+follow` over its target's known path and writes it as ordinary poses and turns, since seeking
+     * is a pure function of time and can't simulate. A follower turns toward its target and, with `on`, chases it at its
+     * `speed` until it's within its `reach`. While it casts an action that it's the `use` of, it holds still, and only
+     * turns if the action `tracks`. During a `turn`, it holds still and turns away and back.
+     */
+    function simulateFollows(): void {
+        const sorted = (element: CompiledElement): CompiledElement => ({ ...element, poses: [...element.poses].sort((a, b) => a.start - b.start), turns: [...element.turns].sort((a, b) => a.t - b.t) });
+        const unwrap = (angle: number, near: number) => angle + 360 * Math.round((near - angle) / 360);
+        const frontToward = (from: XY, to: XY, near: number) => unwrap(Math.atan2(to[0] - from[0], -(to[1] - from[1])) * 180 / Math.PI, near);
+
+        for (const turn of awayTurns) {
+            if (!follows.some(f => f.id === turn.id && turn.at >= f.from && turn.at < f.to)) error(turn.line, `"${turn.id}" turns back to what it follows, but follows nothing at ${turn.at}`);
+        }
+
+        for (const follow of [...follows].sort((a, b) => a.from - b.from)) {
+            const element = elements.get(follow.id)!;
+            const to = Math.min(follow.to, end);
+            const props: Record<string, unknown> = { ...elementDef(element.base), ...element.props };
+            const bnpc = props.bnpc == null ? undefined : Number(props.bnpc);
+            const hitbox = bnpc == null ? undefined : input.hitboxes?.[bnpc];
+
+            // Tools such as the editor need to know, since nothing else may move or turn it then.
+            (element.follows ??= []).push({ from: follow.from, to, target: follow.target, line: follow.line });
+
+            if (follow.chase && hitbox == null) {
+                error(follow.line, bnpc == null ? `"${follow.id}" needs a "bnpc" to chase "${follow.target}", for its hitbox` : `no hitbox is known for bnpc ${bnpc}`);
+                continue;
+            }
+
+            for (const pose of element.poses) {
+                if (pose.start > follow.from && pose.start < to) error(follow.line, `"${follow.id}" follows "${follow.target}" from ${follow.from} to ${to}, so it can't also be placed or moved at ${pose.start}`);
+            }
+
+            for (const turn of element.turns) {
+                if (turn.t > follow.from && turn.t < to) error(follow.line, `"${follow.id}" follows "${follow.target}" from ${follow.from} to ${to}, so it can't also be turned at ${turn.t}; use "turn"`);
+            }
+
+            // Only what `positionAt` and `rotationAt` read.
+            const diagram = { elements: Object.fromEntries([...elements.values()].map(e => [e.id, sorted(e)])), aoes } as unknown as CompiledDiagram;
+            const speed = Number(props.speed ?? DEFAULT_FOLLOW_SPEED);
+            const reach = Number(props.reach ?? DEFAULT_REACH);
+            const facing = facingOf(props);
+            const locks = aoes.filter(aoe => aoe.use === follow.id && (actions[aoe.action]?.cast ?? 0) > 0)
+                .map(aoe => ({ from: aoe.hit - actions[aoe.action]!.cast!, to: aoe.hit, tracks: actionDefs[aoe.action]?.tracks === true }));
+            const turns = awayTurns.filter(turn => turn.id === follow.id && turn.at >= follow.from && turn.at < to).map(turn => ({ ...turn, start: NaN }));
+            let [x, y] = positionAt(diagram, follow.id, follow.from);
+            let front = rotationAt(diagram, follow.id, follow.from) + facing;
+            const samples: [t: number, x: number, y: number, front: number][] = [[follow.from, x, y, front]];
+            // Steady steps, plus where each hold starts and ends, so that nothing moves a moment too early or late.
+            const edges = [...locks.flatMap(l => [l.from, l.to]), ...turns.flatMap(turn => [turn.at, turn.at + turn.over, turn.at + turn.over + turn.hold, turn.at + 2 * turn.over + turn.hold])];
+            const times = [...new Set([...Array.from({ length: Math.floor((to - follow.from) / FOLLOW_STEP) }, (_, i) => follow.from + (i + 1) * FOLLOW_STEP), ...edges.filter(t => t > follow.from && t <= to)])].sort((a, b) => a - b);
+            let previous = follow.from;
+
+            for (const t of times) {
+                const elapsed = t - previous;
+                previous = t;
+                const target = positionAt(diagram, follow.target, t);
+                const followed = frontToward([x, y], target, front);
+                const lock = locks.find(l => t > l.from && t <= l.to);
+                const away = turns.find(turn => t > turn.at && t <= turn.at + 2 * turn.over + turn.hold);
+
+                if (away != null) {
+                    if (Number.isNaN(away.start)) away.start = front;
+
+                    const facingAway = /^-?\d/.test(away.toward) ? unwrap(Number(away.toward), front) : frontToward([x, y], positionAt(diagram, away.toward, t), front);
+                    const phase = t - away.at;
+
+                    front = phase < away.over ? away.start + (facingAway - away.start) * phase / away.over
+                        : phase <= away.over + away.hold ? facingAway
+                        : facingAway + (followed - facingAway) * Math.min(1, (phase - away.over - away.hold) / Math.max(away.over, 1));
+                } else {
+                    if (lock == null || lock.tracks) front = followed;
+
+                    if (follow.chase && lock == null) {
+                        const [unitsX, unitsY] = unitsPerYalm(t);
+                        const [dx, dy] = [(target[0] - x) / unitsX, (target[1] - y) / unitsY];
+                        const distance = Math.hypot(dx, dy);
+                        const gap = distance - hitbox! - PLAYER_ICON_RADIUS - reach;
+
+                        if (gap > 0) {
+                            const step = Math.min(speed * elapsed / 1000, gap);
+                            x += dx / distance * step * unitsX;
+                            y += dy / distance * step * unitsY;
+                        }
+                    }
+                }
+
+                samples.push([t, x, y, front]);
+            }
+
+            // A sample that lies halfway between its neighbours, as on a straight run at a steady speed or while standing still, adds nothing.
+            const halfway = (a: number, b: number, c: number) => Math.abs(b - (a + c) / 2) < 0.01;
+            const kept = samples.filter((sample, i) => i === 0 || i === samples.length - 1
+                || !sample.every((value, k) => halfway(samples[i - 1]![k]!, value, samples[i + 1]![k]!)));
+
+            for (let i = 1; i < kept.length; i++) {
+                const [from, , , previousFront] = kept[i - 1]!;
+                const [t, px, py, sampleFront] = kept[i]!;
+                const [lastX, lastY] = [kept[i - 1]![1], kept[i - 1]![2]];
+
+                if (px !== lastX || py !== lastY) element.poses.push({ ...follow.within, start: from, end: t, kind: 'move', to: [px, py], ramp: 0 });
+                if (sampleFront !== previousFront) element.turns.push({ ...follow.within, t: from, over: t - from, abs: sampleFront });
+            }
+        }
+    }
 
     // Action hooks become ordinary statements at each use of the action.
     const hooked: { statement: Statement, use: Use }[] = uses.flatMap(use => ((actionDefs[use.action]?.hooks ?? []) as string[])
@@ -864,7 +1110,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const action = actions[use.action] ?? {};
         const def = actionDefs[use.action];
         const placed = aoes.filter(a => a.action === use.action && a.hit === use.at);
-        const isShell = (action.children?.length ?? 0) > 0;
+        // Only a parent that deals no damage of its own and isn't an AoE in game data just groups its children; anything else is a hit like any other.
+        const isShell = (action.children?.length ?? 0) > 0 && !((action.damage ?? 0) > 0) && !((action.castType ?? 0) >= 2);
         const raidwide = isRaidwide(action);
 
         if (action.shape == null && !raidwide) continue;
@@ -903,6 +1150,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         if (counts.some(count => count !== expected)) error(0, `"${use.action}" at ${use.at} has ${counts.join('/')} placements for a count of ${expected}`);
     }
 
+    simulateFollows();
+
     // What hits leaves a resolve effect: the one its hook names, otherwise a plain flash. A raidwide sweeps.
     for (const aoe of aoes) {
         const named = pendingEffects.filter(effect => effect.use.action === aoe.action && effect.use.at === aoe.hit);
@@ -916,6 +1165,21 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     }
 
     for (const element of elements.values()) {
+        const props: Record<string, unknown> = { ...elementDef(element.base), ...element.props };
+        const facing = facingOf(props);
+
+        if (facing !== 0) element.facing = facing;
+
+        // An actor that names its BNpcBase is as big as its hitbox, so the ring of the boss icon is the hitbox's edge.
+        const hitbox = props.bnpc == null ? undefined : input.hitboxes?.[Number(props.bnpc)];
+
+        if (hitbox != null) {
+            if (element.props.size != null || element.props.scale != null) error(0, `"${element.id}" is sized from the hitbox of its bnpc, so it can't also have a size or scale`);
+
+            const ring = BUILT_IN_BASES.has(element.base) || props.image === BOSS_IMAGE ? BOSS_RING : 1;
+            element.props.yalms = [2 * hitbox / ring, 2 * hitbox / ring];
+        }
+
         element.poses.sort((a: Pose, b: Pose) => a.start - b.start);
         element.turns.sort((a, b) => a.t - b.t);
         element.sets.sort((a, b) => a.t - b.t);
@@ -944,6 +1208,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     for (const aoe of aoes) {
         if (typeof aoe.at === 'string' && !PLAYERS.includes(aoe.at) && !elements.has(aoe.at)) error(0, `"${aoe.id}" refers to unknown "${aoe.at}"`);
         if (aoe.on != null && !PLAYERS.includes(aoe.on) && !elements.has(aoe.on)) error(0, `"${aoe.id}" refers to unknown "${aoe.on}"`);
+        if (typeof aoe.toward === 'string' && !PLAYERS.includes(aoe.toward) && !elements.has(aoe.toward)) error(0, `"${aoe.id}" turns toward unknown "${aoe.toward}"`);
 
         for (const hit of aoe.hits ?? []) {
             if (!elements.has(hit)) error(0, `"${aoe.id}" hits unknown "${hit}"`);
@@ -1003,7 +1268,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         definitions[GHOST_BASE] = { type: 'image', size: GHOST_SIZE, origin: [0.5, 0.5], opacity: 0.55, filter: 'grayscale(1)', shadow: false, visible: false };
         ghosts = {
             ...Object.fromEntries(Object.entries(input.ghosts.players).map(([role, track]) => [`${GHOST_BASE}#${role}`, { image: `/images/job-icons/${track.job}.svg`, samples: toPlane(track.samples) }])),
-            ...Object.fromEntries(Object.entries(input.ghosts.bosses).map(([boss, track]) => {
+            ...Object.fromEntries(Object.entries(SHOW_ENEMY_GHOSTS ? input.ghosts.bosses : {}).map(([boss, track]) => {
                 const hidden = hiddenRanges(boss, input.targetability ?? []);
 
                 return [`${GHOST_BASE}#${boss.replaceAll(' ', '-')}`, { image: '/images/boss.svg', samples: toPlane(track.samples), ...(hidden.length > 0 ? { hidden } : {}) }];
