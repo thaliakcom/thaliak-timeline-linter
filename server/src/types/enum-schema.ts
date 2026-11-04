@@ -1,4 +1,6 @@
-/** 
+import { LookTypeValue } from './enums';
+
+/**
  * @minimum 0
  * @asType integer
  */
@@ -46,6 +48,16 @@ export interface MechanicShapes {
 
 interface MechanicShape extends NamedDescription {
     icon?: string;
+}
+
+/**
+ * The look of an AoE in diagrams, by the game omen (`omenPath`, e.g. `general_1bf`) of its action.
+ * AoEs whose omen isn't listed, and actions without an omen, look like `aoe`.
+ *
+ * @title Omens
+ */
+export interface Omens {
+    [omenPath: string]: LookTypeValue;
 }
 
 interface MechanicType extends NamedDescription {

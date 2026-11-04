@@ -274,6 +274,7 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
         parsed.diagnostics.forEach(({ line, message }) => report(line, message));
     } else {
         const { input, problems } = await diagramInputOf(timeline, textDocument.uri);
+        input.omens = options.enums.omens?.yaml;
 
         problems.forEach(message => found.push(diagnostic(DiagnosticSeverity.Warning, 'diagrams', message, 0)));
 

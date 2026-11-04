@@ -45,6 +45,10 @@ export interface Action {
     actionTimelineHit: number;
     animationStart: number;
     animationEnd: number;
+    /** The `ActionTimeline` key of {@link animationEnd}, if it has one. */
+    animationEndKey?: string;
+    /** The length of the animation of {@link animationEnd} in frames (30 per second), if its timeline file was found. */
+    animationEndDuration?: number;
     extraCastTime100ms: number;
     XAxisModifier: number;
     omenPath?: string;

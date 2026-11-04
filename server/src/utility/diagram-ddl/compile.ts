@@ -21,6 +21,8 @@ const MIN_KEYFRAME_GAP = 1000;
 const DEFAULT_FOLLOW_SPEED = 6;
 /** How close an actor comes to what it follows, in yalms from its hitbox's edge to the player icon's, unless it says otherwise. */
 const DEFAULT_REACH = 1;
+/** How long a hint must show at least, in ms, so that it can be read. */
+const MIN_HINT_DURATION = 3000;
 /** The radius of a player icon in yalms: `PLAYER_SIZE` at `ICON_REFERENCE_SCALE`, where icons have their defined size. */
 const PLAYER_ICON_RADIUS = 7.5 / 2 / 4.39;
 /** How often a follow is played out, in ms. */
@@ -106,11 +108,15 @@ export interface ActionFacts {
     castType?: number;
     /** The cast in ms. */
     cast?: number;
+    /** How long the caster's attack animation keeps it in place after the cast, in ms. */
+    animationLock?: number;
     /** The radius or length in yalms. */
     effectRange?: number;
     /** The width in yalms of a rectangular AoE. */
     xAxisModifier?: number;
     hasOmen?: boolean;
+    /** The path of the telegraph in game data, which {@link DiagramInput.omens} gives a look. */
+    omen?: string;
     'omen-delay'?: number;
     timing?: string;
     emphasis?: string;
@@ -170,6 +176,8 @@ export interface DiagramInput {
     targetability?: TargetabilityChange[];
     /** Hitbox radii in yalms, by the BNpcBase IDs that actors name with `bnpc`. */
     hitboxes?: Record<number, number>;
+    /** AoE looks by the omen of their action, from `enums/omens.yaml`. An AoE whose omen isn't listed looks like `aoe`. */
+    omens?: Record<string, unknown>;
 }
 
 const toXY = ([d, a]: number[]): XY => [d! * Math.sin(a! * Math.PI / 180), -d! * Math.cos(a! * Math.PI / 180)];
@@ -354,6 +362,7 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
 
         if (definition.kind === 'action') {
             if (actions[definition.id] == null) error(definition.line, `"${definition.id}" isn't an action of the timeline`);
+            if ('look' in values) error(definition.line, `"${definition.id}" can't have a "look": AoE looks come from omens.yaml`);
 
             actionDefs[definition.id] = values;
         } else {
@@ -649,6 +658,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const telegraphStart = use.at - (action.cast ?? 0) + (action['omen-delay'] ?? 0);
         const show = raidwide ? use.at : omen ? telegraphStart : shown ?? telegraphStart;
         const visual: Record<string, unknown> = Object.fromEntries(Object.entries(def).filter(([key]) => !NON_VISUAL_KEYS.has(key)));
+        // Raidwides have no outline, so they keep their own look.
+        const look = raidwide ? {} : { look: (action.omen != null ? input.omens?.[action.omen] : undefined) ?? 'aoe' };
         const base = raidwide ? RAIDWIDE_BASE : (def.telegraph ?? 'circle') as string;
         const unique = `${use.action}-${subIdOf(id) === id ? 'all' : subIdOf(id)}-${use.at}`;
         const key = scopeKey(within);
@@ -666,7 +677,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             hold: (def.hold as number | undefined) ?? DEFAULT_HOLD,
             omen,
             raidwide,
-            props: { ...visual, ...(omen || raidwide ? {} : DASHED) },
+            props: { ...visual, ...look, ...(omen || raidwide ? {} : DASHED) },
             labelId: `${LABEL_BASE}#${unique}${suffix}`,
             label: action.name ?? use.action,
             ...fields
@@ -691,7 +702,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             const flash = def.flash as string;
             aoe.flashId = `${flash}#${unique}-hit${suffix}`;
             const { yalms } = yalmsOf(flash, use, line);
-            aoe.flashProps = { ...visual, ...(def.flashLook as object | undefined), ...(yalms != null ? { yalms } : {}) };
+            aoe.flashProps = { ...visual, ...look, ...(def.flashLook as object | undefined), ...(yalms != null ? { yalms } : {}) };
             requireBase(flash, line);
 
             // What only shows as its hit, such as Hello World, covers what that shows.
@@ -719,6 +730,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     /** Each `turn`: toward something for `over`, held for `hold`, and back over `over` again. */
     const awayTurns: { id: string, at: number, toward: string, over: number, hold: number, line: number }[] = [];
     const openHints = new Map<string, CompiledDiagram['hints'][number]>();
+    /** The line of each hint's `+hint`, for its errors. */
+    const hintLines = new Map<CompiledDiagram['hints'][number], number>();
     const lastKeyframes = new Map<string, number>();
 
     /** Applies one statement. `effectTarget` is the element whose `exit` hook this statement comes from. */
@@ -752,6 +765,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 if (s.sign === '+') {
                     const hint = { ...within, from: s.at, to: Infinity, text: s.text };
                     openHints.set(key, hint);
+                    hintLines.set(hint, s.line);
                     hints.push(hint);
                 }
                 break;
@@ -987,8 +1001,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     /**
      * Plays out each `+follow` over its target's known path and writes it as ordinary poses and turns, since seeking
      * is a pure function of time and can't simulate. A follower turns toward its target and, with `on`, chases it at its
-     * `speed` until it's within its `reach`. While it casts an action that it's the `use` of, it holds still, and only
-     * turns if the action `tracks`. During a `turn`, it holds still and turns away and back.
+     * `speed` until it's within its `reach`. While it casts an action that it's the `use` of, and through the action's
+     * attack animation after that (`animationLock`), it holds still, and only turns if the action `tracks`. During a `turn`, it holds still and turns away and back.
      */
     function simulateFollows(): void {
         const sorted = (element: CompiledElement): CompiledElement => ({ ...element, poses: [...element.poses].sort((a, b) => a.start - b.start), turns: [...element.turns].sort((a, b) => a.t - b.t) });
@@ -1027,8 +1041,12 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             const speed = Number(props.speed ?? DEFAULT_FOLLOW_SPEED);
             const reach = Number(props.reach ?? DEFAULT_REACH);
             const facing = facingOf(props);
-            const locks = aoes.filter(aoe => aoe.use === follow.id && (actions[aoe.action]?.cast ?? 0) > 0)
-                .map(aoe => ({ from: aoe.hit - actions[aoe.action]!.cast!, to: aoe.hit, tracks: actionDefs[aoe.action]?.tracks === true }));
+            // From the cast's start to the end of the attack animation that follows it, which instant actions play too.
+            const locks = uses.filter(use => castersOf(use).some(caster => caster.id === follow.id)).flatMap(use => {
+                const cast = actions[use.action]?.cast ?? 0;
+                const lock = actions[use.action]?.animationLock ?? 0;
+                return cast + lock > 0 ? [{ from: use.at - cast, to: use.at + lock, tracks: actionDefs[use.action]?.tracks === true }] : [];
+            });
             const turns = awayTurns.filter(turn => turn.id === follow.id && turn.at >= follow.from && turn.at < to).map(turn => ({ ...turn, start: NaN }));
             let [x, y] = positionAt(diagram, follow.id, follow.from);
             let front = rotationAt(diagram, follow.id, follow.from) + facing;
@@ -1105,6 +1123,22 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
     if (arenas.length > 0) requireBase('arena', 0);
 
+    /** The elements alive at `at` that a `use` pattern such as `enemy#[*]` matches. */
+    const aliveMatching = (pattern: string, at: number): CompiledElement[] => {
+        const regex = new RegExp(`^${pattern.replace('[*]', '*').replace('*', '.*')}$`);
+        return [...elements.values()].filter(e => regex.test(e.id) && e.spawns.some(spawn => at >= spawn.from && at <= spawn.to));
+    };
+
+    /** Who casts a use: the `use` actors of its AoEs, otherwise whatever alive element its action's `use` matches. */
+    const castersOf = (use: Use): { id: string, scope: Scope }[] => {
+        const placed = aoes.filter(a => a.action === use.action && a.hit === use.at && a.use != null);
+
+        if (placed.length > 0) return placed.map(a => ({ id: a.use!, scope: scopeOf(a) }));
+
+        const pattern = actionDefs[use.action]?.use as string | undefined;
+        return pattern == null ? [] : aliveMatching(pattern, use.at).map(e => ({ id: e.id, scope: {} }));
+    };
+
     // Every use must have the right number of placements, unless an action hook covers it.
     for (const use of uses) {
         const action = actions[use.action] ?? {};
@@ -1117,9 +1151,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         if (action.shape == null && !raidwide) continue;
 
         if (def?.use != null && placed.length === 0 && !isShell) {
-            const pattern = (def.use as string).replace('[*]', '*');
-            const regex = new RegExp(`^${pattern.replace('*', '.*')}$`);
-            const actors = [...elements.values()].filter(e => regex.test(e.id) && e.spawns.some(spawn => use.at >= spawn.from && use.at <= spawn.to));
+            const actors = aliveMatching(def.use as string, use.at);
 
             if (actors.length === 0) error(0, `"${use.action}" at ${use.at} uses "${def.use}", but nothing like that is alive then`);
 
@@ -1221,6 +1253,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
     for (const hint of hints) {
         if (hint.to === Infinity) hint.to = end;
+        if (hint.to - hint.from < MIN_HINT_DURATION) error(hintLines.get(hint) ?? 0, `this hint shows for only ${hint.to - hint.from} ms, but needs at least ${MIN_HINT_DURATION} ms to be read`);
     }
 
     for (const status of statuses) {
@@ -1277,6 +1310,21 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     }
 
     const name = (id: string) => actions[id]?.name ?? id;
+    // Each caster shows its own cast bar, so that an add's cast doesn't hide the boss's. A use without a `use` actor has no bar.
+    const casts: CompiledDiagram['casts'] = [];
+
+    for (const use of uses) {
+        const cast = actions[use.action]?.cast ?? 0;
+
+        if (cast <= 0) continue;
+
+        for (const caster of castersOf(use)) {
+            if (!casts.some(c => c.caster === caster.id && c.to === use.at && scopeKey(c) === scopeKey(caster.scope))) {
+                casts.push({ ...caster.scope, caster: caster.id, from: use.at - cast, to: use.at, text: name(use.action) });
+            }
+        }
+    }
+
     const diagram: CompiledDiagram = {
         ...(ghosts != null ? { ghosts } : {}),
         end,
@@ -1293,7 +1341,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         statusInfo: {},
         effects: effects.sort((a, b) => a.at - b.at),
         mechanics: uses.map(use => ({ at: use.at, id: use.action, name: name(use.action), ...(use.parent != null ? { parent: use.parent } : {}) })),
-        casts: uses.filter(use => (actions[use.action]?.cast ?? 0) > 0).map(use => ({ from: use.at - actions[use.action]!.cast!, to: use.at, text: name(use.action) })),
+        casts,
         strategies,
         branches,
         clips,

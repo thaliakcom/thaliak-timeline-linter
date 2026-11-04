@@ -138,7 +138,8 @@ export interface CompiledDiagram {
     effects: (Scope & { at: number, target: string, preset: string })[];
     /** Every action use that isn't skipped, in time order. */
     mechanics: { at: number, id: string, name: string, parent?: string }[];
-    casts: { from: number, to: number, text: string }[];
+    /** Cast bars, each drawn above the element that casts it. */
+    casts: (Scope & { caster: string, from: number, to: number, text: string })[];
     strategies: { id: string, name: string, covers: string[] }[];
     branches: { at: number, end: number, options: { name: string, last: number }[] }[];
     /** Per strategy key, the part of the timeline its dialog plays. */
@@ -218,6 +219,7 @@ export function select(diagram: CompiledDiagram, selection: Selection): Compiled
         hints: keep(diagram.hints),
         statuses: keep(diagram.statuses),
         effects: keep(diagram.effects),
+        casts: keep(diagram.casts),
         skips: [...diagram.skips, ...fastForwards].sort((a, b) => a[0] - b[0])
     };
 }

@@ -137,6 +137,7 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string): Pr
             facts.effectRange = paddedEffectRange(game, await hitboxRadius(raw.source));
             facts.xAxisModifier = game.XAxisModifier;
             facts.hasOmen = game.omenPath != null;
+            facts.omen = game.omenPath;
             facts.cast ??= castTimeOf(game);
             facts.name ??= game.name;
         } else if (raw.id != null) {
