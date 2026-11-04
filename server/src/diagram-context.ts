@@ -7,7 +7,7 @@ import { imageSize } from 'image-size';
 import { Range, TextDocuments } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
-import { getGameAction } from './ironworks';
+import { castTimeOf, getGameAction } from './ironworks';
 import { hitboxRadius, paddedEffectRange } from './tooltip';
 import { ActionFacts, arenasOf, DiagramInput, expandTemplate, RawItem, usesOf } from './utility/diagram-ddl/compile';
 import { Definition, parse, ParseResult, Statement, tokenize } from './utility/diagram-ddl/parse';
@@ -137,7 +137,7 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string): Pr
             facts.effectRange = paddedEffectRange(game, await hitboxRadius(raw.source));
             facts.xAxisModifier = game.XAxisModifier;
             facts.hasOmen = game.omenPath != null;
-            facts.cast ??= game.cast100ms * 100;
+            facts.cast ??= castTimeOf(game);
             facts.name ??= game.name;
         } else if (raw.id != null) {
             facts.effectRange = 1;

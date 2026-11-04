@@ -5,7 +5,7 @@
 // `processStatus()` (`thaliak/src/eleventy/utility/data.ts`).
 import * as fs from 'fs';
 import * as paths from 'path';
-import { getGameAction, getGameBNpcBase, getGameIcon, getGameModelSkeleton, getGameStatus, type GameAction, type GameIcon } from './ironworks';
+import { castTimeOf, getGameAction, getGameBNpcBase, getGameIcon, getGameModelSkeleton, getGameStatus, type GameAction, type GameIcon } from './ironworks';
 import type { LinterOptions } from './server';
 import type { BaseTimelineItem, UnprocessedAction, UnprocessedRaidData, UnprocessedStatusEffect } from './types/raids';
 import { formatTime } from './util';
@@ -224,10 +224,10 @@ function enumValue(value: number, names: (string | undefined)[]): string {
 
 /**
  * The details section at the bottom of a tooltip: thaliak's additional information (cast, damage, …)
- * and the raw game data fields, one per line, as `` `field`: value ``. `null` if there are none.
+ * and the raw game data fields, one per line, as `` field: value ``. `null` if there are none.
  */
 function details(values: Record<string, string | number | boolean>): string | null {
-    const lines = Object.entries(values).map(([field, value]) => `\`${field}\`: ${value}`);
+    const lines = Object.entries(values).map(([field, value]) => `${field}: ${value}`);
 
     return lines.length > 0 ? `---\n\n${lines.join('  \n')}` : null;
 }
@@ -422,7 +422,7 @@ export async function actionTooltip(context: TooltipContext, key: string): Promi
     }
 
     const effectRange = game != null ? paddedEffectRange(game, await hitboxRadius(definition.source)) : 0;
-    const cast = definition.cast ?? (game?.cast100ms ?? 0) * 100;
+    const cast = definition.cast ?? (game != null ? castTimeOf(game) : 0);
     const captionIcons: string[] = [];
     let caption: string;
 
@@ -487,7 +487,14 @@ export async function actionTooltip(context: TooltipContext, key: string): Promi
     const values: Record<string, string | number | boolean> = { ...information };
 
     if (game != null) {
-        if (game.cast100ms > 0) values.castTime = `${game.cast100ms / 10} s`;
+        if (castTimeOf(game) > 0) {
+            values.castTime = `${castTimeOf(game) / 1000} s`;
+
+            if (game.extraCastTime100ms > 0) {
+                values.castTime += ` (extra: ${game.extraCastTime100ms * 0.1} s)`;
+            }
+        }
+
         values.range = game.range;
         values.effectRange = game.effectRange;
         values.attackType = enumValue(game.attackType, ATTACK_TYPE_NAMES);

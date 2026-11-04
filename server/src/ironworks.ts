@@ -34,7 +34,10 @@ export interface GameAction {
     /** Only job actions have one. */
     description?: string;
     icon: number;
+    /** The cast up to where the animation starts. */
     cast100ms: number;
+    /** The rest of the cast, after the animation starts (see {@link castTimeOf}). */
+    extraCastTime100ms: number;
     range: number;
     effectRange: number;
     attackType: number;
@@ -44,6 +47,11 @@ export interface GameAction {
     omenPath?: string;
     isPlayerAction: boolean;
     canTargetHostile: boolean;
+}
+
+/** An action's whole cast in ms: up to where its animation starts, plus the extra cast time that ends with the hit. */
+export function castTimeOf(game: GameAction): number {
+    return (game.cast100ms + (game.extraCastTime100ms ?? 0)) * 100;
 }
 
 /** The fields of `ironworks-cli BNpcBase` that the extension uses. */
