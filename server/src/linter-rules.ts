@@ -367,6 +367,16 @@ export function* validateAction({ textDocument, document, js, options }: LinterI
                 const damage = getEntry(action.value, 'damage');
                 const hasDamage = damage != null && yaml.isScalar(damage.value) && damage.value.value as number > 0;
 
+                // With an `id`, the type may come from game data, which `game-data-rules.ts` checks.
+                if (hasDamage && !action.value.has('id') && !action.value.has('type') && !isWip(document, 'damage')[0]) {
+                    yield* diagnostics({
+                        code: 'missing-damage-type',
+                        severity: DiagnosticSeverity.Error,
+                        message: `This action has a damage value, but no damage type.`,
+                        range: getRange(textDocument, damage.key.range!)
+                    });
+                }
+
                 const children = action.value.get('children');
 
                 if (yaml.isSeq(children)) {
