@@ -9,7 +9,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { castTimeOf, getGameAction } from './ironworks';
 import { hitboxRadius, paddedEffectRange } from './tooltip';
-import { ActionFacts, arenasOf, DiagramInput, expandTemplate, RawItem, usesOf } from './utility/diagram-ddl/compile';
+import { ActionFacts, arenasOf, DiagramInput, expandTemplate, RawItem, usesOf, variantIdsOf } from './utility/diagram-ddl/compile';
 import { Definition, parse, ParseResult, Statement, tokenize } from './utility/diagram-ddl/parse';
 
 export const DIAGRAM_LANGUAGE = 'thaliak-diagram';
@@ -120,9 +120,10 @@ function arenaImageSize(diagramUri: string, image: string): [number, number] | n
 
 /**
  * What the compiler needs from a timeline, as `processAction()` in thaliak's build fills it in. Without game data,
- * actions get a size of 1, so that all they lose is the telegraph's timing rather than getting a false size error.
+ * actions get a size of 1 and a cast type that draws their shape, so that all they lose is the telegraph's timing rather
+ * than getting a false size error. `source` is the `.diagram` file's text, whose `+aoe ... as <ID>` need game data too.
  */
-export async function diagramInputOf(timeline: Timeline, diagramUri: string): Promise<{ input: DiagramInput, problems: string[] }> {
+export async function diagramInputOf(timeline: Timeline, diagramUri: string, source: string): Promise<{ input: DiagramInput, problems: string[] }> {
     const { js } = timeline;
     const rawActions = (js.actions ?? {}) as Record<string, ActionFacts & { id?: number, source?: number }>;
     const rawItems = (js.timeline ?? []) as RawItem[];
@@ -138,14 +139,34 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string): Pr
             facts.xAxisModifier = game.XAxisModifier;
             facts.hasOmen = game.omenPath != null;
             facts.omen = game.omenPath;
+            facts.castType = game.castType;
             facts.cast ??= castTimeOf(game);
             facts.name ??= game.name;
         } else if (raw.id != null) {
             facts.effectRange = 1;
             facts.xAxisModifier = 1;
+            // A placeholder, not the game's cast type: drawnShape() only reads it to pick how a halfroom or in-or-out is
+            // drawn, and other shapes are drawn from their shape alone. 13 draws a halfroom as a half circle, which at a
+            // size of 1 looks more like one than the 1x1 square of 12. 2 draws an in-or-out as a circle, and also marks
+            // the action as an AoE so that an action with children isn't taken to only group them.
+            facts.castType = raw.shape === 'halfroom' ? 13 : 2;
         }
 
         actions[key] = facts;
+    }));
+
+    // What `+aoe ... as <game action ID>` draws instead.
+    const variants: Record<number, ActionFacts> = {};
+
+    await Promise.all(variantIdsOf(source).map(async id => {
+        const game = await getGameAction(id);
+
+        if (game == null) {
+            problems.push(`Couldn't read the game data of action ${id}, which a placement is drawn as.`);
+            return;
+        }
+
+        variants[id] = { effectRange: paddedEffectRange(game, await hitboxRadius(undefined)), xAxisModifier: game.XAxisModifier, castType: game.castType, hasOmen: game.omenPath != null, omen: game.omenPath };
     }));
 
     const arenas = arenasOf(rawItems);
@@ -168,7 +189,8 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string): Pr
             actions,
             arenas,
             arenaSize: typeof arena === 'number' ? [arena, arena] : arena,
-            waymarks: js.waymarks
+            waymarks: js.waymarks,
+            variants
         },
         problems
     };
@@ -230,7 +252,7 @@ export interface DiagramToken {
     line: number;
     start: number;
     end: number;
-    /** What it is: a statement's subject, a value of a clause, the ID of a `define` block, or the value of `use`, `telegraph` or `flash`. */
+    /** What it is: a statement's subject, a value of a clause, the ID of a `define` block, or the value of `use` or `flash`. */
     kind: 'subject' | 'value' | 'definition' | 'field';
     /** The statement it's part of, unless it's in a `define` block's own lines. */
     statement?: Statement;
@@ -241,7 +263,7 @@ export interface DiagramToken {
 /** Where the arguments of a statement's line start: past the timestamp and verb. */
 const LINE_PREFIX = /^\s*(?:\d+\s+)?(?:[+-]?[a-z][a-z-]*:\s*)?/;
 /** The fields whose value names an element. */
-const ELEMENT_FIELDS = new Set(['use', 'telegraph', 'flash']);
+const ELEMENT_FIELDS = new Set(['use', 'flash']);
 
 /** Finds a statement's words in `raw`, its line. */
 function* statementTokens(statement: Statement, raw: string, line: number): Generator<DiagramToken> {

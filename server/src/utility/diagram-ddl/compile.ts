@@ -8,7 +8,7 @@ import { expandMargin } from '../margin';
 import { Definition, Diagnostic, parse, Statement } from './parse';
 import { callPlaceholder, PLAYER_GROUPS, resolveWaymarks } from './placeholders';
 import type { Margin } from '../../types/graphing';
-import { AoeArea, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, XY } from './seek';
+import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, XY } from './seek';
 
 /** Run speed in yalms per ms. */
 const RUN_SPEED = 6 / 1000;
@@ -35,6 +35,11 @@ const SQUARE_TUPLE = /(?<![\w-])\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+\
 /** The BNpcBase IDs that a `.diagram` file's actors name with `bnpc`, whose hitboxes {@link DiagramInput.hitboxes} needs. */
 export function bnpcIdsOf(source: string): number[] {
     return [...new Set([...source.matchAll(/\bbnpc:?\s+(\d+)/g)].map(match => Number(match[1])))];
+}
+
+/** The game action IDs that a `.diagram` file's `+aoe` statements draw instead with `as`, whose facts {@link DiagramInput.variants} needs. */
+export function variantIdsOf(source: string): number[] {
+    return [...new Set([...source.matchAll(/^.*\+aoe\b.*$/gm)].flatMap(line => [...line[0].replace(/\/\/.*$/, '').matchAll(/\bas\s+(\d+)\b/g)].map(match => Number(match[1]))))];
 }
 
 /**
@@ -84,7 +89,35 @@ const LABEL_BASE = 'diagram-label';
 const RAIDWIDE_SIZE = 420;
 const DASHED = { look: { type: 'none' }, stroke: { style: 'dashed', color: '#fce76e' } };
 /** Definition keys that describe a placement rather than the drawn element. */
-const NON_VISUAL_KEYS = new Set(['telegraph', 'flash', 'hold', 'hidden', 'use', 'hooks', 'flashLook', 'tracks']);
+const NON_VISUAL_KEYS = new Set(['flash', 'hold', 'hidden', 'use', 'hooks', 'flashLook', 'tracks']);
+/** The `define action` keys that are now facts of the timeline action, and where each one went. */
+const MOVED_KEYS: Record<string, string> = {
+    telegraph: 'the element comes from the timeline action\'s "shape"',
+    type: 'the element comes from the timeline action\'s "shape"',
+    angle: 'set "angle" on the timeline action',
+    size: 'the size comes from game data, and from "angle", "inner", "grid" and "spacing" on the timeline action'
+};
+/** How every AoE element looks, unless its action's definition or its omen says otherwise. */
+const AOE_LOOK = { opacity: 0.85, shadow: false, enter: 'scale' };
+/** The built-in elements that draw AoEs, by the element type they draw. */
+const AOE_BASES = { ellipse: 'aoe-ellipse', cone: 'aoe-cone', donut: 'aoe-donut', rectangle: 'aoe-rectangle' } as const;
+/** The built-in element that draws each rectangle of a composite AoE, centred on its spot. */
+const AOE_PART_BASE = 'aoe-part';
+const AOE_DEFINITIONS: Record<string, Record<string, unknown>> = {
+    [AOE_BASES.ellipse]: { type: 'ellipse', ...AOE_LOOK },
+    [AOE_BASES.cone]: { type: 'cone', ...AOE_LOOK },
+    [AOE_BASES.donut]: { type: 'donut', ...AOE_LOOK },
+    // A line starts at its caster and runs forward.
+    [AOE_BASES.rectangle]: { type: 'rectangle', origin: [0.5, 1], ...AOE_LOOK },
+    [AOE_PART_BASE]: { type: 'rectangle', ...AOE_LOOK }
+};
+/** How much of a line's half-width fades out at its sides when game data has no width for it. */
+const UNKNOWN_WIDTH_FADE = 0.8;
+/** The cast types that draw a circle, a donut, a cone and a line, for `in-or-out` and `halfroom`. */
+const CIRCLE_CAST_TYPES = [2, 5, 7];
+const DONUT_CAST_TYPE = 10;
+const CONE_CAST_TYPES = [3, 13];
+const LINE_CAST_TYPES = [4, 8, 12];
 /** Effect names without a preset of their own yet. */
 const EFFECT_ALIASES: Record<string, string> = { laser: 'wave-cannon' };
 /** Elements that the viewer defines by itself. */
@@ -114,6 +147,14 @@ export interface ActionFacts {
     effectRange?: number;
     /** The width in yalms of a rectangular AoE. */
     xAxisModifier?: number;
+    /** A cone's full angle in degrees, from the timeline. */
+    angle?: number;
+    /** A donut's inner radius in yalms, from the timeline. */
+    inner?: number;
+    /** A `grid`'s number of lines along each axis, from the timeline. */
+    grid?: [number, number];
+    /** The gap in yalms between a `grid`'s lines, from the timeline. */
+    spacing?: number;
     hasOmen?: boolean;
     /** The path of the telegraph in game data, which {@link DiagramInput.omens} gives a look. */
     omen?: string;
@@ -178,6 +219,90 @@ export interface DiagramInput {
     hitboxes?: Record<number, number>;
     /** AoE looks by the omen of their action, from `enums/omens.yaml`. An AoE whose omen isn't listed looks like `aoe`. */
     omens?: Record<string, unknown>;
+    /** Game data of the actions that `+aoe ... as <game action ID>` draws instead, by those IDs (see {@link variantIdsOf}). */
+    variants?: Record<number, ActionFacts>;
+}
+
+/** What draws an AoE: one element of a type and size in yalms, or several rectangles (sizes and offsets in yalms). */
+export type DrawnShape =
+    | { type: keyof typeof AOE_BASES, yalms: [number, number], angle?: number, fade?: number }
+    | { type: 'parts', parts: { offset: XY, rotate: number, size: XY }[] };
+
+/**
+ * What an action's AoE is drawn as, from its timeline `shape` and its facts; see the table in
+ * `.agents/plans/2026-11-04-shapes.md` (thaliak-suite). `arena` is the arena's larger side in yalms, which
+ * lines that span or cut the arena reach across. Returns why it can't be drawn instead, naming what's missing.
+ */
+export function drawnShape(facts: ActionFacts, arena: number | undefined): DrawnShape | string {
+    const range = facts.effectRange ?? 0;
+    const width = facts.xAxisModifier ?? 0;
+    const castType = facts.castType ?? 0;
+    const across = arena ?? range * 2;
+    const noRange = 'has no effectRange in game data';
+    const ellipse = (): DrawnShape | string => range > 0 ? { type: 'ellipse', yalms: [range * 2, range * 2] } : noRange;
+    const donut = (): DrawnShape | string => range <= 0 ? noRange
+        : facts.inner == null ? 'needs an "inner" radius on its timeline action'
+        : { type: 'donut', yalms: [facts.inner * 2, range * 2] };
+    const cone = (angle: number | undefined): DrawnShape | string => range <= 0 ? noRange
+        : angle == null ? 'needs an "angle" on its timeline action'
+        : { type: 'cone', yalms: [0, range], angle };
+    // Without a width in game data, the line may be of any width, so it's drawn wide and fades out at its sides.
+    const line = (): DrawnShape | string => range <= 0 ? noRange
+        : width > 0 ? { type: 'rectangle', yalms: [width, range] }
+        : { type: 'rectangle', yalms: [across, range], fade: UNKNOWN_WIDTH_FADE };
+    const cross = (angles: number[]): DrawnShape | string => range <= 0 || width <= 0 ? 'needs an effectRange and an XAxisModifier in game data'
+        : { type: 'parts', parts: angles.map(rotate => ({ offset: [0, 0], rotate, size: [width, range * 2] })) };
+
+    switch (facts.shape) {
+        case 'chariot':
+        case 'defamation':
+            return ellipse();
+        case 'dynamo':
+            return donut();
+        case 'cone':
+            return cone(facts.angle);
+        case 'line':
+        case 'rect':
+            return line();
+        case 'halfroom':
+            return CONE_CAST_TYPES.includes(castType) ? cone(facts.angle ?? 180)
+                : LINE_CAST_TYPES.includes(castType) ? line()
+                : `is a halfroom of castType ${castType}, which is neither a cone nor a line`;
+        case 'in-or-out':
+            return CIRCLE_CAST_TYPES.includes(castType) ? ellipse()
+                : castType === DONUT_CAST_TYPE ? donut()
+                : `is in-or-out of castType ${castType}, which is neither a circle nor a donut: draw it with "as <game action ID>"`;
+        case 'plus':
+            return cross([0, 90]);
+        case 'cross':
+            return cross([45, 135]);
+        case 'star':
+            return cross([0, 45, 90, 135]);
+        case 'sides': {
+            // The safe lane through the caster is as wide as the XAxisModifier; each side reaches from it to the arena's edge.
+            const side = across / 2 - width / 2;
+
+            if (range <= 0) return noRange;
+            if (side <= 0) return `has a safe lane of ${width} yalms, as wide as the arena`;
+
+            return { type: 'parts', parts: [-1, 1].map(sign => ({ offset: [sign * (width + side) / 2, 0] as XY, rotate: 0, size: [side, range] as XY })) };
+        }
+        case 'grid': {
+            if (facts.grid == null) return 'needs "grid" on its timeline action';
+            if (width <= 0) return 'needs an XAxisModifier in game data, for the width of its lines';
+
+            // Centred as a group on the AoE's position.
+            const step = width + (facts.spacing ?? width);
+            const lines = (count: number, rotate: number) => Array.from({ length: count }, (_, i) => {
+                const at = (i - (count - 1) / 2) * step;
+                return { offset: (rotate === 0 ? [at, 0] : [0, at]) as XY, rotate, size: [width, across] as XY };
+            });
+
+            return { type: 'parts', parts: [...lines(facts.grid[0], 0), ...lines(facts.grid[1], 90)] };
+        }
+        default:
+            return facts.shape == null ? 'has no "shape" on its timeline action' : `has the shape "${facts.shape}", which draws nothing`;
+    }
 }
 
 const toXY = ([d, a]: number[]): XY => [d! * Math.sin(a! * Math.PI / 180), -d! * Math.cos(a! * Math.PI / 180)];
@@ -364,6 +489,10 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
             if (actions[definition.id] == null) error(definition.line, `"${definition.id}" isn't an action of the timeline`);
             if ('look' in values) error(definition.line, `"${definition.id}" can't have a "look": AoE looks come from omens.yaml`);
 
+            for (const [key, instead] of Object.entries(MOVED_KEYS)) {
+                if (key in values) error(definition.line, `"${definition.id}" can't have a "${key}": ${instead}`);
+            }
+
             actionDefs[definition.id] = values;
         } else {
             elementDefs[definition.id] = values;
@@ -546,25 +675,21 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         return planeUnitsPerYalm(arena.imageSize, expandMargin(arena.margin ?? 0), boxSize, [1, 1], input.arenaSize);
     };
 
-    /** The size of an action's element in yalms from game data, unless its definition states a size. */
-    const yalmsOf = (base: string, use: Use, line: number): { yalms?: [number, number] } => {
-        if (actionDefs[use.action]?.size != null) return {};
-
-        const facts = actions[use.action];
+    /** The size in yalms from game data of the element `base` that shows an action's hit (its `flash`). */
+    const flashYalmsOf = (base: string, facts: ActionFacts, action: string, line: number): { yalms?: [number, number] } => {
         const type = elementDefs[base]?.type as ElementDefinition['type'] | undefined;
         // A marker that stands for an AoE, such as Hello World's, covers its circle.
-        const yalms = type == null ? undefined : actionYalms((type as string) === 'marker' ? 'ellipse' : type, facts?.effectRange ?? 0, facts?.xAxisModifier);
+        const yalms = type == null ? undefined : actionYalms((type as string) === 'marker' ? 'ellipse' : type, facts.effectRange ?? 0, facts.xAxisModifier, facts.inner);
 
-        if (yalms == null) error(line, `"${use.action}" as a ${type} can't be sized from its effectRange of ${facts?.effectRange ?? 0} and XAxisModifier of ${facts?.xAxisModifier ?? 0}: state a size`);
+        if (yalms == null) error(line, `"${action}" as a ${type} can't be sized from its effectRange of ${facts.effectRange ?? 0} and XAxisModifier of ${facts.xAxisModifier ?? 0}`);
 
         return yalms == null ? {} : { yalms: [...yalms] as [number, number] };
     };
 
-    /** What an AoE drawn by the element `base` covers at `t`, in plane units. */
-    const areaOf = (base: string, use: Use, t: number, visual: Record<string, unknown>, yalms: [number, number] | undefined): AoeArea | undefined => {
-        const definition = elementDefs[base] ?? {};
+    /** What an AoE drawn by an element with this definition covers at `t`, in plane units. */
+    const areaOf = (definition: Record<string, unknown>, t: number, visual: Record<string, unknown>, yalms: [number, number] | undefined): AoeArea | undefined => {
         const type = definition.type as string | undefined;
-        const kind = type === 'rectangle' ? 'rectangle' : type === 'cone' ? 'cone' : type === 'ellipse' || type === 'marker' ? 'circle' : undefined;
+        const kind = type === 'rectangle' ? 'rectangle' : type === 'cone' ? 'cone' : type === 'donut' ? 'donut' : type === 'ellipse' || type === 'marker' ? 'circle' : undefined;
         const [unitsX, unitsY] = unitsPerYalm(t);
         const stated = (visual.size ?? definition.size) as number | [number, number] | undefined;
         const size: XY | undefined = yalms != null ? [yalms[0] * unitsX, yalms[1] * unitsY] : typeof stated === 'number' ? [stated, stated] : stated;
@@ -575,6 +700,11 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const [scaleX, scaleY] = typeof scale === 'number' ? [scale, scale] : scale;
         const origin = (visual.origin ?? definition.origin ?? 0.5) as number | [number, number];
 
+        // A donut's size is its inner and outer diameter.
+        if (kind === 'donut') {
+            return { kind, size: [size[1] * scaleX, size[1] * scaleY], origin: [0.5, 0.5], inner: size[0] / 2 * scaleX };
+        }
+
         return {
             kind,
             size: [size[0] * scaleX, size[1] * scaleY],
@@ -582,6 +712,9 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             ...(kind === 'cone' ? { angle: (visual.angle ?? definition.angle) as number } : {})
         };
     };
+
+    /** The arena's larger side in yalms, if the fight's arena size is known. */
+    const arenaYalms = input.arenaSize == null ? undefined : Math.max(...input.arenaSize);
 
     const lastDestination = (element: CompiledElement, within: Scope): XY => {
         for (let i = element.poses.length - 1; i >= 0; i--) {
@@ -649,9 +782,18 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     const placedCount = (use: Use, within: Scope) => aoes.filter(a => a.action === use.action && a.hit === use.at && compatible(a, within)).length;
     const expectedCount = (use: Use) => isRaidwide(actions[use.action]) ? 1 : use.count ?? actions[use.action]?.count ?? 1;
 
-    /** Adds one placement of an action at one use. */
-    const addAoe = (id: string, use: Use, shown: number | null, within: Scope, fields: Partial<CompiledAoe>, line: number): CompiledAoe => {
+    /**
+     * Adds one placement of an action at one use. `variant` is the game action ID that `as` draws it as instead, whose
+     * shape, size and look this placement takes; its timing stays the action's.
+     */
+    const addAoe = (id: string, use: Use, shown: number | null, within: Scope, fields: Partial<CompiledAoe>, line: number, variant?: number): CompiledAoe => {
         const action = actions[use.action] ?? {};
+        const variantFacts = variant == null ? undefined : input.variants?.[variant];
+
+        if (variant != null && variantFacts == null) error(line, `no game data for the action ${variant} that "${id}" is drawn as`);
+
+        // The variant replaces what game data says, but what only the timeline says, such as its shape, stays.
+        const drawnFacts: ActionFacts = variantFacts == null ? action : { ...action, ...variantFacts, shape: action.shape };
         const def = actionDefs[use.action] ?? {};
         const raidwide = isRaidwide(action);
         const omen = action.hasOmen === true && (action.cast ?? 0) > 0;
@@ -659,8 +801,12 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const show = raidwide ? use.at : omen ? telegraphStart : shown ?? telegraphStart;
         const visual: Record<string, unknown> = Object.fromEntries(Object.entries(def).filter(([key]) => !NON_VISUAL_KEYS.has(key)));
         // Raidwides have no outline, so they keep their own look.
-        const look = raidwide ? {} : { look: (action.omen != null ? input.omens?.[action.omen] : undefined) ?? 'aoe' };
-        const base = raidwide ? RAIDWIDE_BASE : (def.telegraph ?? 'circle') as string;
+        const look = raidwide ? {} : { look: (drawnFacts.omen != null ? input.omens?.[drawnFacts.omen] : undefined) ?? 'aoe' };
+        const drawn = raidwide || def.hidden ? undefined : drawnShape(drawnFacts, arenaYalms);
+
+        if (typeof drawn === 'string') error(line, `"${use.action}" ${drawn}`);
+
+        const base = raidwide ? RAIDWIDE_BASE : drawn == null || typeof drawn === 'string' || drawn.type === 'parts' ? undefined : AOE_BASES[drawn.type];
         const unique = `${use.action}-${subIdOf(id) === id ? 'all' : subIdOf(id)}-${use.at}`;
         const key = scopeKey(within);
         const existing = aoes.filter(a => a.action === use.action && a.id === id && a.hit === use.at);
@@ -683,40 +829,56 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             ...fields
         };
 
-        if (!def.hidden || raidwide) {
+        if (raidwide) {
+            aoe.renderId = `${RAIDWIDE_BASE}#${unique}${suffix}`;
+        } else if (base != null && drawn != null && typeof drawn !== 'string' && drawn.type !== 'parts') {
             aoe.renderId = `${base}#${unique}${suffix}`;
-            requireBase(base, line);
+            definitions[base] = AOE_DEFINITIONS[base]!;
+            aoe.props.yalms = drawn.yalms;
 
-            if (!raidwide) {
-                const { yalms } = yalmsOf(base, use, line);
+            if (drawn.angle != null) aoe.props.angle = drawn.angle;
+            if (drawn.fade != null) aoe.props.fade = drawn.fade;
 
-                if (yalms != null) aoe.props.yalms = yalms;
+            // A line of unknown width hits no one by itself.
+            const area = drawn.fade != null ? undefined : areaOf(AOE_DEFINITIONS[base]!, use.at, { ...visual, ...(drawn.angle != null ? { angle: drawn.angle } : {}) }, drawn.yalms);
 
-                const area = areaOf(base, use, use.at, visual, yalms);
+            if (area != null) aoe.area = area;
+        } else if (drawn != null && typeof drawn !== 'string' && drawn.type === 'parts') {
+            const [unitsX, unitsY] = unitsPerYalm(use.at);
+            const parts: AoePart[] = drawn.parts.map((part, i) => ({
+                renderId: `${AOE_PART_BASE}#${unique}-p${i}${suffix}`,
+                offset: [part.offset[0] * unitsX, part.offset[1] * unitsY],
+                rotate: part.rotate,
+                size: [part.size[0] * unitsX, part.size[1] * unitsY]
+            }));
 
-                if (area != null) aoe.area = area;
-            }
+            definitions[AOE_PART_BASE] = AOE_DEFINITIONS[AOE_PART_BASE]!;
+            // Its rectangles form one outline.
+            aoe.props.merge = true;
+            aoe.parts = parts;
+            aoe.area = { kind: 'composite', size: [0, 0], origin: [0.5, 0.5], parts: parts.map(({ renderId: _, ...part }) => part) };
         }
 
         if (def.flash != null) {
             const flash = def.flash as string;
             aoe.flashId = `${flash}#${unique}-hit${suffix}`;
-            const { yalms } = yalmsOf(flash, use, line);
+            const { yalms } = flashYalmsOf(flash, drawnFacts, use.action, line);
             aoe.flashProps = { ...visual, ...look, ...(def.flashLook as object | undefined), ...(yalms != null ? { yalms } : {}) };
             requireBase(flash, line);
 
             // What only shows as its hit, such as Hello World, covers what that shows.
             if (aoe.area == null && !raidwide) {
-                const area = areaOf(flash, use, use.at, visual, yalms);
+                const area = areaOf(elementDefs[flash] ?? {}, use.at, visual, yalms);
 
                 if (area != null) aoe.area = area;
             }
         }
 
         if (!raidwide) {
-            const drawn = aoe.renderId != null ? base : def.flash as string | undefined;
-            const yalms = aoe.props.yalms as XY | undefined;
-            const facing = drawn == null ? 0 : facingOf({ ...elementDefs[drawn], ...visual, ...(yalms != null ? { size: yalms } : {}) });
+            const drawnBase = aoe.renderId != null ? base : aoe.parts != null ? undefined : def.flash as string | undefined;
+            const definition = drawnBase == null ? undefined : AOE_DEFINITIONS[drawnBase] ?? elementDefs[drawnBase];
+            const yalms = (aoe.renderId != null ? aoe.props.yalms : aoe.flashProps?.yalms) as XY | undefined;
+            const facing = definition == null ? 0 : facingOf({ ...definition, ...visual, ...(yalms != null ? { size: yalms } : {}) });
 
             if (facing !== 0) aoe.facing = facing;
         }
@@ -918,7 +1080,12 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                         fields.hits = hits.flatMap(expandTemplate).map(hit => hit.replaceAll('<id>', subIdOf(id)));
                     }
 
-                    const aoe = addAoe(id, use, s.at, within, fields, s.line);
+                    const as = clauseOf(s, 'as');
+                    const variant = as == null ? undefined : Number(valueFor(as, index, ids, s, within));
+
+                    if (variant != null && !Number.isInteger(variant)) error(s.line, `"as" on +aoe takes a game action ID`);
+
+                    const aoe = addAoe(id, use, s.at, within, fields, s.line, variant);
 
                     if (aoe.omen && s.at > aoe.show) error(s.line, `"${id}" is placed ${s.at - aoe.show} ms after its telegraph appears`);
                 });
@@ -1187,12 +1354,14 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     // What hits leaves a resolve effect: the one its hook names, otherwise a plain flash. A raidwide sweeps.
     for (const aoe of aoes) {
         const named = pendingEffects.filter(effect => effect.use.action === aoe.action && effect.use.at === aoe.hit);
-        const target = aoe.renderId ?? aoe.flashId;
+        // A composite plays its effect on each of its rectangles.
+        const targets = aoe.parts?.map(part => part.renderId) ?? [aoe.renderId ?? aoe.flashId].filter(target => target != null);
+        const drawsBeforeHit = aoe.renderId != null || aoe.parts != null;
 
-        if (target == null) continue;
-
-        for (const preset of named.length > 0 ? named.map(effect => effect.preset) : aoe.renderId == null ? [] : [aoe.raidwide ? 'sweep' : 'flash']) {
-            effects.push({ ...scopeOf(aoe), at: aoe.hit, target, preset });
+        for (const target of targets) {
+            for (const preset of named.length > 0 ? named.map(effect => effect.preset) : !drawsBeforeHit ? [] : [aoe.raidwide ? 'sweep' : 'flash']) {
+                effects.push({ ...scopeOf(aoe), at: aoe.hit, target, preset });
+            }
         }
     }
 

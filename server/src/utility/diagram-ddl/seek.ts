@@ -47,8 +47,13 @@ export interface CompiledAoe extends Scope {
     /** The DDL's ID, which elements refer to. Several uses of an action can share it. */
     id: string;
     action: string;
-    /** The ID of the telegraph or outline element. Unique to this use. `undefined` if nothing shows before the hit. */
+    /**
+     * The ID of the telegraph or outline element. Unique to this use. `undefined` if nothing shows before the hit,
+     * or if {@link parts} draw it.
+     */
     renderId?: string;
+    /** The rectangles that draw a composite AoE (`sides`, `grid`, `plus`, `cross`, `star`), each its own element. */
+    parts?: AoePart[];
     /** The ID of the element that shows the hit itself, if the action has one. */
     flashId?: string;
     /** When the telegraph or outline appears. */
@@ -83,15 +88,30 @@ export interface CompiledAoe extends Scope {
     label: string;
 }
 
+/** One rectangle of a composite AoE, centred on its spot. */
+export interface AoePart {
+    renderId: string;
+    /** Where its centre is, in plane units, in the AoE's own frame: before it's turned, with its front pointing north. */
+    offset: XY;
+    /** How far it's turned within the AoE, in degrees clockwise. */
+    rotate: number;
+    /** Its width and length in plane units. */
+    size: XY;
+}
+
 /** What an AoE covers, in the same terms as the element that draws it. */
 export interface AoeArea {
-    kind: 'circle' | 'rectangle' | 'cone';
-    /** The width and height, or for a cone its radius as the height. */
+    kind: 'circle' | 'rectangle' | 'cone' | 'donut' | 'composite';
+    /** The width and height, a cone's radius as the height, or a donut's outer diameter. Unused by a composite. */
     size: XY;
-    /** Where its position is within {@link size}, from 0 to 1. Unused by a cone, which starts at its position. */
+    /** Where its position is within {@link size}, from 0 to 1. Unused by a cone or donut, which centre on their position, or a composite. */
     origin: XY;
     /** A cone's full angle in degrees. */
     angle?: number;
+    /** A donut's inner radius in plane units. */
+    inner?: number;
+    /** A composite's rectangles: it covers whatever any of them covers. */
+    parts?: Omit<AoePart, 'renderId'>[];
 }
 
 /** An `<arena>` timeline item. */
@@ -365,6 +385,16 @@ export function aoeRotationAt(diagram: CompiledDiagram, aoe: CompiledAoe, t: num
     return front - (aoe.facing ?? 0);
 }
 
+/** Where a part of a composite AoE is at `t`, and its rotation, as {@link aoeAt} and {@link aoeRotationAt} have the AoE's. */
+export function partAt(diagram: CompiledDiagram, aoe: CompiledAoe, part: Pick<AoePart, 'offset' | 'rotate'>, t: number): { xy: XY, rotate: number } {
+    const [x, y] = aoeAt(diagram, aoe, t);
+    const rotate = aoeRotationAt(diagram, aoe, t);
+    const r = rotate * Math.PI / 180;
+    const [dx, dy] = part.offset;
+
+    return { xy: [x + dx * Math.cos(r) - dy * Math.sin(r), y + dx * Math.sin(r) + dy * Math.cos(r)], rotate: rotate + part.rotate };
+}
+
 /** The value of an element's property at `t`. Numbers change gradually over a `set`'s `over`. */
 export function propAt(element: CompiledElement, key: string, t: number): unknown {
     let value = element.props[key];
@@ -393,6 +423,20 @@ function isInArea(diagram: CompiledDiagram, aoe: CompiledAoe, area: AoeArea, [x,
     const lx = dx * Math.cos(r) + dy * Math.sin(r);
     const ly = -dx * Math.sin(r) + dy * Math.cos(r);
     const [width, height] = area.size;
+
+    if (area.kind === 'composite') {
+        // The point in each centred rectangle's own frame.
+        return (area.parts ?? []).some(({ offset, rotate, size }) => {
+            const p = rotate * Math.PI / 180;
+            const [px, py] = [lx - offset[0], ly - offset[1]];
+            return Math.abs(px * Math.cos(p) + py * Math.sin(p)) <= size[0] / 2 && Math.abs(-px * Math.sin(p) + py * Math.cos(p)) <= size[1] / 2;
+        });
+    }
+
+    if (area.kind === 'donut') {
+        const distance = Math.hypot(lx, ly);
+        return distance <= width / 2 && distance >= (area.inner ?? 0);
+    }
 
     if (area.kind === 'cone') {
         // A cone opens north from its apex.

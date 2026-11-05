@@ -185,6 +185,20 @@ export interface UnprocessedAction {
      */
     shape?: ShapeType;
     /**
+     * The full angle in degrees of a `cone` (game data doesn't have it), or of a `halfroom` that's
+     * a cone (which is 180° without it). Diagrams and the shape icon use it.
+     */
+    angle?: number;
+    /**
+     * The inner radius in yalms of a `dynamo`, or of an `in-or-out` drawn as a donut (game data only
+     * has the outer radius, `effectRange`). Diagrams and the shape icon use it.
+     */
+    inner?: number;
+    /** Only on a `grid`: how many lines it has along each axis, `[vertical, horizontal]`. */
+    grid?: [integer, integer];
+    /** Only on a `grid`: the gap in yalms between neighbouring lines. Defaults to the line width. */
+    spacing?: number;
+    /**
      * The type of damage applied. Must be one of the values from `damage-types.yaml`.
      * 
      * Note that this field is automatically retrieved from game data, so explicitly

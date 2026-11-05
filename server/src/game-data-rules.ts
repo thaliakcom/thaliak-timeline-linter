@@ -19,7 +19,7 @@ const CAST_TYPES: ShapeType[][] = [
     [],
     [],
     ['chariot', 'defamation', 'dynamo', 'star', 'in-or-out'],
-    ['cone', '270°'],
+    ['cone'],
     ['line'],
     ['chariot', 'defamation', 'in-or-out'],
     [],
@@ -29,7 +29,7 @@ const CAST_TYPES: ShapeType[][] = [
     ['dynamo', 'in-or-out'],
     ['plus', 'cross'],
     ['line', 'halfroom', 'sides', 'rect', 'grid'],
-    ['cone', '270°', 'halfroom', 'sides']
+    ['cone', 'halfroom', 'sides']
 ];
 /** The mechanic types that a circle of an `effectRange` of 50 or more can be without being a raidwide (thaliak's `OMNI_MECHANIC_TYPES`). */
 const OMNI_MECHANIC_TYPES: readonly MechanicType[] = ['mech.motion', 'mech.lookaway', 'mech.failure', 'mech.lookat', 'mech.status', 'raidwide.proximity', 'raidwide.proximity.fake', 'aoe.condition', 'mech.check', 'mech.los'];

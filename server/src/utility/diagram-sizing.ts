@@ -48,15 +48,17 @@ export function paddedEffectRange(action: Pick<ApiAction, 'effectRange' | 'castT
 
 /**
  * The size in yalms of an element of the given type that is sized by an action with `effectRange`
- * (see {@link paddedEffectRange}) and `xAxisModifier` (the width of rectangular AoEs). Undefined if the
- * action can't size it: no range, a donut (game data has no inner radius) or a rectangle without width.
+ * (see {@link paddedEffectRange}) and `xAxisModifier` (the width of rectangular AoEs). A donut is
+ * `[inner diameter, outer diameter]`, from its timeline's `inner` radius, since game data has none. Undefined if
+ * the action can't size it: no range, a donut without `inner` or a rectangle without width.
  */
-export function actionYalms(type: ElementDefinition['type'], effectRange: number, xAxisModifier: number | undefined): PositivePoint | undefined {
-    if (effectRange <= 0 || type === 'donut' || (type === 'rectangle' && (xAxisModifier ?? 0) <= 0)) {
+export function actionYalms(type: ElementDefinition['type'], effectRange: number, xAxisModifier: number | undefined, inner?: number): PositivePoint | undefined {
+    if (effectRange <= 0 || (type === 'donut' && inner == null) || (type === 'rectangle' && (xAxisModifier ?? 0) <= 0)) {
         return undefined;
     }
 
     return type === 'ellipse' ? [effectRange * 2, effectRange * 2]
+        : type === 'donut' ? [inner! * 2, effectRange * 2]
         : type === 'cone' ? [0, effectRange]
         : [xAxisModifier!, effectRange];
 }

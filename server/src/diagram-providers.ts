@@ -140,7 +140,6 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             const spec = schema != null ? fieldsOfKind(schema, definition.kind)[field[1]!] : undefined;
 
             switch (field[1]) {
-                case 'telegraph':
                 case 'flash': return member(elementDefinitions);
                 case 'use': return member(liveIdsOf(tokensOf(source, parsed)));
                 case 'covers': return member(timeline != null ? getStrategyKeys(timeline.document) : []);
@@ -237,11 +236,15 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 }
 
 /** The fields a `define` block of `kind` can have. Only an action's has the action fields. */
+/** The element fields that `define action` can't have, since its timeline action decides them. */
+const ACTION_TIMELINE_KEYS = new Set(['type', 'size', 'angle', 'look']);
+
 function fieldsOfKind(schema: DiagramSchema, kind: Definition['kind']): DiagramDefineKind['fields'] {
     switch (kind) {
         case 'gradient': return {};
         case 'strategy': return schema.define.strategy.fields;
-        case 'action': return { ...schema.define.action.fields, ...schema.define.element.fields };
+        // What an action draws comes from its timeline action, so these come from there instead (thaliak's `MOVED_KEYS`).
+        case 'action': return Object.fromEntries(Object.entries({ ...schema.define.action.fields, ...schema.define.element.fields }).filter(([key]) => !ACTION_TIMELINE_KEYS.has(key)));
         case 'element': return schema.define.element.fields;
     }
 }

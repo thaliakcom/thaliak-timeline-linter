@@ -37,7 +37,7 @@ function typeOf(value: unknown): string | undefined {
 
 /**
  * The checks of what `define` blocks draw, which `processGraphing()` in thaliak's `data.ts` and the viewer rely on,
- * except for those that need game data or an arena image's size. An action's block draws the element its `telegraph` names.
+ * except for those that need game data or an arena image's size. An action's block draws a built-in shape, from its timeline action.
  */
 function* validateDefinitions(textDocument: TextDocument, definitions: Definition[], lines: string[], options: LinterOptions): Generator<Diagnostic> {
     const schema = options.diagramSchema;
@@ -52,8 +52,8 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
     const types = new Map(blocks.map(({ definition, fields }) => [definition.id, typeOf(valueOf(fields, 'type'))]));
 
     for (const { definition, fields } of blocks) {
-        const telegraph = valueOf(fields, 'telegraph');
-        const type = types.get(definition.id) ?? (typeof telegraph === 'string' ? types.get(telegraph) : undefined);
+        // Which shape an action draws depends on its timeline action, but it's always one of the shapes.
+        const type = definition.kind === 'action' ? 'ellipse' : types.get(definition.id);
         const firstOf = (key: string) => fields.find(field => field.key === key);
         const error = (code: string, field: DefinitionField, message: string) => diagnostic(DiagnosticSeverity.Error, code, message, field.line, field.start);
 
@@ -273,7 +273,7 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
     if (timeline == null) {
         parsed.diagnostics.forEach(({ line, message }) => report(line, message));
     } else {
-        const { input, problems } = await diagramInputOf(timeline, textDocument.uri);
+        const { input, problems } = await diagramInputOf(timeline, textDocument.uri, source);
         input.omens = options.enums.omens?.yaml;
 
         problems.forEach(message => found.push(diagnostic(DiagnosticSeverity.Warning, 'diagrams', message, 0)));

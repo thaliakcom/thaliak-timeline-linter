@@ -7,6 +7,14 @@ import { SpecialStatuses } from './types/graphing';
 import { UnprocessedRaidData, WipKind } from './types/raids';
 import { getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, getStatusValues, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 
+/** The action fields that size a shape where game data can't, and the shapes each one applies to (thaliak's `SHAPE_FIELDS`). */
+const SHAPE_FIELDS: Record<string, readonly string[]> = {
+    angle: ['cone', 'halfroom'],
+    inner: ['dynamo', 'in-or-out'],
+    grid: ['grid'],
+    spacing: ['grid']
+};
+
 function* diagnostics(diagnostic: Diagnostic): Generator<Diagnostic> {
     diagnostic.source = 'thaliak';
 
@@ -392,6 +400,19 @@ export function* validateAction({ textDocument, document, js, options }: LinterI
                         message: `The 'shape' field must be one of the following values: '${Object.keys(options.enums['mechanic-shapes'].yaml).join('\', \'')}'`,
                         range: getRange(textDocument, shape.range!)
                     });
+                }
+
+                for (const [field, shapes] of Object.entries(SHAPE_FIELDS)) {
+                    const entry = getEntry(action.value, field);
+
+                    if (entry != null && !shapes.includes(shape?.value as string)) {
+                        yield* diagnostics({
+                            code: 'field-without-shape',
+                            severity: DiagnosticSeverity.Error,
+                            message: `'${field}' only applies to the shapes ${shapes.map(s => `'${s}'`).join(', ')}, but this action's shape is ${shape == null ? 'unset' : `'${shape.value}'`}.`,
+                            range: getRange(textDocument, entry.key.range!)
+                        });
+                    }
                 }
 
                 const damageType = action.value.get('type', true);

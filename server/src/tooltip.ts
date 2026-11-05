@@ -55,7 +55,6 @@ const SHAPE_FILES: Record<string, string> = {
     'dynamo': 'donut',
     'in-or-out': 'in-or-out',
     'cone': 'cone',
-    '270°': '270',
     'line': 'line',
     'grid': 'grid',
     'plus': 'plus',

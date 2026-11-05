@@ -91,7 +91,7 @@
             "patterns": [{ "include": "#arguments" }]
         },
         "element-field": {
-            "begin": "(?<![\\w-])(telegraph|flash|use)\\s*(:)",
+            "begin": "(?<![\\w-])(flash|use)\\s*(:)",
             "beginCaptures": {
                 "1": { "name": "entity.name.tag.field.thaliak-diagram" },
                 "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
