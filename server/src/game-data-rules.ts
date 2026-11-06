@@ -12,8 +12,6 @@ import { getEntry, getIfType, getRange } from './util';
 
 /** The game's attack types as damage types, by `attackType` (thaliak's `ATTACK_TYPES`). */
 const ATTACK_TYPES = ['mixed', 'physical', 'physical', 'physical', 'physical', 'magic', 'dark', 'physical', 'dark'];
-/** The game's aspects as elements, by `aspect` (thaliak's `ASPECTS`). */
-const ASPECTS = [undefined, 'fire', 'ice', 'wind', 'earth', 'lightning', 'water', undefined];
 /** The mechanic shapes each of the game's cast types can stand for (thaliak's `CAST_TYPES`). */
 const CAST_TYPES: ShapeType[][] = [
     [],
@@ -44,8 +42,12 @@ interface Problem {
     message: string;
 }
 
-/** What's wrong with an action, given its row in the game's data. */
-function* actionProblems(key: string, action: yaml.YAMLMap, game: GameAction, options: LinterOptions): Generator<Problem> {
+/**
+ * What's wrong with an action, given its row in the game's data and that of its `hit` (`null` without one, `undefined` if
+ * the game has no such action). As in thaliak's `processAction()`, the hit decides the damage type and element, and the
+ * AoE unless it's one of the action's children; `hitIsChild` says whether it is.
+ */
+function* actionProblems(key: string, action: yaml.YAMLMap, game: GameAction, options: LinterOptions, hit: GameAction | null | undefined, hitIsChild: boolean): Generator<Problem> {
     const name = action.get('name');
 
     if (name == null) {
@@ -58,23 +60,20 @@ function* actionProblems(key: string, action: yaml.YAMLMap, game: GameAction, op
         yield { code: 'redundant-name', kind: 'timeline', field: 'name', message: `This is the same as the name in the game's data and should be removed.` };
     }
 
-    const explicitType = action.get('type');
-    let type = explicitType;
-
-    if (game.attackType !== 0 || game.aspect !== 0 || game.canTargetHostile) {
-        type = ATTACK_TYPES[game.attackType];
-
-        if (explicitType != null && explicitType === type) {
-            yield { code: 'redundant-type', kind: 'damage', field: 'type', message: `This is the same as the damage type in the game's data (${type}) and should be removed.` };
-        }
-
-        const element = ASPECTS[game.aspect];
-
-        if (action.get('element') != null && action.get('element') === element) {
-            yield { code: 'redundant-element', kind: 'timeline', field: 'element', message: `This is the same as the element in the game's data (${element}) and should be removed.` };
+    // Game data decides these for an action with an ID; a different cast or hit is named with `id` and `hit` instead.
+    for (const field of ['cast', 'type', 'element']) {
+        if (action.get(field) != null) {
+            yield { code: 'game-data-override', kind: 'timeline', field, message: `'${field}' isn't part of the in-game action, so it can't be set on an action with an 'id'. Use the real cast's 'id', and the action that deals the damage as its 'hit'.` };
         }
     }
 
+    if (hit === undefined) {
+        yield { code: 'unknown-hit', kind: 'timeline', field: 'hit', message: `The game's data has no action ${action.get('hit')}.` };
+    }
+
+    const damageAction = hit ?? game;
+    const type = damageAction.attackType !== 0 || damageAction.aspect !== 0 || damageAction.canTargetHostile ? ATTACK_TYPES[damageAction.attackType] : undefined;
+    const aoe = hitIsChild || hit == null ? game : hit;
     const damage = action.get('damage');
 
     if (typeof damage === 'number' && damage > 0 && type == null) {
@@ -88,20 +87,23 @@ function* actionProblems(key: string, action: yaml.YAMLMap, game: GameAction, op
     const children = action.get('children');
     const hasChildren = yaml.isSeq(children) && children.items.length > 0;
 
-    if (game.castType > 1 && mechanic != null && mechanicType != null) {
-        const shapes = CAST_TYPES[game.castType] ?? [];
+    // The AoE's game action: the hit, unless it's one of the children.
+    const of = aoe === hit ? `its hit (${action.get('hit')})` : 'this action';
+
+    if (aoe.castType > 1 && mechanic != null && mechanicType != null) {
+        const shapes = CAST_TYPES[aoe.castType] ?? [];
 
         if (shapes.length > 0) {
-            if (game.castType === 2 && game.effectRange >= 50 && (players == null || players < 8) && !OMNI_MECHANIC_TYPES.includes(mechanic)) {
-                yield { code: 'raidwide-cast-type', kind: 'timeline', field: 'mechanic', message: `In the game's data, this action is cast type 2 (circle) with an effect range of ${game.effectRange}, which is a raidwide, but it's declared as a ${mechanic}.` };
+            if (aoe.castType === 2 && aoe.effectRange >= 50 && (players == null || players < 8) && !OMNI_MECHANIC_TYPES.includes(mechanic)) {
+                yield { code: 'raidwide-cast-type', kind: 'timeline', field: 'mechanic', message: `In the game's data, ${of} is cast type 2 (circle) with an effect range of ${aoe.effectRange}, which is a raidwide, but it's declared as a ${mechanic}.` };
             }
 
             if (shape != null && !shapes.includes(shape)) {
-                yield { code: 'shape-cast-type', kind: 'timeline', field: 'shape', message: `In the game's data, this action is cast type ${game.castType} (${shapes.join(', ')}), but it's declared as a ${shape}.` };
+                yield { code: 'shape-cast-type', kind: 'timeline', field: 'shape', message: `In the game's data, ${of} is cast type ${aoe.castType} (${shapes.join(', ')}), but it's declared as a ${shape}.` };
             }
         }
-    } else if (game.castType === 1 && shape != null && !ANY_MECHANIC_TYPES.includes(mechanic!) && !hasChildren) {
-        yield { code: 'shape-cast-type', kind: null, field: 'shape', message: `In the game's data, this action is cast type 1 (no AoE), but it's declared as an AoE (${mechanic} ${shape}).` };
+    } else if (aoe.castType === 1 && shape != null && !ANY_MECHANIC_TYPES.includes(mechanic!) && !hasChildren) {
+        yield { code: 'shape-cast-type', kind: null, field: 'shape', message: `In the game's data, ${of} is cast type 1 (no AoE), but it's declared as an AoE (${mechanic} ${shape}).` };
     }
 }
 
@@ -141,10 +143,10 @@ export async function lintGameData(textDocument: TextDocument, document: yaml.Do
     const isHeldBack = (kind: WipKind | null) => kind != null && (wip === 'full' || (yaml.isSeq(wip) && wip.items.some(item => yaml.isScalar(item) && item.value === kind)));
 
     /** The diagnostics of the entries of the top-level map `section`. */
-    function lint<T>(section: string, gameDataOf: (id: number) => Promise<T | null>, problemsOf: (key: string, item: yaml.YAMLMap, game: T, options: LinterOptions) => Iterable<Problem>): Promise<Diagnostic[]>[] {
+    function lint<T>(section: string, gameDataOf: (id: number, item: yaml.YAMLMap) => Promise<T | null>, problemsOf: (key: string, item: yaml.YAMLMap, game: T, options: LinterOptions) => Iterable<Problem>): Promise<Diagnostic[]>[] {
         return (getIfType(document, section, yaml.isMap)?.items ?? []).map(async pair => {
             const id = yaml.isMap(pair.value) ? pair.value.get('id') : null;
-            const game = typeof id === 'number' && yaml.isScalar(pair.key) && pair.key.range != null ? await gameDataOf(id) : null;
+            const game = typeof id === 'number' && yaml.isScalar(pair.key) && pair.key.range != null ? await gameDataOf(id, pair.value as yaml.YAMLMap) : null;
 
             if (game == null) {
                 return [];
@@ -166,5 +168,25 @@ export async function lintGameData(textDocument: TextDocument, document: yaml.Do
         });
     }
 
-    return (await Promise.all([...lint('actions', getGameAction, actionProblems), ...lint('status', getGameStatus, statusProblems)])).flat();
+    const actions = getIfType(document, 'actions', yaml.isMap);
+    /** The game IDs of the timeline's actions, by key, to tell whether an action's `hit` is one of its children. */
+    const idOf = (key: unknown) => {
+        const action = actions?.get(key);
+        return yaml.isMap(action) ? action.get('id') : undefined;
+    };
+    // An action's `hit` too: `null` without one, and `undefined` if the game has no such action.
+    const withHit = async (id: number, map: yaml.YAMLMap): Promise<{ game: GameAction, hit: GameAction | null | undefined, hitIsChild: boolean } | null> => {
+        const game = await getGameAction(id);
+        const hitId = map.get('hit');
+        const children = map.get('children');
+        const hit = typeof hitId === 'number' ? await getGameAction(hitId) ?? undefined : null;
+        const hitIsChild = typeof hitId === 'number' && yaml.isSeq(children) && children.items.some(child => yaml.isMap(child) && idOf(child.get('id')) === hitId);
+
+        return game == null ? null : { game, hit, hitIsChild };
+    };
+
+    return (await Promise.all([
+        ...lint('actions', withHit, (key, item, { game, hit, hitIsChild }, options) => actionProblems(key, item, game, options, hit, hitIsChild)),
+        ...lint('status', getGameStatus, statusProblems)
+    ])).flat();
 }

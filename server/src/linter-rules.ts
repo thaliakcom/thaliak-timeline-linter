@@ -5,7 +5,7 @@ import { LinterInput } from './linter';
 import { LinterOptions, PropertyOrder } from './server';
 import { SpecialStatuses } from './types/graphing';
 import { UnprocessedRaidData, WipKind } from './types/raids';
-import { getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, getStatusValues, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { getActorValues, getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, getStatusValues, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 
 /** The action fields that size a shape where game data can't, and the shapes each one applies to (thaliak's `SHAPE_FIELDS`). */
 const SHAPE_FIELDS: Record<string, readonly string[]> = {
@@ -575,6 +575,40 @@ function isWip(document: yaml.Document, kind: WipKind): [boolean, yaml.Range | u
         yaml.isScalar(wip.value) ? wip.value.value === 'full' : (yaml.isSeq(wip.value) && wip.value.items.some(x => yaml.isScalar(x) && x.value === kind)),
         wip.key.range ?? undefined
     ];
+}
+
+/**
+ * An action's `actor` names keys of the timeline's `actors`, and its `hit` needs an `id`, as thaliak's build checks
+ * them. Both are held back by `wip: timeline`.
+ */
+export function* actorsAndHitsMustBeValid({ textDocument, document, js }: LinterInput): Generator<Diagnostic> {
+    if (isWip(document, 'timeline')[0]) {
+        return;
+    }
+
+    for (const value of getActorValues(document)) {
+        if (js.actors?.[value.key] == null) {
+            yield* diagnostics({
+                code: 'unknown-actor',
+                severity: DiagnosticSeverity.Error,
+                message: `'${value.key}' isn't a key of 'actors'.`,
+                range: getRange(textDocument, value.range)
+            });
+        }
+    }
+
+    for (const action of getIfType(document, 'actions', yaml.isMap)?.items ?? []) {
+        const hit = yaml.isMap(action.value) && !action.value.has('id') ? getEntry(action.value, 'hit') : null;
+
+        if (hit?.key.range != null) {
+            yield* diagnostics({
+                code: 'hit-without-id',
+                severity: DiagnosticSeverity.Error,
+                message: `'hit' needs an 'id': the cast whose damage it deals.`,
+                range: getRange(textDocument, hit.key.range)
+            });
+        }
+    }
 }
 
 export function* mustSpecifyPartyHP({ textDocument, document }: LinterInput): Generator<Diagnostic> {

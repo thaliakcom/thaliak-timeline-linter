@@ -3,7 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { diagramOf, occurrencesOf } from './diagram-context';
-import { findPlaceholders, getIfType, getRange, getStatusValues, getSymbolAt, SymbolRange } from './util';
+import { findPlaceholders, getActor, getActorValues, getIfType, getRange, getStatusValues, getSymbolAt, SymbolRange } from './util';
 import * as yaml from 'yaml';
 
 export function renameProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: RenameParams) => WorkspaceEdit | null {
@@ -91,13 +91,26 @@ export function renameProvider(documents: TextDocuments<TextDocument>, documentC
             for (const placeholder of findPlaceholders(textDocument, symbol.text)) {
                 edits.push(TextEdit.replace(placeholder, `s:${params.newName}`));
             }
+        } else if (symbol.text.startsWith('ac:')) {
+            const key = symbol.text.slice(3);
+            const actor = getActor(document, key);
+
+            if (actor?.key.range != null) {
+                edits.push(TextEdit.replace(getRange(textDocument, actor.key.range), params.newName));
+            }
+
+            for (const value of getActorValues(document)) {
+                if (value.key === key) {
+                    edits.push(TextEdit.replace(getRange(textDocument, value.range), params.newName));
+                }
+            }
         }
 
         const diagram = diagramOf(documents, textDocument.uri);
 
         if (diagram != null) {
-            const kind = symbol.text.startsWith('a:') ? 'action' : 'status';
-            const diagramEdits = occurrencesOf(diagram, kind, symbol.text.slice(2)).map(range => TextEdit.replace(range, params.newName));
+            const kind = symbol.text.startsWith('a:') ? 'action' : symbol.text.startsWith('ac:') ? 'actor' : 'status';
+            const diagramEdits = occurrencesOf(diagram, kind, symbol.text.slice(symbol.text.indexOf(':') + 1)).map(range => TextEdit.replace(range, params.newName));
 
             if (diagramEdits.length > 0) {
                 edit.changes![diagram.uri] = diagramEdits;
@@ -122,7 +135,7 @@ function getRenameableSymbol(documents: TextDocuments<TextDocument>, documentCac
             return null;
         }
 
-        if (symbol.text.startsWith('a:') || symbol.text.startsWith('s:')) {
+        if (symbol.text.startsWith('a:') || symbol.text.startsWith('s:') || symbol.text.startsWith('ac:')) {
             return symbol;
         }
 

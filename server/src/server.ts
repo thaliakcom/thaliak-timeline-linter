@@ -28,7 +28,7 @@ import { lintDocument } from './linter';
 import { getParserCache } from './parser-cache';
 import referenceProvider from './reference-provider';
 import { renameProvider, prepareRenameProvider } from './rename-provider';
-import type { Common, DamageTypes, MechanicShapes, MechanicTypes, Omens, StatusTypes, Terms } from './types/enum-schema';
+import type { Common, DamageTypes, Headmarkers, MechanicShapes, MechanicTypes, Omens, StatusTypes, Terms, Tethers } from './types/enum-schema';
 import type { DiagramSchema } from './types/diagram-schema';
 import type { OutlineNode, OutlineParams } from './types/outline';
 import documentColorProvider from './document-color-provider';
@@ -133,6 +133,8 @@ export interface LinterOptions extends ThaliakTimelineLinterSettings {
         'mechanic-shapes'?: ParsedYAML<MechanicShapes>,
         'mechanic-types'?: ParsedYAML<MechanicTypes>,
         'omens'?: ParsedYAML<Omens>,
+        'headmarkers'?: ParsedYAML<Headmarkers>,
+        'tethers'?: ParsedYAML<Tethers>,
         'status-types'?: ParsedYAML<StatusTypes>,
         'terms'?: ParsedYAML<Terms>
     };

@@ -4,7 +4,7 @@ import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { diagramOf, occurrencesOf } from './diagram-context';
-import { findPlaceholders, getAction, getKeyValueAt, getRange, getStatus, getStatusValues, getSymbolAt, KEY_REGEX, perPrefix, TextRange } from './util';
+import { findPlaceholders, getAction, getActor, getActorValues, getKeyValueAt, getRange, getStatus, getStatusValues, getSymbolAt, KEY_REGEX, perPrefix, TextRange } from './util';
 
 function escapeRegExp(string: string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
@@ -52,12 +52,15 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
             if (key != null) {
                 const actions = document?.get('actions');
                 const status = document?.get('status');
+                const actors = document?.get('actors');
                 const offset = textDocument.offsetAt(key.range.start);
 
                 if (actions != null && yaml.isMap(actions) && offset >= actions.range![0] && offset < actions.range![2] && actions.has(key.text)) {
                     textKey = `a:${key.text}`;
                 } else if (status != null && yaml.isMap(status) && offset >= status.range![0] && offset < status.range![2] && status.has(key.text)) {
                     textKey = `s:${key.text}`;
+                } else if (actors != null && yaml.isMap(actors) && offset >= actors.range![0] && offset < actors.range![2] && actors.has(key.text)) {
+                    textKey = `ac:${key.text}`;
                 } else {
                     return null;
                 }
@@ -74,7 +77,7 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
 
         const locations: Location[] = [];
         const diagram = diagramOf(documents, textDocument.uri);
-        const addDiagramOccurrences = (kind: 'action' | 'status', key: string) => {
+        const addDiagramOccurrences = (kind: 'action' | 'status' | 'actor', key: string) => {
             if (diagram != null) {
                 locations.push(...occurrencesOf(diagram, kind, key).map(range => ({ uri: diagram.uri, range })));
             }
@@ -111,6 +114,21 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
                 }
 
                 addDiagramOccurrences('status', key);
+            },
+            'ac:': key => {
+                const actor = getActor(document, key);
+
+                if (actor != null) {
+                    locations.push(makeLocation(textDocument, actor.key.range!));
+                }
+
+                for (const value of getActorValues(document)) {
+                    if (value.key === key) {
+                        locations.push(makeLocation(textDocument, value.range));
+                    }
+                }
+
+                addDiagramOccurrences('actor', key);
             }
         });
 

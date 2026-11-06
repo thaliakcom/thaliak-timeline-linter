@@ -2,13 +2,13 @@
 import { Diagnostic, DiagnosticSeverity, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
-import { diagramInputOf, DefinitionField, fieldsOf, hasBalancedBrackets, isDiagramWip, linesOf, timelineOf } from './diagram-context';
+import { diagramInputOf, DefinitionField, fieldsOf, hasBalancedBrackets, isDiagramWip, linesOf, timelineOf, tokensOf } from './diagram-context';
 import { fixableDiagnostics, LinterOptions } from './server';
-import { DiagramField, DiagramSchema, DiagramValueType } from './types/diagram-schema';
+import { DiagramField, DiagramSchema, DiagramValueType, fieldsOfKind } from './types/diagram-schema';
 import { compileDiagram } from './utility/diagram-ddl/compile';
-import { Definition, parse, Statement } from './utility/diagram-ddl/parse';
+import { Definition, parse, ParseResult, Statement } from './utility/diagram-ddl/parse';
 
-/** The element IDs that mean something by themselves, and so can't be defined. `boss`, `enemy` and `arena` can. */
+/** The element IDs that mean something by themselves, and so can't be defined. */
 const RESERVED_ELEMENTS = new Set(['players', 'DPS', 'tanks', 'healers', 'supports', 'T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2', 'cast', 'hint', 'marker-a', 'marker-1', 'marker-b', 'marker-2', 'marker-c', 'marker-3', 'marker-d', 'marker-4']);
 /** The diagram element types that `shapes` in the schema's `animations.elements` refers to. */
 const SHAPE_TYPES: string[] = ['donut', 'ellipse', 'cone', 'rectangle'];
@@ -43,17 +43,22 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
     const schema = options.diagramSchema;
     const looks = schema != null ? { aoes: Object.keys(schema.looks.aoes), tethers: Object.keys(schema.looks.tethers), markers: Object.keys(schema.looks.markers) } : undefined;
     const animations = schema?.animations.elements;
-    const blocks = definitions.filter(definition => definition.kind === 'element' || definition.kind === 'action').map(definition => ({ definition, fields: fieldsOf(definition, lines) }));
+    const blocks = definitions.filter(definition => definition.kind !== 'gradient' && definition.kind !== 'strategy').map(definition => ({ definition, fields: fieldsOf(definition, lines) }));
 
     if (schema != null) {
         yield* validateFields(definitions, lines, schema);
     }
 
-    const types = new Map(blocks.map(({ definition, fields }) => [definition.id, typeOf(valueOf(fields, 'type'))]));
+    /** The element type a block draws, as the viewer has it: `graphic` is a marker, and tethers and the arena have theirs implied. */
+    const typeOfBlock = (definition: Definition, fields: DefinitionField[]) => {
+        const written = typeOf(valueOf(fields, 'type'));
+
+        return written === 'graphic' ? 'marker' : written ?? (definition.kind === 'tether' ? 'link' : definition.kind === 'arena' ? 'image' : undefined);
+    };
 
     for (const { definition, fields } of blocks) {
         // Which shape an action draws depends on its timeline action, but it's always one of the shapes.
-        const type = definition.kind === 'action' ? 'ellipse' : types.get(definition.id);
+        const type = definition.kind === 'action' ? 'ellipse' : typeOfBlock(definition, fields);
         const firstOf = (key: string) => fields.find(field => field.key === key);
         const error = (code: string, field: DefinitionField, message: string) => diagnostic(DiagnosticSeverity.Error, code, message, field.line, field.start);
 
@@ -101,10 +106,10 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
         const marker = typeof image === 'string' ? /^\/images\/(?:markers|other)\/([a-z-]+)\.svg$/.exec(image)?.[1] : undefined;
 
         if (marker != null && looks != null && looks.markers.includes(marker)) {
-            yield error('marker-image', firstOf('image')!, `${image} is a marker; use 'type: marker' with 'look: ${marker}'.`);
+            yield error('marker-image', firstOf('image')!, `${image} is a built-in drawing; use 'type: graphic' with 'look: ${marker}', or a headmarker.`);
         }
 
-        if (firstOf('margin') != null && definition.id !== 'arena') {
+        if (firstOf('margin') != null && definition.kind !== 'arena') {
             yield error('invalid-margin', firstOf('margin')!, `Only the arena can have a margin.`);
         }
     }
@@ -129,9 +134,7 @@ function* validateFields(definitions: Definition[], lines: string[], schema: Dia
             continue;
         }
 
-        const known: Record<string, DiagramField> = definition.kind === 'strategy'
-            ? schema.define.strategy.fields
-            : { ...(definition.kind === 'action' ? schema.define.action.fields : {}), ...schema.define.element.fields };
+        const known: Record<string, DiagramField> = fieldsOfKind(schema, definition.kind);
         const fields = fieldsOf(definition, lines);
 
         for (const key of new Set(fields.map(field => field.key))) {
@@ -255,6 +258,29 @@ function* validateFieldOrder(textDocument: TextDocument, blocks: { definition: D
     }
 }
 
+/**
+ * Warns about every `unknown` headmarker and tether: thaliak-cli writes them for a game headmarker or tether that no look
+ * is mapped to yet, with the game's name in a comment, which `enums/headmarkers.yaml` or `enums/tethers.yaml` should map.
+ */
+function* validateUnknowns(source: string, parsed: ParseResult, lines: string[]): Generator<Diagnostic> {
+    const warn = (line: number, start: number, end: number, what: 'headmarker' | 'tether') => diagnostic(DiagnosticSeverity.Warning, `unknown-${what}`,
+        `This ${what} has no look yet. Map its game ${what === 'headmarker' ? 'icon (Lockon IconName' : 'file (Channeling File'}, often in a comment here) to a look in enums/${what}s.yaml, and use that look instead of 'unknown'.`, line, start, end);
+
+    for (const token of tokensOf(source, parsed)) {
+        const verb = token.statement?.verb;
+
+        if (token.kind === 'subject' && token.statement?.sign === '+' && (verb === 'headmarker' || verb === 'tether') && /^unknown(?:[#@]|$)/.test(token.text)) {
+            yield warn(token.line, token.start, token.end, verb);
+        }
+    }
+
+    for (const definition of parsed.definitions.filter(x => x.kind === 'action')) {
+        const field = fieldsOf(definition, lines).find(x => x.key === 'headmarker' && /^unknown\b/.test(x.value));
+
+        if (field != null) yield warn(field.line, field.valueStart, field.valueStart + 'unknown'.length, 'headmarker');
+    }
+}
+
 /** Everything wrong with the `.diagram` file `textDocument`. Errors of a fight with `wip: [diagrams]` are warnings, as thaliak's build doesn't report them. */
 export async function lintDiagram(textDocument: TextDocument, documents: TextDocuments<TextDocument>, options: LinterOptions): Promise<Diagnostic[]> {
     const source = textDocument.getText();
@@ -275,6 +301,8 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
     } else {
         const { input, problems } = await diagramInputOf(timeline, textDocument.uri, source);
         input.omens = options.enums.omens?.yaml;
+        input.headmarkers = options.enums.headmarkers?.yaml;
+        input.tethers = options.enums.tethers?.yaml;
 
         problems.forEach(message => found.push(diagnostic(DiagnosticSeverity.Warning, 'diagrams', message, 0)));
 
@@ -296,7 +324,7 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
         }
     }
 
-    found.push(...validateDefinitions(textDocument, parsed.definitions, lines, options), ...validateAlignment(parsed.statements, lines));
+    found.push(...validateDefinitions(textDocument, parsed.definitions, lines, options), ...validateAlignment(parsed.statements, lines), ...validateUnknowns(source, parsed, lines));
     fixableDiagnostics.set(textDocument.uri, found.filter(item => item.data?.textEdits != null));
 
     return found;

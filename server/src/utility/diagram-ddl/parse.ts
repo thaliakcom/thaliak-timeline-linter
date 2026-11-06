@@ -25,10 +25,13 @@ export interface Statement {
     clauses: Clause[];
 }
 
-/** A `define` block. */
+/**
+ * A `define` block. `define arena` has no ID of its own: its `id` is `arena`. `element` is the kind of the removed
+ * `define element`, which is reported but still read, so that one mistake doesn't also break what refers to it.
+ */
 export interface Definition {
     line: number;
-    kind: 'element' | 'action' | 'gradient' | 'strategy';
+    kind: 'arena' | 'actor' | 'object' | 'puddle' | 'tether' | 'action' | 'gradient' | 'strategy' | 'element';
     id: string;
     /** The block's `key: value` lines. A key's later lines (such as a second `exit` statement) are extra entries. */
     fields: Record<string, string[]>;
@@ -44,9 +47,14 @@ export interface ParseResult {
 
 /** Verbs whose argument is free text rather than a subject and clauses. */
 const TEXT_VERBS = new Set(['hint', 'branch', 'strategy', 'thumbnail']);
-const VERBS = new Set(['keyframe', 'skip', 'thumbnail', 'hint', 'branch', 'strategy', 'actor', 'marker', 'tether', 'status', 'aoe', 'effect', 'set', 'depart', 'arrive', 'move', 'follow', 'turn']);
+const VERBS = new Set(['keyframe', 'skip', 'thumbnail', 'hint', 'branch', 'strategy', 'actor', 'object', 'puddle', 'headmarker', 'tether', 'status', 'aoe', 'effect', 'set', 'depart', 'arrive', 'move', 'follow', 'turn']);
+/** Removed verbs, and what replaces them. */
+const REMOVED_VERBS: Record<string, string> = {
+    marker: '"marker" is gone: use "headmarker" for headmarkers, "object" for what attaches to an actor and "puddle" for puddles'
+};
 const VERB_LINE = /^([+-]?)([a-z][a-z-]*)(:)?(?:\s+(.*))?$/;
-const DEFINE_LINE = /^define\s+(?:(element|action|gradient|strategy)\s+)?(\S+)$/;
+const DEFINE_LINE = /^define\s+(?:(element|actor|object|puddle|tether|action|gradient|strategy)\s+)?(\S+)$/;
+const DEFINE_KINDS = 'define arena, actor, object, puddle, tether, action, gradient or strategy';
 const FIELD_LINE = /^([a-zA-Z][\w-]*):\s*(.*)$/;
 
 /** Removes a `//` comment that isn't inside a string. */
@@ -133,10 +141,12 @@ export function parse(source: string): ParseResult {
     let verb: { sign: Statement['sign'], name: string } | null = null;
     let definition: Definition | null = null;
     let field: string | null = null;
+    /** Whether the last verb was a removed one, whose continuation lines its own diagnostic covers. */
+    let removed = false;
 
     const add = (line: number, text: string) => {
         if (verb == null) {
-            diagnostics.push({ line, message: `"${text}" has no verb to continue` });
+            if (!removed) diagnostics.push({ line, message: `"${text}" has no verb to continue` });
             return;
         }
 
@@ -179,10 +189,15 @@ export function parse(source: string): ParseResult {
         const define = DEFINE_LINE.exec(text);
 
         if (define != null && !/^\s/.test(raw)) {
-            // Read as an element anyway, so that the one mistake doesn't also report everything that refers to it.
-            if (define[1] == null) diagnostics.push({ line, message: `"define ${define[2]}" needs a kind: define element, action, gradient or strategy` });
+            // `define arena` is the arena's, and has no ID. Anything else without a kind is read as the removed `element`
+            // anyway, so that the one mistake doesn't also report everything that refers to it.
+            const arena = define[1] == null && define[2] === 'arena';
+            const kind = arena ? 'arena' : (define[1] as Definition['kind'] | undefined) ?? 'element';
 
-            definition = { line, kind: (define[1] as Definition['kind'] | undefined) ?? 'element', id: define[2]!, fields: {}, body: [] };
+            if (define[1] == null && !arena) diagnostics.push({ line, message: `"define ${define[2]}" needs a kind: ${DEFINE_KINDS}` });
+            if (define[1] === 'element') diagnostics.push({ line, message: `"define element" is gone: ${define[2] === 'arena' ? 'use "define arena"' : DEFINE_KINDS}` });
+
+            definition = { line, kind, id: define[2]!, fields: {}, body: [] };
             definitions.push(definition);
             field = null;
             verb = null;
@@ -214,6 +229,7 @@ export function parse(source: string): ParseResult {
             at = Number(time[1]);
             text = time[2] ?? '';
             verb = null;
+            removed = false;
 
             if (text === '') return;
         }
@@ -223,12 +239,14 @@ export function parse(source: string): ParseResult {
         // Without a colon, only a known verb on its own counts. `omega-m at (0, 0)` and `remote-code-smell` are continuations.
         if (match != null && (match[3] != null || match[4] == null && VERBS.has(match[2]!))) {
             if (!VERBS.has(match[2]!)) {
-                diagnostics.push({ line, message: `unknown verb "${match[2]}"` });
+                diagnostics.push({ line, message: REMOVED_VERBS[match[2]!] ?? `unknown verb "${match[2]}"` });
                 verb = null;
+                removed = REMOVED_VERBS[match[2]!] != null;
                 return;
             }
 
             verb = { sign: match[1] as Statement['sign'], name: match[2]! };
+            removed = false;
             add(line, match[4] ?? '');
             return;
         }

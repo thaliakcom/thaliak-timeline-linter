@@ -125,22 +125,36 @@ function arenaImageSize(diagramUri: string, image: string): [number, number] | n
  */
 export async function diagramInputOf(timeline: Timeline, diagramUri: string, source: string): Promise<{ input: DiagramInput, problems: string[] }> {
     const { js } = timeline;
-    const rawActions = (js.actions ?? {}) as Record<string, ActionFacts & { id?: number, source?: number }>;
+    const rawActions = (js.actions ?? {}) as Record<string, ActionFacts>;
     const rawItems = (js.timeline ?? []) as RawItem[];
+    const actors = (js.actors ?? {}) as NonNullable<DiagramInput['actors']>;
     const actions: Record<string, ActionFacts> = {};
     const problems: string[] = [];
+    const defaultRadius = await hitboxRadius(undefined);
+    // By actor key, for the actors with a BNpcBase, as thaliak's build reads them.
+    const hitboxes: Record<string, number> = {};
+
+    await Promise.all(Object.entries(actors).map(async ([key, actor]) => {
+        if (actor?.id != null) hitboxes[key] = await hitboxRadius(actor.id);
+    }));
 
     await Promise.all(Object.entries(rawActions).map(async ([key, raw]) => {
         const facts: ActionFacts = { ...raw };
         const game = raw.id != null ? await getGameAction(raw.id) : null;
+        const hit = raw.hit != null ? await getGameAction(raw.hit) : null;
+        // A child that is the hit makes this action only group its children, so the AoE stays the cast's.
+        const hitIsChild = hit != null && (raw.children ?? []).some(child => rawActions[child.id]?.id === raw.hit);
+        const aoe = hitIsChild ? game : hit ?? game;
+        const firstActor = raw.actor == null ? undefined : Array.isArray(raw.actor) ? raw.actor[0] : raw.actor;
 
-        if (game != null) {
-            facts.effectRange = paddedEffectRange(game, await hitboxRadius(raw.source));
-            facts.xAxisModifier = game.XAxisModifier;
-            facts.hasOmen = game.omenPath != null;
-            facts.omen = game.omenPath;
-            facts.castType = game.castType;
-            facts.cast ??= castTimeOf(game);
+        if (game != null && aoe != null) {
+            // A hit comes from a helper, so its range is padded as theirs; otherwise by the first actor's hitbox.
+            facts.effectRange = paddedEffectRange(aoe, aoe === hit ? defaultRadius : hitboxes[firstActor ?? ''] ?? defaultRadius);
+            facts.xAxisModifier = aoe.XAxisModifier;
+            facts.hasOmen = aoe.omenPath != null;
+            facts.omen = aoe.omenPath;
+            facts.castType = aoe.castType;
+            facts.cast = castTimeOf(game);
             facts.name ??= game.name;
         } else if (raw.id != null) {
             facts.effectRange = 1;
@@ -166,7 +180,7 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string, sou
             return;
         }
 
-        variants[id] = { effectRange: paddedEffectRange(game, await hitboxRadius(undefined)), xAxisModifier: game.XAxisModifier, castType: game.castType, hasOmen: game.omenPath != null, omen: game.omenPath };
+        variants[id] = { effectRange: paddedEffectRange(game, defaultRadius), xAxisModifier: game.XAxisModifier, castType: game.castType, hasOmen: game.omenPath != null, omen: game.omenPath };
     }));
 
     const arenas = arenasOf(rawItems);
@@ -190,6 +204,8 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string, sou
             arenas,
             arenaSize: typeof arena === 'number' ? [arena, arena] : arena,
             waymarks: js.waymarks,
+            actors,
+            hitboxes,
             variants
         },
         problems
@@ -252,7 +268,7 @@ export interface DiagramToken {
     line: number;
     start: number;
     end: number;
-    /** What it is: a statement's subject, a value of a clause, the ID of a `define` block, or the value of `use` or `flash`. */
+    /** What it is: a statement's subject, a value of a clause, the ID of a `define` block, or the value of `flash`. */
     kind: 'subject' | 'value' | 'definition' | 'field';
     /** The statement it's part of, unless it's in a `define` block's own lines. */
     statement?: Statement;
@@ -263,7 +279,7 @@ export interface DiagramToken {
 /** Where the arguments of a statement's line start: past the timestamp and verb. */
 const LINE_PREFIX = /^\s*(?:\d+\s+)?(?:[+-]?[a-z][a-z-]*:\s*)?/;
 /** The fields whose value names an element. */
-const ELEMENT_FIELDS = new Set(['use', 'flash']);
+const ELEMENT_FIELDS = new Set(['flash']);
 
 /** Finds a statement's words in `raw`, its line. */
 function* statementTokens(statement: Statement, raw: string, line: number): Generator<DiagramToken> {
@@ -348,7 +364,7 @@ export function liveIdsOf(tokens: DiagramToken[]): Set<string> {
     for (const token of tokens) {
         const { statement } = token;
 
-        if (token.kind === 'subject' && statement?.sign === '+' && ['actor', 'marker', 'tether', 'aoe'].includes(statement.verb)) {
+        if (token.kind === 'subject' && statement?.sign === '+' && ['actor', 'object', 'puddle', 'headmarker', 'tether', 'aoe'].includes(statement.verb)) {
             idsOf(token.text).filter(id => !id.includes('*')).forEach(id => ids.add(id));
         }
     }
@@ -363,20 +379,48 @@ export function statusKeysOf(textDocument: TextDocument): Set<string> {
         .map(token => token.text.replace(/:\d+$/, '')));
 }
 
-/** Whether a token names the status effect or action `key`, as opposed to an element with the same name. */
-function namesAs(token: DiagramToken, kind: 'action' | 'status', key: string): boolean {
-    const isStatus = token.statement?.verb === 'status';
+/**
+ * Whether a token names the status effect, action or timeline actor `key`, as opposed to something else with the same
+ * name. A `define` block's ID only counts for its own kind.
+ */
+function namesAs(token: DiagramToken, kind: 'action' | 'status' | 'actor', key: string, definitions: Definition[]): boolean {
+    const verb = token.statement?.verb;
+    const named = token.text === key || token.text.startsWith(`${key}#`);
 
     if (kind === 'status') {
-        return isStatus && token.kind === 'subject' && (token.text === key || token.text.startsWith(`${key}:`));
+        return verb === 'status' && token.kind === 'subject' && (token.text === key || token.text.startsWith(`${key}:`));
     }
 
-    return !isStatus && token.statement?.verb !== 'effect' && (token.text === key || token.text.startsWith(`${key}#`));
+    if (token.kind === 'definition') {
+        return token.text === key && definitions.some(definition => definition.kind === kind && definition.id === key && definition.line - 1 === token.line);
+    }
+
+    if (kind === 'actor') {
+        // An `+aoe`'s subject is an action, and a `flash` an element of the diagram.
+        return named && verb != null && verb !== 'status' && verb !== 'effect' && !(verb === 'aoe' && token.kind === 'subject');
+    }
+
+    return named && verb !== 'status' && verb !== 'effect';
 }
 
-/** Where the `.diagram` file `textDocument` names the action or status effect `key`: only the key itself, without a sub-ID. */
-export function occurrencesOf(textDocument: TextDocument, kind: 'action' | 'status', key: string): Range[] {
-    return tokensOf(textDocument.getText())
-        .filter(token => namesAs(token, kind, key))
+/** Where the `.diagram` file `textDocument` names the action, status effect or timeline actor `key`: only the key itself, without a sub-ID. */
+export function occurrencesOf(textDocument: TextDocument, kind: 'action' | 'status' | 'actor', key: string): Range[] {
+    const source = textDocument.getText();
+    const parsed = parse(source);
+    const ranges: Range[] = tokensOf(source, parsed)
+        .filter(token => namesAs(token, kind, key, parsed.definitions))
         .map(token => ({ start: { line: token.line, character: token.start }, end: { line: token.line, character: token.start + key.length } }));
+
+    // `attached: <actor key>` on a `define action`.
+    if (kind === 'actor') {
+        const lines = linesOf(source);
+
+        for (const definition of parsed.definitions.filter(x => x.kind === 'action')) {
+            const field = fieldsOf(definition, lines).find(x => x.key === 'attached' && x.value === key);
+
+            if (field != null) ranges.push({ start: { line: field.line, character: field.valueStart }, end: { line: field.line, character: field.valueStart + key.length } });
+        }
+    }
+
+    return ranges;
 }

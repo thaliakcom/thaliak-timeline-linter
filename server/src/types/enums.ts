@@ -3,8 +3,10 @@ export type ShapeType = 'chariot' | 'defamation' | 'dynamo' | 'in-or-out' | 'con
 export type StatusType = 'dot' | 'vuln' | 'resistance' | 'condition' | 'delay' | 'form' | 'impairment' | 'impairment.pyretic' | 'indicator' | 'damage-up' | 'rot' | 'rot.pass' | 'rot.immunity';
 export type DamageType = 'physical' | 'magic' | 'dark' | 'mixed';
 export type LookType = 'none' | 'plain' | 'aoe' | 'landslide' | 'sludge' | 'ripple' | 'cracks' | 'flame' | 'wormhole';
-export type TetherLookType = 'plain' | 'glow' | 'flicker' | 'pulse' | 'strands' | 'braid' | 'coil' | 'chain' | 'jagged';
-export type MarkerLookType = 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower';
+export type TetherLookType = 'plain' | 'glow' | 'flicker' | 'pulse' | 'strands' | 'braid' | 'coil' | 'chain' | 'jagged' | 'unknown';
+export type MarkerLookType = 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower' | 'satin-plume' | 'spiny-plume' | 'unknown';
+export type HeadmarkerLookType = 'flare' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'unknown';
+export type AoeGraphicLookType = 'circle-kb' | 'exaflare' | 'tower';
 export type EnterAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y';
 export type ExitAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'sweep' | 'feather-rain' | 'wind' | 'tornado' | 'vortex' | 'ice' | 'splash';
 export type ParameterName = 'speed' | 'height' | 'length' | 'opacity' | 'color';
@@ -65,7 +67,7 @@ export type TetherLookTypeValue = TetherLookType | {
 /** The marker, as its name or as `{ type, ...parameters }`. */
 export type MarkerLookTypeValue = MarkerLookType | {
     /** The marker. */
-    type: 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower';
+    type: 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'tower' | 'satin-plume' | 'spiny-plume';
     /**
      * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
      * @minimum 0.1

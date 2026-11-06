@@ -68,8 +68,8 @@ export interface CompiledAoe extends Scope {
     /** A solid telegraph, as opposed to a dashed outline. */
     omen: boolean;
     raidwide: boolean;
-    /** The element whose position and rotation this AoE uses. */
-    use?: string;
+    /** The actor element that this AoE sits on and turns with until it hits (`attached` on its action's definition). */
+    attachedTo?: string;
     /** An element to follow until the hit. */
     on?: string;
     /** A fixed spot, or an element to snapshot at {@link show}. */
@@ -329,7 +329,7 @@ export function positionAt(diagram: CompiledDiagram, id: string, t: number): XY 
 
 /** The position of an AoE at `t`. It moves until it hits, if it's bound to something moving, and stays there after. */
 export function aoeAt(diagram: CompiledDiagram, aoe: CompiledAoe, t: number): XY {
-    if (aoe.use != null) return positionAt(diagram, aoe.use, Math.min(t, aoe.hit));
+    if (aoe.attachedTo != null) return positionAt(diagram, aoe.attachedTo, Math.min(t, aoe.hit));
     if (aoe.on != null) return positionAt(diagram, aoe.on, Math.min(t, aoe.hit));
     if (Array.isArray(aoe.at)) return aoe.at;
     if (typeof aoe.at === 'string') return positionAt(diagram, aoe.at, aoe.show);
@@ -374,12 +374,12 @@ function aimAt(diagram: CompiledDiagram, aoe: CompiledAoe, target: string): numb
 }
 
 /**
- * The angle an AoE is drawn at, at `t`, in degrees: its front points where its actor's front points until it hits,
- * or where its own `toward` says.
+ * The angle an AoE is drawn at, at `t`, in degrees: where its own `toward` says, or else, if it's attached,
+ * where its actor's front points until it hits.
  */
 export function aoeRotationAt(diagram: CompiledDiagram, aoe: CompiledAoe, t: number): number {
-    const front = aoe.use != null
-        ? rotationAt(diagram, aoe.use, Math.min(t, aoe.hit)) + (diagram.elements[aoe.use]?.facing ?? 0)
+    const front = aoe.attachedTo != null && aoe.toward == null
+        ? rotationAt(diagram, aoe.attachedTo, Math.min(t, aoe.hit)) + (diagram.elements[aoe.attachedTo]?.facing ?? 0)
         : typeof aoe.toward === 'string' ? aimAt(diagram, aoe, aoe.toward) : aoe.toward ?? 0;
 
     return front - (aoe.facing ?? 0);
@@ -407,6 +407,26 @@ export function propAt(element: CompiledElement, key: string, t: number): unknow
     }
 
     return value;
+}
+
+/**
+ * The key of an element's definition in {@link CompiledDiagram.definitions}: its ID up to a `#` sub-ID, and for a
+ * tether (`far-tether@T1>R2`), up to and including its `@`. Tethers so have names of their own, and the `unknown`
+ * tether isn't the `unknown` headmarker.
+ */
+export function definitionKey(id: string): string {
+    const end = id.search(/[#@]/);
+
+    if (end < 0) return id;
+
+    return id[end] === '@' ? id.slice(0, end + 1) : id.slice(0, end);
+}
+
+/** An element's definition, by its ID. A tether without one of its own takes its name's, as cast bars (`cast@…`) do. */
+export function definitionOf(diagram: Pick<CompiledDiagram, 'definitions'>, id: string): CompiledDiagram['definitions'][string] | undefined {
+    const key = definitionKey(id);
+
+    return diagram.definitions[key] ?? (key.endsWith('@') ? diagram.definitions[key.slice(0, -1)] : undefined);
 }
 
 /** Returns whether an element is alive at `t`. */

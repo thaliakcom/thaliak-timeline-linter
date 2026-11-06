@@ -4,11 +4,13 @@ import * as yaml from 'js-yaml';
 import { RESOLVE_PRESETS } from '../../components/diagram/render/effects/presets';
 import type { ElementDefinition } from '../../types/graphing';
 import { actionYalms, planeUnitsPerYalm } from '../diagram-sizing';
+import { BOSS_IMAGE, DEFAULT_ACTOR_GRAPHICS } from '../diagram-defaults';
+import { DDL_MARKER_LOOKS } from '../diagram-enums';
 import { expandMargin } from '../margin';
 import { Definition, Diagnostic, parse, Statement } from './parse';
 import { callPlaceholder, PLAYER_GROUPS, resolveWaymarks } from './placeholders';
 import type { Margin } from '../../types/graphing';
-import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, XY } from './seek';
+import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, definitionKey, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, XY } from './seek';
 
 /** Run speed in yalms per ms. */
 const RUN_SPEED = 6 / 1000;
@@ -31,11 +33,6 @@ const FOLLOW_STEP = 50;
 const ROUND_TUPLE = /(?<![\w-])\(\s*(-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+)\s*\)/g;
 /** The same in square brackets, which are only for placeholders. */
 const SQUARE_TUPLE = /(?<![\w-])\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+\s*\]/;
-
-/** The BNpcBase IDs that a `.diagram` file's actors name with `bnpc`, whose hitboxes {@link DiagramInput.hitboxes} needs. */
-export function bnpcIdsOf(source: string): number[] {
-    return [...new Set([...source.matchAll(/\bbnpc:?\s+(\d+)/g)].map(match => Number(match[1])))];
-}
 
 /** The game action IDs that a `.diagram` file's `+aoe` statements draw instead with `as`, whose facts {@link DiagramInput.variants} needs. */
 export function variantIdsOf(source: string): number[] {
@@ -89,13 +86,31 @@ const LABEL_BASE = 'diagram-label';
 const RAIDWIDE_SIZE = 420;
 const DASHED = { look: { type: 'none' }, stroke: { style: 'dashed', color: '#fce76e' } };
 /** Definition keys that describe a placement rather than the drawn element. */
-const NON_VISUAL_KEYS = new Set(['flash', 'hold', 'hidden', 'use', 'hooks', 'flashLook', 'tracks']);
+const NON_VISUAL_KEYS = new Set(['flash', 'hold', 'hidden', 'attached', 'hooks', 'flashLook', 'tracks', 'headmarker']);
+/** The element kinds that `define` declares, by the verb that places them. */
+const KIND_OF_VERB: Record<string, Definition['kind']> = { actor: 'actor', object: 'object', puddle: 'puddle', tether: 'tether' };
+/** The element types each kind can have, as written; `type: graphic` is the viewer's `marker`. A kind with one type implies it. */
+const TYPES_OF_KIND: Partial<Record<Definition['kind'], readonly string[]>> = {
+    arena: ['image'],
+    tether: ['link'],
+    actor: ['image', 'graphic'],
+    object: ['ellipse', 'rectangle', 'cone', 'donut', 'image', 'graphic'],
+    puddle: ['ellipse', 'rectangle', 'cone', 'donut', 'image', 'graphic']
+};
+/** A headmarker's size in plane units, which isn't the diagram's to choose. */
+const HEADMARKER_SIZE = 20;
+const HEADMARKER_SIZES: Partial<Record<string, number>> = { 'rotate-cw': 40, 'rotate-ccw': 40 };
+/** The element that draws an AoE whose omen look is a built-in drawing (`tower`, `exaflare`, `circle-kb`) over its circle. */
+const AOE_GRAPHIC_BASE = 'aoe-graphic';
+/** Resolve effects that are built-in drawings rather than shader presets: shown on the AoE at its hit, fading over its `hold`. */
+const GRAPHIC_EFFECTS = ['hello-world'];
 /** The `define action` keys that are now facts of the timeline action, and where each one went. */
 const MOVED_KEYS: Record<string, string> = {
     telegraph: 'the element comes from the timeline action\'s "shape"',
     type: 'the element comes from the timeline action\'s "shape"',
     angle: 'set "angle" on the timeline action',
-    size: 'the size comes from game data, and from "angle", "inner", "grid" and "spacing" on the timeline action'
+    size: 'the size comes from game data, and from "angle", "inner", "grid" and "spacing" on the timeline action',
+    use: 'use "attached: true", which attaches the AoE to the timeline action\'s "actor"'
 };
 /** How every AoE element looks, unless its action's definition or its omen says otherwise. */
 const AOE_LOOK = { opacity: 0.85, shadow: false, enter: 'scale' };
@@ -109,7 +124,8 @@ const AOE_DEFINITIONS: Record<string, Record<string, unknown>> = {
     [AOE_BASES.donut]: { type: 'donut', ...AOE_LOOK },
     // A line starts at its caster and runs forward.
     [AOE_BASES.rectangle]: { type: 'rectangle', origin: [0.5, 1], ...AOE_LOOK },
-    [AOE_PART_BASE]: { type: 'rectangle', ...AOE_LOOK }
+    [AOE_PART_BASE]: { type: 'rectangle', ...AOE_LOOK },
+    [AOE_GRAPHIC_BASE]: { type: 'marker', ...AOE_LOOK }
 };
 /** How much of a line's half-width fades out at its sides when game data has no width for it. */
 const UNKNOWN_WIDTH_FADE = 0.8;
@@ -120,10 +136,8 @@ const CONE_CAST_TYPES = [3, 13];
 const LINE_CAST_TYPES = [4, 8, 12];
 /** Effect names without a preset of their own yet. */
 const EFFECT_ALIASES: Record<string, string> = { laser: 'wave-cannon' };
-/** Elements that the viewer defines by itself. */
-const BUILT_IN_BASES = new Set(['boss', 'enemy']);
-/** The icon that `boss` and `enemy` draw. */
-const BOSS_IMAGE = '/images/boss.svg';
+/** Why an actor can't name its BNpcBase with `bnpc` any more. */
+const BNPC_INSTEAD = 'name the actor by its key in the timeline\'s "actors", whose "id" gives its hitbox';
 /** How far out the ring of {@link BOSS_IMAGE} runs, as a fraction of the icon's half-width: its centre line, at 55.5 of 62. */
 const BOSS_RING = 55.5 / 62;
 const PLAYERS: string[] = PLAYER_GROUPS['players']!;
@@ -131,7 +145,13 @@ const GROUPS: Record<string, string[]> = Object.fromEntries(Object.entries(PLAYE
 
 /** The facts about an action that a diagram needs. */
 export interface ActionFacts {
+    /** The game action ID. */
+    id?: number;
     name?: string;
+    /** Who casts it: a key of {@link DiagramInput.actors}, or several. */
+    actor?: string | string[];
+    /** The game action ID of its hit, if that isn't the cast itself. A child with that ID makes this action only group its children. */
+    hit?: number;
     shape?: string;
     mechanic?: string;
     count?: number;
@@ -215,10 +235,23 @@ export interface DiagramInput {
     waymarks?: Record<string, Record<string, unknown>>;
     /** When the timeline says that bosses can't be targeted, which is when {@link ghosts} don't draw them. */
     targetability?: TargetabilityChange[];
-    /** Hitbox radii in yalms, by the BNpcBase IDs that actors name with `bnpc`. */
-    hitboxes?: Record<number, number>;
+    /**
+     * The timeline's actors, by key. An `+actor`'s ID before its `#` is one of these keys. An actor with an `id` (a BNpcBase)
+     * shows the cast bars of its actions and holds still while it casts; one without, the helper, does neither. An
+     * actor's `name` labels it while it's drawn with the boss icon and another such actor is alive.
+     */
+    actors?: Record<string, { id?: number, name?: string }>;
+    /** Hitbox radii in yalms, by actor key, for actors with an `id`. */
+    hitboxes?: Record<string, number>;
     /** AoE looks by the omen of their action, from `enums/omens.yaml`. An AoE whose omen isn't listed looks like `aoe`. */
     omens?: Record<string, unknown>;
+    /**
+     * Headmarker looks by game icon, from `enums/headmarkers.yaml`. Its looks, and `unknown`, are the headmarkers a
+     * diagram can use; without it, every headmarker look is.
+     */
+    headmarkers?: Record<string, string>;
+    /** Tether looks by game file, from `enums/tethers.yaml`. Its looks, and `unknown`, are tethers without a definition. */
+    tethers?: Record<string, string>;
     /** Game data of the actions that `+aoe ... as <game action ID>` draws instead, by those IDs (see {@link variantIdsOf}). */
     variants?: Record<number, ActionFacts>;
 }
@@ -314,6 +347,8 @@ const nameEnd = (id: string) => {
 const subIdOf = (id: string) => nameEnd(id) === id.length ? id : id.slice(nameEnd(id) + 1);
 const baseOf = (id: string) => id.slice(0, nameEnd(id));
 const duration = (value: string) => value.endsWith('ms') ? parseFloat(value) : value.endsWith('s') ? parseFloat(value) * 1000 : Number(value);
+/** The actor keys of an action, which `actor` names as one key or a list. */
+const actorsOf = (action: ActionFacts | undefined): string[] => action?.actor == null ? [] : Array.isArray(action.actor) ? action.actor : [action.actor];
 const isRaidwide = (action: ActionFacts | undefined) => action?.mechanic?.startsWith('raidwide') === true || action?.mechanic === 'enrage';
 
 /**
@@ -426,6 +461,38 @@ function compatible(a: Scope, b: Scope): boolean {
     return true;
 }
 
+/**
+ * Labels every element drawn with the boss icon (`actorOf` gives its timeline actor) with that actor's `name` while
+ * another boss-icon element is alive in a compatible scope, including copies of the same actor. Elements that `as`
+ * labels, and actors without a name, keep what they have. The labels are `text` sets at each spawn and each change.
+ */
+function addNameLabels(elements: CompiledElement[], actorOf: (base: string) => { name?: string } | undefined) {
+    const bosses = elements.filter(element => actorOf(element.base) != null);
+
+    for (const element of bosses) {
+        const name = actorOf(element.base)?.name;
+
+        if (name == null || element.props.text != null) continue;
+
+        for (const { from, to, ...scope } of element.spawns) {
+            const others = bosses.flatMap(other => other === element ? [] : other.spawns.filter(spawn => compatible(spawn, scope) && spawn.from < to && spawn.to > from));
+            const times = [...new Set([from, ...others.flatMap(spawn => [spawn.from, spawn.to])])].filter(t => t >= from && t < to).sort((a, b) => a - b);
+            let shown: boolean | undefined;
+
+            for (const t of times) {
+                const crowded = others.some(spawn => t >= spawn.from && t < spawn.to);
+
+                if (crowded !== shown) element.sets.push({ ...scope, t, over: 0, key: 'text', value: crowded ? name : '' });
+
+                shown = crowded;
+            }
+        }
+
+        // `propAt` lets the last matching set win, so they must be in time order across spawns.
+        element.sets.sort((a, b) => a.t - b.t);
+    }
+}
+
 /** Identifies a scope, for grouping items by it. */
 function scopeKey(scope: Scope): string {
     return `${scope.strategy ?? ''}|${scope.branch?.join(':') ?? ''}`;
@@ -436,10 +503,35 @@ function scopeOf(scope: Scope): Scope {
     return { ...(scope.strategy != null ? { strategy: scope.strategy } : {}), ...(scope.branch != null ? { branch: scope.branch } : {}) };
 }
 
+/** An action's `headmarker: <look> at -<lead> [for <duration>]`, in ms. */
+interface HeadmarkerField {
+    look: string;
+    lead: number;
+    /** How long it shows, which is until the hit unless `for` says otherwise. */
+    for: number;
+}
+
+/** Reads `headmarker: <look> at -<lead> [for <duration>]`, or returns why it can't. */
+function readHeadmarkerField(value: unknown, headmarkers: ReadonlySet<string>): HeadmarkerField | string {
+    const match = typeof value === 'string' ? /^(\S+)\s+at\s+-(\d+(?:\.\d+)?(?:ms|s)?)(?:\s+for\s+(\d+(?:\.\d+)?(?:ms|s)?))?$/.exec(value.trim()) : null;
+
+    if (match == null) return '"headmarker" takes "<look> at -<lead>", optionally followed by "for <duration>", such as "stack at -5s"';
+    if (!headmarkers.has(match[1]!)) return `"${match[1]}" isn't a headmarker look: ${[...headmarkers].join(', ')}`;
+
+    const lead = duration(match[2]!);
+    const shown = match[3] == null ? lead : duration(match[3]);
+
+    if (lead <= 0 || shown <= 0) return '"headmarker" needs a lead and a duration above 0';
+
+    return { look: match[1]!, lead, for: shown };
+}
+
 /** Splits `define` blocks into what each one means. Non-simple values keep the viewer's form, parsed as YAML flow. */
-function readDefinitions(definitions: Definition[], actions: Record<string, ActionFacts>, error: (line: number, message: string) => void) {
+function readDefinitions(definitions: Definition[], actions: Record<string, ActionFacts>, headmarkers: ReadonlySet<string>, error: (line: number, message: string) => void) {
     const actionDefs: Record<string, Record<string, any>> = {};
     const elementDefs: Record<string, Record<string, any>> = {};
+    /** The kind of each element definition, by its ID. */
+    const elementKinds: Record<string, Definition['kind']> = {};
     const gradients: Record<string, string> = {};
     const strategies: CompiledDiagram['strategies'] = [];
 
@@ -488,18 +580,68 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
         if (definition.kind === 'action') {
             if (actions[definition.id] == null) error(definition.line, `"${definition.id}" isn't an action of the timeline`);
             if ('look' in values) error(definition.line, `"${definition.id}" can't have a "look": AoE looks come from omens.yaml`);
+            if ('attached' in values && typeof values.attached !== 'boolean' && typeof values.attached !== 'string') error(definition.line, `"attached" of "${definition.id}" is true, false or an actor's key`);
 
             for (const [key, instead] of Object.entries(MOVED_KEYS)) {
                 if (key in values) error(definition.line, `"${definition.id}" can't have a "${key}": ${instead}`);
             }
 
+            if ('headmarker' in values) {
+                const headmarker = readHeadmarkerField(values.headmarker, headmarkers);
+
+                if (typeof headmarker === 'string') {
+                    error(definition.line, `"${definition.id}": ${headmarker}`);
+                    delete values.headmarker;
+                } else {
+                    values.headmarker = headmarker;
+                }
+            }
+
             actionDefs[definition.id] = values;
         } else {
+            if ('bnpc' in values) error(definition.line, `"${definition.id}" can't have a "bnpc": ${BNPC_INSTEAD}`);
+
+            readElementType(definition, values, error);
             elementDefs[definition.id] = values;
+            elementKinds[definition.id] = definition.kind;
         }
     }
 
-    return { actionDefs, elementDefs, gradients, strategies };
+    return { actionDefs, elementDefs, elementKinds, gradients, strategies };
+}
+
+/**
+ * Checks a definition's `type` against what its kind allows, fills in the type of kinds that have only one, and turns
+ * `type: graphic` into the viewer's `marker`. Also checks what only some kinds take: `duration` (puddles).
+ */
+function readElementType(definition: Definition, values: Record<string, unknown>, error: (line: number, message: string) => void): void {
+    const allowed = TYPES_OF_KIND[definition.kind];
+    const type = values.type as string | undefined;
+    const name = definition.kind === 'arena' ? '"define arena"' : `"${definition.id}"`;
+
+    if ('duration' in values && definition.kind !== 'puddle' && definition.kind !== 'element') error(definition.line, `${name} can't have a "duration": only puddles disappear by themselves`);
+    if (allowed == null) return;
+
+    if (type === 'marker') {
+        error(definition.line, `${name}: "type: marker" is now "type: graphic"`);
+    } else if (type != null && !allowed.includes(type)) {
+        error(definition.line, `${name} is a ${definition.kind}, whose type is ${allowed.join(' or ')}`);
+    } else if (type == null && allowed.length === 1) {
+        values.type = allowed[0];
+    } else if (type == null && definition.kind !== 'actor') {
+        error(definition.line, `${name} needs a "type": ${allowed.join(', ')}`);
+    }
+
+    if (values.type === 'graphic') {
+        const look = values.look as string | { type?: string } | undefined;
+        const lookName = typeof look === 'string' ? look : look?.type;
+
+        if (lookName == null || !(DDL_MARKER_LOOKS.graphics as readonly string[]).includes(lookName)) {
+            error(definition.line, `"${definition.id}" needs a graphic "look": ${DDL_MARKER_LOOKS.graphics.join(', ')}`);
+        }
+
+        values.type = 'marker';
+    }
 }
 
 /** Compiles a `.diagram` file. Everything wrong with it is returned as a diagnostic, and the result is then incomplete. */
@@ -510,7 +652,31 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     const error = (line: number, message: string) => {
         diagnostics.push({ line, message });
     };
-    const { actionDefs, elementDefs, gradients, strategies } = readDefinitions(parsed.definitions, actions, error);
+    /** The headmarker looks this diagram can use, and the tether looks it can use without a `define tether`. */
+    const headmarkerLooks = new Set<string>(input.headmarkers == null ? DDL_MARKER_LOOKS.headmarkers : [...Object.values(input.headmarkers), 'unknown']);
+    const tetherLooks = new Set<string>([...Object.values(input.tethers ?? {}), 'unknown']);
+    const { actionDefs, elementDefs, elementKinds, gradients, strategies } = readDefinitions(parsed.definitions, actions, headmarkerLooks, error);
+    const definitionLine = (kind: Definition['kind'], id: string) => parsed.definitions.find(d => d.kind === kind && d.id === id)?.line ?? 0;
+
+    for (const definition of parsed.definitions) {
+        const attached = actionDefs[definition.id]?.attached;
+
+        if (definition.kind === 'action' && typeof attached === 'string' && input.actors?.[attached] == null) {
+            error(definition.line, `"${definition.id}" is attached to "${attached}", which isn't an actor of the timeline`);
+        }
+    }
+
+    /**
+     * The actors an action's AoE sits on and turns with until it hits, or `undefined` if it isn't attached: those that
+     * `attached` names (`true` for the action's own actors), and for a raidwide without `attached`, its own actors.
+     */
+    const attachedActors = (key: string): string[] | undefined => {
+        const attached = actionDefs[key]?.attached;
+
+        if (typeof attached === 'string') return [attached];
+        if (attached === true || (attached == null && isRaidwide(actions[key]))) return actorsOf(actions[key]);
+        return undefined;
+    };
 
     // Skips, branches and strategies come first, since they decide which statements and uses count at all.
     const skips: [number, number][] = [];
@@ -597,18 +763,40 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     const effects: CompiledDiagram['effects'] = [];
     const thumbnails: CompiledDiagram['thumbnails'] = {};
     const pendingEffects: { use: Use, preset: string }[] = [];
+    /** The effects that are built-in drawings ({@link GRAPHIC_EFFECTS}) that action hooks name, for each use. */
+    const graphicEffects: { use: Use, look: string, line: number }[] = [];
 
-    const elementDef = (base: string) => elementDefs[base];
-    const requireBase = (base: string, line: number) => {
+    /**
+     * The definition of an element: its `define`; for a timeline actor, the default look, which a definition without a
+     * `type` only adjusts (`define actor garuda` with an `opacity` is still the boss icon); for a headmarker or a tether
+     * look of `tethers.yaml` without a definition, that look. `tether` says whether the element is a tether, whose look
+     * may have the name of a headmarker (`unknown`).
+     */
+    const elementDef = (base: string, tether: boolean = false): Record<string, any> | undefined => {
+        const own = elementDefs[base];
+
+        if (own == null && !tether && headmarkerLooks.has(base)) return { type: 'marker', look: base, size: HEADMARKER_SIZES[base] ?? HEADMARKER_SIZE, shadow: false };
+        if (own == null && tether && tetherLooks.has(base)) return { type: 'link', look: base };
+        if (input.actors?.[base] == null || own?.type != null) return own;
+
+        return { ...DEFAULT_ACTOR_GRAPHICS, ...own };
+    };
+    /** What an element is, by its base: the kind of its `define`, or a headmarker, a `tethers.yaml` tether or a timeline actor without one. */
+    const kindOf = (base: string, tether: boolean): Definition['kind'] | 'headmarker' | undefined => elementKinds[base]
+        ?? (tether ? (tetherLooks.has(base) ? 'tether' : undefined) : headmarkerLooks.has(base) ? 'headmarker' : input.actors?.[base] != null ? 'actor' : undefined);
+    /** Adds the definition of the element `id` (or of the base `id`) to the compiled diagram, or reports that it has none. */
+    const requireBase = (id: string, line: number) => {
+        const base = baseOf(id);
+
         if (base === RAIDWIDE_BASE) return;
 
-        const def = elementDef(base);
+        const def = elementDef(base, id.includes('@'));
 
-        if (def == null && !BUILT_IN_BASES.has(base) && !PLAYERS.includes(base)) {
-            error(line, `"${base}" has no element definition`);
+        if (def == null && !PLAYERS.includes(base)) {
+            error(line, `"${base}" has no definition`);
         } else if (def != null) {
-            const { hooks: _hooks, ...visual } = def;
-            definitions[base] = visual;
+            const { hooks: _hooks, duration: _duration, ...visual } = def;
+            definitions[definitionKey(id)] = visual;
         }
     };
 
@@ -618,7 +806,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
         if (element == null) {
             const base = baseOf(id);
-            requireBase(base, line);
+            requireBase(id, line);
             element = { id, base, props: {}, spawns: [], poses: [], turns: [], sets: [] };
             elements.set(id, element);
             order.push(id);
@@ -628,6 +816,9 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     };
 
     const isLive = (element: CompiledElement, t: number, within: Scope) => element.spawns.some(spawn => t >= spawn.from && t < spawn.to && compatible(spawn, within));
+    /** The elements of the timeline actors `actors` (`omega`, `omega#2`) alive at `at`, in any scope. */
+    const aliveOf = (actors: string[], at: number): CompiledElement[] =>
+        [...elements.values()].filter(e => actors.includes(e.base) && e.spawns.some(spawn => at >= spawn.from && at <= spawn.to));
 
     /** Expands a subject into element IDs, resolving `*` against what's alive at `t`. */
     const expandSubject = (token: string, s: Statement, within: Scope): string[] => expandTemplate(token).flatMap(id => {
@@ -801,12 +992,23 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const show = raidwide ? use.at : omen ? telegraphStart : shown ?? telegraphStart;
         const visual: Record<string, unknown> = Object.fromEntries(Object.entries(def).filter(([key]) => !NON_VISUAL_KEYS.has(key)));
         // Raidwides have no outline, so they keep their own look.
-        const look = raidwide ? {} : { look: (drawnFacts.omen != null ? input.omens?.[drawnFacts.omen] : undefined) ?? 'aoe' };
+        const omenLook = drawnFacts.omen != null ? input.omens?.[drawnFacts.omen] : undefined;
+        let look: Record<string, unknown> = raidwide ? {} : { look: omenLook ?? 'aoe' };
         const drawn = raidwide || def.hidden ? undefined : drawnShape(drawnFacts, arenaYalms);
 
         if (typeof drawn === 'string') error(line, `"${use.action}" ${drawn}`);
 
-        const base = raidwide ? RAIDWIDE_BASE : drawn == null || typeof drawn === 'string' || drawn.type === 'parts' ? undefined : AOE_BASES[drawn.type];
+        let base: string | undefined = raidwide ? RAIDWIDE_BASE : drawn == null || typeof drawn === 'string' || drawn.type === 'parts' ? undefined : AOE_BASES[drawn.type];
+        const omenLookName = typeof omenLook === 'string' ? omenLook : (omenLook as { type?: string } | undefined)?.type;
+        // A look that is a built-in drawing, such as `tower`, draws that over the AoE's circle.
+        const graphic = !raidwide && omenLookName != null && (DDL_MARKER_LOOKS.aoes as readonly string[]).includes(omenLookName);
+
+        if (graphic && base != null && typeof drawn === 'object' && drawn?.type === 'ellipse') {
+            base = AOE_GRAPHIC_BASE;
+        } else if (graphic && drawn != null && typeof drawn !== 'string') {
+            error(line, `"${use.action}" looks like "${omenLookName}" by its omen, which only draws circles`);
+            look = { look: 'aoe' };
+        }
         const unique = `${use.action}-${subIdOf(id) === id ? 'all' : subIdOf(id)}-${use.at}`;
         const key = scopeKey(within);
         const existing = aoes.filter(a => a.action === use.action && a.id === id && a.hit === use.at);
@@ -823,7 +1025,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             hold: (def.hold as number | undefined) ?? DEFAULT_HOLD,
             omen,
             raidwide,
-            props: { ...visual, ...look, ...(omen || raidwide ? {} : DASHED) },
+            // A drawing has no outline to dash.
+            props: { ...visual, ...look, ...(omen || raidwide || base === AOE_GRAPHIC_BASE ? {} : DASHED) },
             labelId: `${LABEL_BASE}#${unique}${suffix}`,
             label: action.name ?? use.action,
             ...fields
@@ -832,6 +1035,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         if (raidwide) {
             aoe.renderId = `${RAIDWIDE_BASE}#${unique}${suffix}`;
         } else if (base != null && drawn != null && typeof drawn !== 'string' && drawn.type !== 'parts') {
+            // `drawn` decides the size and the area; `base` may be the drawing that stands in for its circle.
             aoe.renderId = `${base}#${unique}${suffix}`;
             definitions[base] = AOE_DEFINITIONS[base]!;
             aoe.props.yalms = drawn.yalms;
@@ -936,6 +1140,13 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 const name = s.subjects[0] ?? '';
                 const preset = EFFECT_ALIASES[name] ?? name;
 
+                if (GRAPHIC_EFFECTS.includes(preset)) {
+                    if (hookUse == null) error(s.line, `effect "${name}" shows on an action's AoE at its hit, so it goes in the action's "exit"`);
+                    else graphicEffects.push({ use: hookUse, look: preset, line: s.line });
+
+                    break;
+                }
+
                 if (!(RESOLVE_PRESETS as readonly string[]).includes(preset)) error(s.line, `unknown effect "${name}"`);
 
                 if (hookUse != null) {
@@ -973,15 +1184,37 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 break;
             }
             case 'actor':
-            case 'marker':
+            case 'object':
+            case 'puddle':
+            case 'headmarker':
             case 'tether': {
                 const ids = subjects();
 
                 ids.forEach((id, index) => {
+                    const base = baseOf(id);
+                    const kind = kindOf(base, s.verb === 'tether');
+
+                    if (s.verb === 'actor' && s.sign === '+' && input.actors?.[base] == null && !PLAYERS.includes(id)) {
+                        error(s.line, `"${base}" isn't an actor of the timeline`);
+                    }
+
+                    if (s.verb === 'headmarker' && kind !== 'headmarker') {
+                        error(s.line, `"${base}" isn't a headmarker: ${[...headmarkerLooks].join(', ')}`);
+                        return;
+                    }
+
+                    // The removed `define element` is reported where it's defined, and may be placed by any verb.
+                    if (kind != null && kind !== 'element' && kind !== (KIND_OF_VERB[s.verb] ?? s.verb) && !PLAYERS.includes(id)) {
+                        error(s.line, `"${base}" is ${kind === 'arena' ? 'the arena' : `defined as a ${kind}`}, so it can't be placed with "${s.sign}${s.verb}"`);
+                    }
+
+                    if (s.verb === 'headmarker' && s.sign === '+' && clauseOf(s, 'on') == null) error(s.line, `+headmarker "${id}" needs "on": the actor or player it marks`);
+
                     const element = ensure(id, s.line);
 
                     if (s.sign === '-') {
-                        const open = element.spawns.find(spawn => spawn.to === Infinity && compatible(spawn, within));
+                        // Alive, which a puddle with a `duration` may still be.
+                        const open = element.spawns.find(spawn => s.at >= spawn.from && s.at < spawn.to && compatible(spawn, within));
 
                         if (open == null) {
                             error(s.line, `"${id}" isn't alive at ${s.at}`);
@@ -989,14 +1222,16 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                             open.to = s.at;
                         }
 
-                        for (const line of (elementDef(element.base)?.hooks ?? []) as string[]) {
+                        for (const line of (elementDef(element.base, element.id.includes('@'))?.hooks ?? []) as string[]) {
                             for (const hooked of parse(`${s.at} ${line}`).statements) run({ ...hooked, line: s.line }, within, id);
                         }
 
                         return;
                     }
 
-                    element.spawns.push({ ...within, from: s.at, to: Infinity });
+                    // A puddle with a `duration` disappears by itself.
+                    const lifetime = s.verb === 'puddle' ? elementDef(base)?.duration as string | number | undefined : undefined;
+                    element.spawns.push({ ...within, from: s.at, to: lifetime == null ? Infinity : s.at + duration(String(lifetime)) });
 
                     if (s.verb === 'tether') {
                         // `far-tether@T1>R2`: a tether refers to its two ends, and points from the first to the second.
@@ -1026,7 +1261,15 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                             const xy = offset == null ? [0, 0] : literal(valueFor(offset, index, ids, s, within)!) as number[];
                             element.poses.push({ ...within, start: s.at, end: s.at, kind: 'follow', target: value, offset: xy as XY });
                         } else if (clause.key === 'as') {
-                            element.props.text = literal(value);
+                            const text = literal(value);
+
+                            if (text !== '' && text === input.actors?.[baseOf(id)]?.name) {
+                                error(s.line, `"${id}" is labelled "${text}" anyway, since that's its name in the timeline's "actors"`);
+                            }
+
+                            element.props.text = text;
+                        } else if (clause.key === 'bnpc') {
+                            error(s.line, `"${id}" can't have a "bnpc": ${BNPC_INSTEAD}`);
                         } else if (clause.key !== 'toward' && clause.key !== 'offset') {
                             element.props[clause.key] = literal(value);
                         }
@@ -1057,9 +1300,26 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     const on = clauseOf(s, 'on');
                     const at = clauseOf(s, 'at');
                     const toward = clauseOf(s, 'toward');
-                    const usePattern = actionDefs[action]?.use as string | undefined;
+                    const attachedTo = attachedActors(action);
 
-                    if (usePattern != null) fields.use = usePattern.replace('[*]', subIdOf(id));
+                    // A raidwide is only attached by itself while nothing places it.
+                    if (attachedTo != null && !(isRaidwide(facts) && actionDefs[action]?.attached == null)) {
+                        // An actor's element with the placement's sub-ID, or else the only one alive.
+                        const actors = attachedTo;
+                        const alive = aliveOf(actors, use.at);
+                        const withSub = alive.filter(e => subIdOf(e.id) === subIdOf(id) && e.id !== e.base);
+                        const anchor = withSub.length === 1 ? withSub[0] : withSub.length === 0 && alive.length === 1 ? alive[0] : undefined;
+                        const names = actors.map(actor => `"${actor}"`).join(' or ');
+
+                        if (actors.length === 0) {
+                            error(s.line, `"${action}" is attached, but its timeline action has no "actor"`);
+                        } else if (anchor == null) {
+                            error(s.line, `"${id}" is attached to ${names}, but neither exactly one of them with the sub-ID "${subIdOf(id)}" nor a single one is alive at ${use.at}`);
+                        } else {
+                            fields.attachedTo = anchor.id;
+                        }
+                    }
+
                     if (on != null) fields.on = valueFor(on, index, ids, s, within);
 
                     if (at != null) {
@@ -1168,7 +1428,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     /**
      * Plays out each `+follow` over its target's known path and writes it as ordinary poses and turns, since seeking
      * is a pure function of time and can't simulate. A follower turns toward its target and, with `on`, chases it at its
-     * `speed` until it's within its `reach`. While it casts an action that it's the `use` of, and through the action's
+     * `speed` until it's within its `reach`. While it casts an action whose `actor` it is (see `castersOf`), and through the action's
      * attack animation after that (`animationLock`), it holds still, and only turns if the action `tracks`. During a `turn`, it holds still and turns away and back.
      */
     function simulateFollows(): void {
@@ -1184,14 +1444,13 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             const element = elements.get(follow.id)!;
             const to = Math.min(follow.to, end);
             const props: Record<string, unknown> = { ...elementDef(element.base), ...element.props };
-            const bnpc = props.bnpc == null ? undefined : Number(props.bnpc);
-            const hitbox = bnpc == null ? undefined : input.hitboxes?.[bnpc];
+            const hitbox = input.hitboxes?.[element.base];
 
             // Tools such as the editor need to know, since nothing else may move or turn it then.
             (element.follows ??= []).push({ from: follow.from, to, target: follow.target, line: follow.line });
 
             if (follow.chase && hitbox == null) {
-                error(follow.line, bnpc == null ? `"${follow.id}" needs a "bnpc" to chase "${follow.target}", for its hitbox` : `no hitbox is known for bnpc ${bnpc}`);
+                error(follow.line, `"${follow.id}" needs a hitbox to chase "${follow.target}": "${element.base}" must be an actor of the timeline with an "id"`);
                 continue;
             }
 
@@ -1290,21 +1549,11 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
     if (arenas.length > 0) requireBase('arena', 0);
 
-    /** The elements alive at `at` that a `use` pattern such as `enemy#[*]` matches. */
-    const aliveMatching = (pattern: string, at: number): CompiledElement[] => {
-        const regex = new RegExp(`^${pattern.replace('[*]', '*').replace('*', '.*')}$`);
-        return [...elements.values()].filter(e => regex.test(e.id) && e.spawns.some(spawn => at >= spawn.from && at <= spawn.to));
-    };
+    addNameLabels([...elements.values()], base => elementDef(base)?.image === BOSS_IMAGE ? input.actors?.[base] : undefined);
 
-    /** Who casts a use: the `use` actors of its AoEs, otherwise whatever alive element its action's `use` matches. */
-    const castersOf = (use: Use): { id: string, scope: Scope }[] => {
-        const placed = aoes.filter(a => a.action === use.action && a.hit === use.at && a.use != null);
-
-        if (placed.length > 0) return placed.map(a => ({ id: a.use!, scope: scopeOf(a) }));
-
-        const pattern = actionDefs[use.action]?.use as string | undefined;
-        return pattern == null ? [] : aliveMatching(pattern, use.at).map(e => ({ id: e.id, scope: {} }));
-    };
+    /** Who casts a use: every alive element of its action's actors, except the helper's, whose casts show nothing. */
+    const castersOf = (use: Use): { id: string, scope: Scope }[] =>
+        aliveOf(actorsOf(actions[use.action]).filter(actor => input.actors?.[actor]?.id != null), use.at).map(e => ({ id: e.id, scope: {} }));
 
     // Every use must have the right number of placements, unless an action hook covers it.
     for (const use of uses) {
@@ -1312,17 +1561,25 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const def = actionDefs[use.action];
         const placed = aoes.filter(a => a.action === use.action && a.hit === use.at);
         // Only a parent that deals no damage of its own and isn't an AoE in game data just groups its children; anything else is a hit like any other.
-        const isShell = (action.children?.length ?? 0) > 0 && !((action.damage ?? 0) > 0) && !((action.castType ?? 0) >= 2);
+        // So does one whose `hit` is one of its children: they are the hits, at their real times.
+        const isShell = ((action.children?.length ?? 0) > 0 && !((action.damage ?? 0) > 0) && !((action.castType ?? 0) >= 2))
+            || (action.hit != null && (action.children ?? []).some(child => actions[child.id]?.id === action.hit));
         const raidwide = isRaidwide(action);
 
         if (action.shape == null && !raidwide) continue;
 
-        if (def?.use != null && placed.length === 0 && !isShell) {
-            const actors = aliveMatching(def.use as string, use.at);
+        const attachedTo = attachedActors(use.action);
 
-            if (actors.length === 0) error(0, `"${use.action}" at ${use.at} uses "${def.use}", but nothing like that is alive then`);
+        if (attachedTo != null && placed.length === 0 && !isShell) {
+            // A raidwide hits once, from its first live caster.
+            const alive = aliveOf(attachedTo, use.at);
+            const actors = raidwide ? alive.slice(0, 1) : alive;
+            const names = attachedTo.map(actor => `"${actor}"`).join(' or ');
 
-            for (const actor of actors) addAoe(`${use.action}#${subIdOf(actor.id)}`, use, null, {}, { use: actor.id }, 0);
+            if (attachedTo.length === 0) error(0, raidwide ? `raidwide "${use.action}" at ${use.at} has no origin: place it, or give its timeline action an "actor"` : `"${use.action}" is attached, but its timeline action has no "actor"`);
+            else if (actors.length === 0) error(0, raidwide ? `raidwide "${use.action}" at ${use.at} has no origin: none of ${names} is alive then` : `"${use.action}" at ${use.at} is attached to ${names}, but none is alive then`);
+
+            for (const actor of actors) addAoe(`${use.action}#${subIdOf(actor.id)}`, use, null, {}, { attachedTo: actor.id }, 0);
 
             continue;
         }
@@ -1349,6 +1606,50 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         if (counts.some(count => count !== expected)) error(0, `"${use.action}" at ${use.at} has ${counts.join('/')} placements for a count of ${expected}`);
     }
 
+    for (const aoe of aoes) {
+        /** What makes this placement's own elements unique: its label's ID without the label's base. */
+        const unique = aoe.labelId.slice(aoe.labelId.indexOf('#') + 1);
+        const effect = graphicEffects.find(e => e.use.action === aoe.action && e.use.at === aoe.hit);
+
+        // A drawing as the resolve effect shows over the AoE's circle at the hit, like a `flash`, and fades over its `hold`.
+        if (effect != null) {
+            const facts = actions[aoe.action] ?? {};
+            const yalms = actionYalms('ellipse', facts.effectRange ?? 0, facts.xAxisModifier, facts.inner);
+            const base = `effect-${effect.look}`;
+
+            if (aoe.flashId != null) error(effect.line, `"${aoe.action}" can't have both a "flash" and the effect "${effect.look}"`);
+            if (yalms == null) error(effect.line, `effect "${effect.look}" on "${aoe.action}" can't be sized: it has no effectRange in game data`);
+
+            definitions[base] = { type: 'marker', look: effect.look, opacity: 0.85, shadow: false };
+            aoe.flashId = `${base}#${unique}-hit`;
+            aoe.flashProps = yalms == null ? {} : { yalms: [...yalms] };
+
+            if (aoe.area == null && !aoe.raidwide && yalms != null) {
+                const area = areaOf(definitions[base] as Record<string, unknown>, aoe.hit, {}, [...yalms] as [number, number]);
+
+                if (area != null) aoe.area = area;
+            }
+        }
+
+        // `headmarker:` marks what the AoE is placed on, `lead` before its hit, until the hit or for its own duration.
+        const mark = actionDefs[aoe.action]?.headmarker as HeadmarkerField | undefined;
+
+        if (mark != null) {
+            const anchor = aoe.on ?? aoe.attachedTo;
+
+            if (anchor == null) {
+                error(definitionLine('action', aoe.action), `the headmarker of "${aoe.action}" needs an AoE placed "on" something or attached to an actor, but "${aoe.id}" at ${aoe.hit} is neither`);
+                continue;
+            }
+
+            const element = ensure(`${mark.look}#${unique}`, definitionLine('action', aoe.action));
+            const from = aoe.hit - mark.lead;
+
+            element.spawns.push({ ...scopeOf(aoe), from, to: from + mark.for });
+            element.poses.push({ ...scopeOf(aoe), start: from, end: from, kind: 'follow', target: anchor, offset: [0, 0] });
+        }
+    }
+
     simulateFollows();
 
     // What hits leaves a resolve effect: the one its hook names, otherwise a plain flash. A raidwide sweeps.
@@ -1366,18 +1667,18 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     }
 
     for (const element of elements.values()) {
-        const props: Record<string, unknown> = { ...elementDef(element.base), ...element.props };
+        const props: Record<string, unknown> = { ...elementDef(element.base, element.id.includes('@')), ...element.props };
         const facing = facingOf(props);
 
         if (facing !== 0) element.facing = facing;
 
-        // An actor that names its BNpcBase is as big as its hitbox, so the ring of the boss icon is the hitbox's edge.
-        const hitbox = props.bnpc == null ? undefined : input.hitboxes?.[Number(props.bnpc)];
+        // A timeline actor with a BNpcBase is as big as its hitbox, so the ring of the boss icon is the hitbox's edge.
+        const hitbox = input.hitboxes?.[element.base];
 
         if (hitbox != null) {
-            if (element.props.size != null || element.props.scale != null) error(0, `"${element.id}" is sized from the hitbox of its bnpc, so it can't also have a size or scale`);
+            if (element.props.size != null || element.props.scale != null) error(0, `"${element.id}" is sized from the hitbox of its actor, so it can't also have a size or scale`);
 
-            const ring = BUILT_IN_BASES.has(element.base) || props.image === BOSS_IMAGE ? BOSS_RING : 1;
+            const ring = props.image === BOSS_IMAGE ? BOSS_RING : 1;
             element.props.yalms = [2 * hitbox / ring, 2 * hitbox / ring];
         }
 
@@ -1479,7 +1780,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     }
 
     const name = (id: string) => actions[id]?.name ?? id;
-    // Each caster shows its own cast bar, so that an add's cast doesn't hide the boss's. A use without a `use` actor has no bar.
+    // Each caster shows its own cast bar, so that an add's cast doesn't hide the boss's. A use whose action has no actor with an `id` has no bar.
     const casts: CompiledDiagram['casts'] = [];
 
     for (const use of uses) {

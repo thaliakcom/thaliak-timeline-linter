@@ -414,13 +414,20 @@ export async function actionTooltip(context: TooltipContext, key: string): Promi
     const source = isPlayerSource ? 'player' : 'enemy';
     let type: string | undefined = definition.type;
     let element: string | undefined = definition.element;
+    // As thaliak's `processAction()`: the hit decides the damage type and element, and the AoE unless it's one of the children.
+    const hit = definition.hit != null ? await getGameAction(definition.hit) : null;
+    const hitIsChild = hit != null && (definition.children ?? []).some(child => context.raid?.actions?.[child.id]?.id === definition.hit);
+    const aoe = hitIsChild ? game : hit ?? game;
+    const damage = hit ?? game;
 
-    if (game != null && (game.attackType !== 0 || game.aspect !== 0 || game.canTargetHostile)) {
-        type = DAMAGE_TYPES[game.attackType];
-        element = ELEMENTS[game.aspect];
+    if (damage != null && (damage.attackType !== 0 || damage.aspect !== 0 || damage.canTargetHostile)) {
+        type = DAMAGE_TYPES[damage.attackType];
+        element = ELEMENTS[damage.aspect];
     }
 
-    const effectRange = game != null ? paddedEffectRange(game, await hitboxRadius(definition.source)) : 0;
+    // A hit comes from a helper; otherwise the first actor's hitbox pads the range.
+    const firstActor = definition.actor == null ? undefined : Array.isArray(definition.actor) ? definition.actor[0] : definition.actor;
+    const effectRange = aoe != null ? paddedEffectRange(aoe, await hitboxRadius(aoe === hit ? undefined : context.raid?.actors?.[firstActor ?? '']?.id)) : 0;
     const cast = definition.cast ?? (game != null ? castTimeOf(game) : 0);
     const captionIcons: string[] = [];
     let caption: string;

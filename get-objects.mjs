@@ -18,6 +18,8 @@ const FILES = [
     ['src/utility/diagram-ddl/seek.ts', './server/src/utility/diagram-ddl/seek.ts', 'thaliak'],
     ['src/utility/diagram-ddl/placeholders.ts', './server/src/utility/diagram-ddl/placeholders.ts', 'thaliak'],
     ['src/utility/diagram-sizing.ts', './server/src/utility/diagram-sizing.ts', 'thaliak'],
+    ['src/utility/diagram-defaults.ts', './server/src/utility/diagram-defaults.ts', 'thaliak'],
+    ['src/utility/diagram-enums.ts', './server/src/utility/diagram-enums.ts', 'thaliak'],
     ['src/utility/margin.ts', './server/src/utility/margin.ts', 'thaliak'],
     ['src/components/diagram/render/effects/presets.ts', './server/src/components/diagram/render/effects/presets.ts', 'thaliak']
 ];

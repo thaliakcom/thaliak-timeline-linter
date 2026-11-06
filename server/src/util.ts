@@ -182,6 +182,12 @@ export function getSymbolAt(document: yaml.Document, textDocument: TextDocument,
         return placeholder;
     }
 
+    const actor = getActorAt(document, textDocument, position);
+
+    if (actor != null) {
+        return actor;
+    }
+
     const status = getIfType(document, 'status', yaml.isMap);
     const actions = getIfType(document, 'actions', yaml.isMap);
     const timeline = getIfType(document, 'timeline', yaml.isSeq);
@@ -385,6 +391,40 @@ export function getAction(document: yaml.Document | undefined, key: string): yam
     return null;
 }
 
+/** The entry of the actor `key` in the timeline's `actors`. */
+export function getActor(document: yaml.Document | undefined, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | null {
+    const actors = getIfType(document, 'actors', yaml.isMap);
+
+    return (actors != null ? getEntry(actors, key) as yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | null : null) ?? null;
+}
+
+/** The actor keys that the actions' `actor` values name (one key, or a list of them), with their ranges. */
+export function getActorValues(document: yaml.Document): { key: string, range: yaml.Range }[] {
+    const values: { key: string, range: yaml.Range }[] = [];
+
+    for (const pair of getIfType(document, 'actions', yaml.isMap)?.items ?? []) {
+        const actor = yaml.isMap(pair.value) ? pair.value.get('actor', true) : null;
+
+        for (const node of yaml.isSeq(actor) ? actor.items : [actor]) {
+            if (yaml.isScalar(node) && typeof node.value === 'string' && node.range != null) {
+                const start = node.range[0] + (node.type === yaml.Scalar.QUOTE_DOUBLE || node.type === yaml.Scalar.QUOTE_SINGLE ? 1 : 0);
+
+                values.push({ key: node.value, range: [start, start + node.value.length, start + node.value.length] });
+            }
+        }
+    }
+
+    return values;
+}
+
+/** The actor key at `position`, if it's one of an action's `actor` values, as the symbol `ac:<key>`. */
+export function getActorAt(document: yaml.Document, textDocument: TextDocument, position: Position): SymbolRange | null {
+    const offset = textDocument.offsetAt(position);
+    const value = getActorValues(document).find(x => offset >= x.range[0] && offset <= x.range[1]);
+
+    return value != null ? { text: `ac:${value.key}`, range: getRange(textDocument, value.range) } : null;
+}
+
 export function getStatus(document: yaml.Document | undefined, key: string): yaml.Pair<yaml.Scalar<string>, yaml.Node<unknown>> | null {
     const statusEffects = getIfType(document, 'status', yaml.isMap);
 
@@ -455,6 +495,8 @@ interface Prefixes<T> {
     'dt:'?: (key: string) => T;
     't:'?: (key: string) => T;
     'i:'?: (key: string) => T;
+    /** A timeline actor, by its key in `actors`; only an action's `actor` value names one. */
+    'ac:'?: (key: string) => T;
     else?: (key: string) => T;
 }
 

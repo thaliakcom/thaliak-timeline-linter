@@ -16,9 +16,14 @@ const base = {
  * its entries. Its entries are bare status keys, without the `s:` prefix of placeholders.
  */
 function isInStatusList(result: NodeWrapper): boolean {
+    return isInList(result, 'status');
+}
+
+/** Whether `result` is in the list of the key `key`: the list itself or one of its entries. */
+function isInList(result: NodeWrapper, key: string): boolean {
     const list = yaml.isSeq(result.node) ? result : yaml.isScalar(result.node) && yaml.isSeq(result.parent?.node) ? result.parent : undefined;
     const pair = list?.parent?.node;
-    return yaml.isPair(pair) && yaml.isScalar(pair.key) && pair.key.value === 'status';
+    return yaml.isPair(pair) && yaml.isScalar(pair.key) && pair.key.value === key;
 }
 
 export default function completionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: CompletionParams) => CompletionItem[] {
@@ -36,6 +41,13 @@ export default function completionProvider(documents: TextDocuments<TextDocument
 
         if (result == null) {
             return [];
+        }
+
+        // An action's `actor`: one of the timeline's actor keys, alone or in a list.
+        if (getKeyValueAt(textDocument, params.position, 'actor') != null || isInList(result, 'actor')) {
+            const actors = (document.toJS() as UnprocessedRaidData).actors ?? {};
+
+            return Object.entries(actors).map(([key, actor]) => ({ label: key, kind: CompletionItemKind.EnumMember, ...(actor?.name != null ? { labelDetails: { description: actor.name } } : {}) }));
         }
 
         const keyValue = getKeyValueAt(textDocument, params.position, 'id');

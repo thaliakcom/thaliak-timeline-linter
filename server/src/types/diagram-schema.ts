@@ -39,8 +39,9 @@ export interface DiagramSchema {
         gradient: { description: string };
         strategy: DiagramDefineKind;
         action: DiagramDefineKind;
+        /** The fields that every element kind ({@link ELEMENT_KINDS}) has. */
         element: DiagramDefineKind;
-    };
+    } & Record<typeof ELEMENT_KINDS[number], { description: string, fields?: Record<string, DiagramField> }>;
     looks: Record<'aoes' | 'tethers' | 'markers', Record<string, string>>;
     animations: {
         enter: Record<string, string>;
@@ -48,6 +49,23 @@ export interface DiagramSchema {
         /** The element types each animation is allowed on: all of them, only shapes, or a list of types. */
         elements: Record<'enter' | 'exit', Record<string, 'all' | 'shapes' | string[]>>;
     };
+}
+
+/** The `define` kinds of elements. Their fields are `define.element`'s, plus their own. */
+export const ELEMENT_KINDS = ['arena', 'actor', 'object', 'puddle', 'tether'] as const;
+/** Every `define` kind, as the parser knows them, except the removed `element`. */
+export const DEFINE_KINDS = [...ELEMENT_KINDS, 'action', 'gradient', 'strategy'] as const;
+/** The element fields that `define action` can't have, since its timeline action decides them (thaliak's `MOVED_KEYS`). */
+const ACTION_TIMELINE_KEYS = new Set(['type', 'size', 'angle', 'look']);
+
+/** The fields a `define` block of `kind` can have. Only an action's has the action fields; the removed `element` has the shared ones. */
+export function fieldsOfKind(schema: DiagramSchema, kind: string): Record<string, DiagramField> {
+    switch (kind) {
+        case 'gradient': return {};
+        case 'strategy': return schema.define.strategy.fields;
+        case 'action': return Object.fromEntries(Object.entries({ ...schema.define.action.fields, ...schema.define.element.fields }).filter(([key]) => !ACTION_TIMELINE_KEYS.has(key)));
+        default: return { ...schema.define.element.fields, ...(schema.define[kind as typeof ELEMENT_KINDS[number]]?.fields ?? {}) };
+    }
 }
 
 /** The values and their meanings that `field` lists itself or through `valuesFrom`. */

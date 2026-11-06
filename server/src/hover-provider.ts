@@ -69,6 +69,15 @@ export default function hoverProvider(documents: TextDocuments<TextDocument>, do
                     return { contents: { kind: 'markdown', value: tooltip }, range };
                 }
             },
+            'ac:': key => {
+                const actor = raidData.actors?.[key];
+
+                if (actor != null) {
+                    const what = actor.id != null ? `BNpcBase ${actor.id}` : 'The helper: every invisible helper. Its casts show no cast bar.';
+
+                    return { contents: { kind: 'markdown', value: makeDescription(actor.name ?? key, what) }, range };
+                }
+            },
             't:': key => {
                 if (enums.terms != null && enums.terms.yaml[key] != null) {
                     return { contents: { kind: 'markdown', value: makeDescription(key, enums.terms.yaml[key]) }, range };

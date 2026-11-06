@@ -5,12 +5,12 @@ import * as yaml from 'yaml';
 import { baseOf, DiagramToken, fieldsOf, idsOf, linesOf, liveIdsOf, occurrencesOf, timelineOf, Timeline, tokensOf, usesOfTimeline } from './diagram-context';
 import { ParserCache } from './parser-cache';
 import { RESOLVE_PRESETS } from './components/diagram/render/effects/presets';
-import { ThaliakTimelineLinterSettings } from './server';
+import { LinterOptions, ThaliakTimelineLinterSettings } from './server';
 import { actionTooltip, getStatusIcon, statusTooltip, type TooltipContext } from './tooltip';
-import { DiagramDefineKind, DiagramField, DiagramSchema, valuesOf } from './types/diagram-schema';
+import { DEFINE_KINDS, DiagramField, DiagramSchema, ELEMENT_KINDS, fieldsOfKind, valuesOf } from './types/diagram-schema';
 import { OutlineNode, OutlineParams, StatusIcon } from './types/outline';
 import { UnprocessedRaidData } from './types/raids';
-import { Definition, parse, tokenize } from './utility/diagram-ddl/parse';
+import { parse, tokenize } from './utility/diagram-ddl/parse';
 import { formatTime, getAction, getRange, getStatus, getStrategyKeys } from './util';
 
 const PLAYERS = ['T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2'];
@@ -44,8 +44,18 @@ function items(labels: Iterable<string>, kind: CompletionItemKind, edit: (label:
 }
 
 /** The keys of `section`, a map at the top level of the timeline. */
-function keysOf(timeline: Timeline | null, section: 'actions' | 'status'): string[] {
+function keysOf(timeline: Timeline | null, section: 'actions' | 'status' | 'actors'): string[] {
     return Object.keys(timeline?.js[section] ?? {});
+}
+
+/** The headmarker looks a diagram can use: those of `enums/headmarkers.yaml`, and `unknown`. */
+function headmarkerLooksOf(options: LinterOptions): string[] {
+    return [...new Set([...Object.values(options.enums.headmarkers?.yaml ?? {}), 'unknown'])];
+}
+
+/** The tether looks a diagram can use without a `define tether`: those of `enums/tethers.yaml`, and `unknown`. */
+function tetherLooksOf(options: LinterOptions): string[] {
+    return [...new Set([...Object.values(options.enums.tethers?.yaml ?? {}), 'unknown'])];
 }
 
 /** Reads where an argument list stands at its end: which clause is being written, and whether a value or a clause's name comes next. */
@@ -91,9 +101,11 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
         const wordStart = before.search(/[^\s,:]*$/);
         const edit = (label: string) => TextEdit.replace({ start: { line, character: wordStart }, end: params.position }, label);
         const timeline = timelineOf(documents, textDocument.uri);
-        const elementDefinitions = parsed.definitions.filter(definition => definition.kind === 'element').map(definition => definition.id);
-        const strategies = parsed.definitions.filter(definition => definition.kind === 'strategy').map(definition => definition.id);
-        const schema = documentCache.getLinterOptions(settings).diagramSchema;
+        /** The IDs of the definitions of `kinds`. */
+        const definedAs = (...kinds: string[]) => parsed.definitions.filter(definition => kinds.includes(definition.kind)).map(definition => definition.id);
+        const strategies = definedAs('strategy');
+        const options = documentCache.getLinterOptions(settings);
+        const schema = options.diagramSchema;
         const groups = groupsOf(schema);
         const verbsOfSchema = schema?.verbs ?? {};
         /** The verbs that stand on their own, without a colon or arguments. */
@@ -103,11 +115,15 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 
         // The header of a `define` block.
         if (/^define\s+\S*$/.test(before)) {
-            return keyword(['element', 'action', 'gradient', 'strategy'], label => schema?.define[label as Definition['kind']].description);
+            return keyword(DEFINE_KINDS, label => schema?.define[label as typeof DEFINE_KINDS[number]].description);
         }
 
         if (/^define\s+action\s+\S*$/.test(before)) {
             return member(keysOf(timeline, 'actions'));
+        }
+
+        if (/^define\s+actor\s+\S*$/.test(before)) {
+            return member(keysOf(timeline, 'actors'));
         }
 
         // The ID of anything else is new, so there's nothing to suggest.
@@ -140,13 +156,15 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             const spec = schema != null ? fieldsOfKind(schema, definition.kind)[field[1]!] : undefined;
 
             switch (field[1]) {
-                case 'flash': return member(elementDefinitions);
-                case 'use': return member(liveIdsOf(tokensOf(source, parsed)));
+                case 'flash': return member(definedAs(...ELEMENT_KINDS));
+                case 'attached': return member(['true', 'false', ...keysOf(timeline, 'actors')]);
+                case 'headmarker': return /\S\s/.test(field[2]!) ? [] : member(headmarkerLooksOf(options));
                 case 'covers': return member(timeline != null ? getStrategyKeys(timeline.document) : []);
                 case 'exit': {
                     const values = spec != null ? valuesOf(schema!, spec) : {};
+                    const hooks = ['+effect', '-actor', '+actor', '+headmarker', '-headmarker', '+object', '-object', '+puddle', '-puddle', '+status', '-status'];
 
-                    return [...keyword(['+effect', '-actor', '+actor', '+marker', '-marker', '+status', '-status'], label => schema?.verbs[label]?.description), ...member(Object.keys(values), 'b', label => values[label])];
+                    return [...keyword(hooks, label => schema?.verbs[label]?.description), ...member(Object.keys(values), 'b', label => values[label])];
                 }
                 default: {
                     const values = spec != null ? valuesOf(schema!, spec) : {};
@@ -212,16 +230,23 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
                 case 'status':
                     return member(new Set([...keysOf(timeline, 'status'), ...Object.keys(documentCache.getLinterOptions(settings).enums.common?.yaml.status ?? {})]));
                 case 'effect':
-                    return member(RESOLVE_PRESETS as readonly string[], undefined, label => schema?.animations.exit[label]);
+                    return member([...RESOLVE_PRESETS, 'hello-world'], undefined, label => schema?.animations.exit[label] ?? schema?.looks.markers[label]);
                 case 'strategy':
                     return member(strategies);
                 case 'thumbnail':
                     return member(timeline != null ? getStrategyKeys(timeline.document) : []);
                 case 'actor':
-                case 'marker':
+                case 'object':
+                case 'puddle':
+                case 'headmarker':
                 case 'tether':
                     if (sign === '+') {
-                        return member(elementDefinitions);
+                        switch (verb) {
+                            case 'actor': return member(keysOf(timeline, 'actors'), undefined, label => timeline?.js.actors?.[label]?.name);
+                            case 'headmarker': return member(headmarkerLooksOf(options), undefined, label => schema?.looks.markers[label]);
+                            case 'tether': return [...member(definedAs('tether')), ...member(tetherLooksOf(options), 'b', label => schema?.looks.tethers[label])];
+                            default: return member(definedAs(verb));
+                        }
                     }
                 // falls through
                 case 'depart':
@@ -233,20 +258,6 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             }
         }
     };
-}
-
-/** The fields a `define` block of `kind` can have. Only an action's has the action fields. */
-/** The element fields that `define action` can't have, since its timeline action decides them. */
-const ACTION_TIMELINE_KEYS = new Set(['type', 'size', 'angle', 'look']);
-
-function fieldsOfKind(schema: DiagramSchema, kind: Definition['kind']): DiagramDefineKind['fields'] {
-    switch (kind) {
-        case 'gradient': return {};
-        case 'strategy': return schema.define.strategy.fields;
-        // What an action draws comes from its timeline action, so these come from there instead (thaliak's `MOVED_KEYS`).
-        case 'action': return Object.fromEntries(Object.entries({ ...schema.define.action.fields, ...schema.define.element.fields }).filter(([key]) => !ACTION_TIMELINE_KEYS.has(key)));
-        case 'element': return schema.define.element.fields;
-    }
 }
 
 /** A field's tooltip: its name and what it does. */
@@ -328,7 +339,7 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
             const definition = parsed.definitions.find(x => x.line - 1 === line);
 
             if (word === 'define') return hover(`**define**\n\n${schema.define.description}`);
-            if (definition != null && word === definition.kind) return hover(`**define ${word}**\n\n${schema.define[definition.kind].description}`);
+            if (definition != null && word === definition.kind && definition.kind !== 'element') return hover(`**define ${word}**\n\n${schema.define[definition.kind].description}`);
 
             return definition?.kind === 'action' && isAction(definition.id) ? hover(await actionTooltip(context, definition.id)) : null;
         }
@@ -401,6 +412,31 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
     };
 }
 
+/**
+ * The `duration` of the puddle each `+puddle` spawns, by the 0-based line of the statement (or of the `exit` hook line),
+ * for the puddles whose `define puddle` has one. With several subjects on one line, the first with a duration counts.
+ */
+function puddleLifetimesOf(source: string): Map<number, string> {
+    const parsed = parse(source);
+    const lines = linesOf(source);
+    const durations = new Map(parsed.definitions.filter(definition => definition.kind === 'puddle').flatMap(definition => {
+        const duration = fieldsOf(definition, lines).find(field => field.key === 'duration')?.value;
+
+        return duration != null && duration !== '' ? [[definition.id, duration] as const] : [];
+    }));
+    const lifetimes = new Map<number, string>();
+
+    for (const token of tokensOf(source, parsed)) {
+        const duration = durations.get(baseOf(token.text));
+
+        if (token.kind === 'subject' && token.statement?.verb === 'puddle' && token.statement.sign === '+' && duration != null && !lifetimes.has(token.line)) {
+            lifetimes.set(token.line, duration);
+        }
+    }
+
+    return lifetimes;
+}
+
 /** How far from a timeline action a `.diagram` time still counts as near it, in ms. */
 const NEAR_ACTION = 1000;
 
@@ -415,28 +451,39 @@ export function diagramInlayHintProvider(documents: TextDocuments<TextDocument>)
 
         const timeline = timelineOf(documents, textDocument.uri);
         const uses = timeline != null ? usesOfTimeline(timeline) : [];
-        const lines = textDocument.getText().split(/\r?\n/);
+        const source = textDocument.getText();
+        const lines = source.split(/\r?\n/);
+        const lifetimes = puddleLifetimesOf(source);
         const hints: InlayHint[] = [];
 
         for (let line = params.range.start.line; line <= params.range.end.line && line < lines.length; line++) {
             const time = /^\d+/.exec(lines[line]!)?.[0];
+            const labels: string[] = [];
 
-            if (time == null) {
-                continue;
+            if (time != null) {
+                const at = Number(time);
+                const nearest = uses.reduce((best, use) => Math.min(best, Math.abs(use.at - at)), Infinity);
+                const near = nearest <= NEAR_ACTION ? [...new Set(uses.filter(use => Math.abs(use.at - at) === nearest).map(use => {
+                    const offset = at - use.at;
+
+                    return offset === 0 ? use.action : `${use.action} ${offset > 0 ? '+' : ''}${offset}`;
+                }))] : [];
+
+                labels.push(formatTime(at), ...near);
             }
 
-            const at = Number(time);
-            const nearest = uses.reduce((best, use) => Math.min(best, Math.abs(use.at - at)), Infinity);
-            const near = nearest <= NEAR_ACTION ? [...new Set(uses.filter(use => Math.abs(use.at - at) === nearest).map(use => {
-                const offset = at - use.at;
+            if (lifetimes.has(line)) {
+                labels.push(`lasts ${lifetimes.get(line)}`);
+            }
 
-                return offset === 0 ? use.action : `${use.action} ${offset > 0 ? '+' : ''}${offset}`;
-            }))] : [];
+            if (labels.length === 0) {
+                continue;
+            }
 
             // At the end of the line: anywhere earlier, a hint pushes the file's aligned columns apart.
             hints.push({
                 position: { line, character: lines[line]!.length },
-                label: [formatTime(at), ...near].join(' '),
+                label: labels.join(' '),
                 paddingLeft: true
             });
         }
@@ -621,7 +668,7 @@ export function diagramOutlineProvider(documents: TextDocuments<TextDocument>): 
 
             return {
                 label: definition.id,
-                description: definition.kind !== 'element' ? definition.kind : look,
+                description: [definition.kind, look].filter(part => part != null && part !== '').join(' '),
                 icon: { kind: 'element', key: definition.id, type: text('type'), look },
                 range: lineRange(line, fields.at(-1)?.line ?? line),
                 selection: lineRange(line, line),
