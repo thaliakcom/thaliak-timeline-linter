@@ -57,7 +57,8 @@ export default function completionProvider(documents: TextDocuments<TextDocument
             isActionId = true;
         } else if (statusKeyValue != null || isInStatusList(result)) {
             isStatusId = true;
-        } else if (!yaml.isScalar(result.node) || typeof result.node.value !== 'string' || (yaml.isPair(result.parent?.node) && result.node === result.parent.node.key)) {
+        // An empty value (`shape: `) is a scalar whose value is `null`; it gets the same suggestions as a value being typed.
+        } else if (!yaml.isScalar(result.node) || (typeof result.node.value !== 'string' && result.node.value !== null) || (yaml.isPair(result.parent?.node) && result.node === result.parent.node.key)) {
             return [];
         }
 

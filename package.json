@@ -79,6 +79,12 @@
                     "default": true,
                     "description": "Shows the icons of AoE shapes inline, in front of `shape` values, `ms:` references and the actions of `+aoe` statements. Needs inlay hints."
                 },
+                "thaliak-timeline-linter.completion.schemaEnums": {
+                    "scope": "window",
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Suggests the values of the timeline schema's enums (e.g. for `shape`), with their descriptions. Turn off if the YAML extension's suggestions of the same values show up twice."
+                },
                 "thaliak-timeline-linter.trace.server": {
                     "scope": "window",
                     "type": "string",

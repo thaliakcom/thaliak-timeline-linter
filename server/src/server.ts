@@ -4,6 +4,8 @@
  * ------------------------------------------------------------------------------------------ */
 import {
     CodeActionKind,
+    CompletionItem,
+    CompletionParams,
     createConnection,
     Diagnostic,
     DocumentDiagnosticReportKind,
@@ -22,6 +24,7 @@ import {
 import * as yaml from 'yaml';
 import codeActionProvider from './code-action-provider';
 import completionProvider from './completion-provider';
+import { schemaEnumAt } from './schema-enums';
 import definitionProvider from './definition-provider';
 import hoverProvider, { tooltipProvider } from './hover-provider';
 import { lintDocument } from './linter';
@@ -259,7 +262,28 @@ function byFileType<P, R>(uriOf: (params: P) => string, diagram: (params: P) => 
 const textDocumentUri = (params: { textDocument: { uri: string } }) => params.textDocument.uri;
 const outlineUri = (params: { uri: string }) => params.uri;
 
-connection.onCompletion(byFileType(textDocumentUri, diagramCompletionProvider(documents, documentCache, globalSettings), completionProvider(documents, documentCache, globalSettings)));
+const timelineCompletion = completionProvider(documents, documentCache, globalSettings);
+
+/**
+ * The timeline's completion items, without those that the YAML extension already suggests from the schema's `enum`
+ * at the cursor if the user turned them off (`thaliak-timeline-linter.completion.schemaEnums`, read on every request).
+ */
+async function timelineCompletionWithoutSchemaEnums(params: CompletionParams): Promise<CompletionItem[]> {
+    const items = timelineCompletion(params);
+    const enabled = await connection.workspace.getConfiguration('thaliak-timeline-linter.completion') as { schemaEnums?: boolean } | null;
+    const textDocument = documents.get(params.textDocument.uri);
+    const document = textDocument != null ? documentCache.get(textDocument) : null;
+
+    if (enabled?.schemaEnums !== false || items.length === 0 || textDocument == null || document == null) {
+        return items;
+    }
+
+    const schemaEnum = schemaEnumAt(document, textDocument, params.position);
+
+    return schemaEnum != null ? items.filter(item => !schemaEnum.has(item.label)) : items;
+}
+
+connection.onCompletion(byFileType<CompletionParams, CompletionItem[] | Promise<CompletionItem[]>>(textDocumentUri, diagramCompletionProvider(documents, documentCache, globalSettings), timelineCompletionWithoutSchemaEnums));
 
 connection.onHover(byFileType(textDocumentUri, diagramHoverProvider(documents, documentCache, globalSettings), hoverProvider(documents, documentCache, globalSettings)));
 connection.onDefinition(byFileType(textDocumentUri, diagramDefinitionProvider(documents), definitionProvider(documents, documentCache, globalSettings)));
