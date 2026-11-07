@@ -28,6 +28,11 @@ const MIN_HINT_DURATION = 3000;
 const PLAYER_ICON_RADIUS = 7.5 / 2 / 4.39;
 /** How often a follow is played out, in ms. */
 const FOLLOW_STEP = 50;
+/**
+ * How fast a follower turns toward what it follows, in degrees per ms, so that it turns rather than snaps where its
+ * target got far from its front, as after a cast lock. Provisional, until tested against footage.
+ */
+const FOLLOW_TURN_SPEED = 360 / 1000;
 /** A fixed-size list of numbers in round brackets, `(0.5, 0)`, not right after a name, so that `rgba(0, 0, 0, 1)` stays as it is. */
 const ROUND_TUPLE = /(?<![\w-])\(\s*(-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+)\s*\)/g;
 /** The same in square brackets, which are only for placeholders. */
@@ -1403,7 +1408,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
     /**
      * Plays out each `+follow` over its target's known path and writes it as ordinary poses and turns, since seeking
-     * is a pure function of time and can't simulate. A follower turns toward its target and, with `on`, chases it at its
+     * is a pure function of time and can't simulate. A follower turns toward its target (at most at `FOLLOW_TURN_SPEED`) and, with `on`, chases it at its
      * `speed` until it's within its `reach`. While it casts an action whose `actor` it is (see `castersOf`), and through the action's
      * attack animation after that (`animationLock`), it holds still, and only turns if the action `tracks`. During a `turn`, it holds still and turns away and back.
      */
@@ -1476,7 +1481,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                         : phase <= away.over + away.hold ? facingAway
                         : facingAway + (followed - facingAway) * Math.min(1, (phase - away.over - away.hold) / Math.max(away.over, 1));
                 } else {
-                    if (lock == null || lock.tracks) front = followed;
+                    if (lock == null || lock.tracks) front += Math.max(-FOLLOW_TURN_SPEED * elapsed, Math.min(FOLLOW_TURN_SPEED * elapsed, followed - front));
 
                     if (follow.chase && lock == null) {
                         const [unitsX, unitsY] = unitsPerYalm(t);

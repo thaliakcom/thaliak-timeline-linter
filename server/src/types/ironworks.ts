@@ -1,6 +1,11 @@
 import { Job } from './jobs.js';
 
-export interface Status {
+interface BaseSheet {
+    /** The version of ironworks-cli's output for this sheet that the row was written with (see its `AGENTS.md`). */
+    schemaVersion: number;
+}
+
+export interface Status extends BaseSheet {
     name: string;
     description: string;
     icon: number;
@@ -14,7 +19,7 @@ export interface Status {
     isPermanent: boolean;
 }
 
-export interface Action {
+export interface Action extends BaseSheet {
     name: string;
     icon: number;
     actionCategory: number;
@@ -57,7 +62,7 @@ export interface Action {
     omenAltType?: number;
 }
 
-export interface BNpcBase {
+export interface BNpcBase extends BaseSheet {
     scale: number;
     modelChara: number;
     isOmnidirectional: boolean;
@@ -68,13 +73,13 @@ export interface BNpcBase {
     modelCharaType: number;
 }
 
-export interface ModelSkeleton {
+export interface ModelSkeleton extends BaseSheet {
     radius: number;
     height: number;
     VFXScale: number;
 }
 
-export interface ContentFinderCondition {
+export interface ContentFinderCondition extends BaseSheet {
     name: string;
     nameShort: string;
     shortCode: string;
@@ -91,9 +96,9 @@ export interface ContentFinderCondition {
     icon: number;
 }
 
-export type ClassJobCategory = { name: string } & Record<Job, boolean>;
+export type ClassJobCategory = { schemaVersion: number, name: string } & Record<Job, boolean>;
 
-export interface ClassJob {
+export interface ClassJob extends BaseSheet {
     name: string;
     abbreviation: string;
     classJobCategory: number;

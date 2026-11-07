@@ -4,6 +4,7 @@ import * as childProcess from 'child_process';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as paths from 'path';
+import { Status as GameStatus, Action as GameAction, BNpcBase as GameBNpcBase, ModelSkeleton as GameModelSkeleton } from './types/ironworks.js';
 
 /** The game data settings, which the client passes in `initializationOptions.ironworks`. */
 export interface IronworksOptions {
@@ -17,56 +18,9 @@ export interface IronworksOptions {
     ownsCache: boolean;
 }
 
-/** The fields of `ironworks-cli Status` that the extension uses. */
-export interface GameStatus {
-    name: string;
-    description: string;
-    icon: number;
-    maxStacks: number;
-    statusCategory: number;
-    canDispel: boolean;
-    isPermanent: boolean;
-}
-
-/** The fields of `ironworks-cli Action` that the extension uses. */
-export interface GameAction {
-    name: string;
-    /** Only job actions have one. */
-    description?: string;
-    icon: number;
-    /** The cast up to where the animation starts. */
-    cast100ms: number;
-    /** The rest of the cast, after the animation starts (see {@link castTimeOf}). */
-    extraCastTime100ms: number;
-    range: number;
-    effectRange: number;
-    attackType: number;
-    aspect: number;
-    XAxisModifier: number;
-    castType: number;
-    omenPath?: string;
-    isPlayerAction: boolean;
-    canTargetHostile: boolean;
-}
-
 /** An action's whole cast in ms: up to where its animation starts, plus the extra cast time that ends with the hit. */
 export function castTimeOf(game: GameAction): number {
     return (game.cast100ms + (game.extraCastTime100ms ?? 0)) * 100;
-}
-
-/** The fields of `ironworks-cli BNpcBase` that the extension uses. */
-export interface GameBNpcBase {
-    scale: number;
-    /** The linked ModelChara's hitbox radius, or 0 if its model skeleton's radius applies. */
-    modelCharaRadius: number;
-    modelCharaModel: number;
-    /** The linked ModelChara's model type: 1 human, 2 demihuman, 3 monster. */
-    modelCharaType: number;
-}
-
-/** The fields of `ironworks-cli ModelSkeleton` that the extension uses. */
-export interface GameModelSkeleton {
-    radius: number;
 }
 
 /** An icon in the cache. */
@@ -99,6 +53,8 @@ let options: IronworksOptions | null = null;
 let warn: (message: string) => void = () => {};
 /** Whether the CLI works with the game directory. Probed once, on the first request. */
 let ready: Promise<boolean> | null = null;
+/** The current schema version of each sheet's output, by sheet name (`ironworks-cli --schema-version`). Set by the probe. */
+let schemaVersions: Record<string, number> = {};
 /** The results by subcommand and ID (`null` if there are none), for the lifetime of the server. Requests for the same ID share one call. */
 const results = new Map<string, Promise<Buffer | null>>();
 
@@ -166,7 +122,14 @@ async function load(subcommand: Subcommand, id: number): Promise<Buffer | null> 
     const path = cacheFile(subcommand, id);
 
     try {
-        return await fs.readFile(path);
+        const cached = await fs.readFile(path);
+
+        if (subcommand === 'icon' || isCurrent(subcommand, cached)) {
+            return cached;
+        }
+
+        // Written by an older ironworks-cli, so it may lack fields: fetched again below.
+        await fs.rm(path, { force: true });
     } catch {
         // Not cached yet.
     }
@@ -195,6 +158,17 @@ async function load(subcommand: Subcommand, id: number): Promise<Buffer | null> 
     return output;
 }
 
+/** Whether a cached row is at least as new as the output of the ironworks-cli in use. A newer one is fine. */
+function isCurrent(sheet: Exclude<Subcommand, 'icon'>, row: Buffer): boolean {
+    try {
+        const version = (JSON.parse(row.toString('utf-8')) as { schemaVersion?: number }).schemaVersion;
+
+        return version != null && version >= (schemaVersions[sheet] ?? 0);
+    } catch {
+        return false;
+    }
+}
+
 /**
  * Checks that the CLI runs and reads the game, warning the user if it doesn't. Clears the cached
  * `status` and `actions` of the extension's own cache after a game update, since those can change.
@@ -217,6 +191,13 @@ async function probe(): Promise<boolean> {
 
     if (version == null) {
         warn(`ironworks-cli couldn't read the game in "${options.gameDirectory}". Check thaliak-timeline-linter.gameDirectory, then restart the language server.`);
+        return false;
+    }
+
+    try {
+        schemaVersions = JSON.parse((await run(['--schema-version'])).toString('utf-8')) as Record<string, number>;
+    } catch (e) {
+        warn(`ironworks-cli ("${options.executable}") is outdated: it has no --schema-version. Install the latest version, then restart the language server. (${e instanceof Error ? e.message : e})`);
         return false;
     }
 
