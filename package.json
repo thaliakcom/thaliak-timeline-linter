@@ -98,6 +98,13 @@
                 }
             }
         },
+        "configurationDefaults": {
+            "[thaliak-diagram]": {
+                "editor.detectIndentation": false,
+                "editor.insertSpaces": true,
+                "editor.tabSize": 4
+            }
+        },
         "languages": [
             {
                 "id": "thaliak-diagram",
