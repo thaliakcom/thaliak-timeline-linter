@@ -44,7 +44,7 @@ import { configureIronworks, type IronworksOptions } from './ironworks';
 import { diagramOf, isDiagramUri, statusKeysOf } from './diagram-context';
 import { lintDiagram } from './diagram-linter';
 import { lintGameData } from './game-data-rules';
-import { diagramCompletionProvider, diagramDefinitionProvider, diagramHoverProvider, diagramInlayHintProvider, diagramOutlineProvider, diagramReferenceProvider, diagramStatusIconProvider } from './diagram-providers';
+import { diagramCompletionProvider, diagramDefinitionProvider, diagramDocumentSymbolProvider, diagramHoverProvider, diagramInlayHintProvider, diagramOutlineProvider, diagramReferenceProvider, diagramStatusIconProvider } from './diagram-providers';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -80,6 +80,7 @@ connection.onInitialize((params: InitializeParams) => {
             hoverProvider: true,
             definitionProvider: true,
             referencesProvider: true,
+            documentSymbolProvider: true,
             renameProvider: { prepareProvider: true },
             codeActionProvider: {
                 codeActionKinds: [CodeActionKind.QuickFix]
@@ -288,6 +289,8 @@ connection.onCompletion(byFileType<CompletionParams, CompletionItem[] | Promise<
 connection.onHover(byFileType(textDocumentUri, diagramHoverProvider(documents, documentCache, globalSettings), hoverProvider(documents, documentCache, globalSettings)));
 connection.onDefinition(byFileType(textDocumentUri, diagramDefinitionProvider(documents), definitionProvider(documents, documentCache, globalSettings)));
 connection.onReferences(byFileType(textDocumentUri, diagramReferenceProvider(documents), referenceProvider(documents, documentCache, globalSettings)));
+// Timelines get theirs from the YAML extension.
+connection.onDocumentSymbol(byFileType(textDocumentUri, diagramDocumentSymbolProvider(documents), () => null));
 connection.onRenameRequest(renameProvider(documents, documentCache, globalSettings));
 connection.onPrepareRename(prepareRenameProvider(documents, documentCache, globalSettings));
 connection.onCodeAction(codeActionProvider(documents, documentCache, globalSettings));

@@ -1,3 +1,7 @@
+import { TYPES_OF_KIND } from '../utility/diagram-ddl/compile';
+import { Definition } from '../utility/diagram-ddl/parse';
+import { DDL_MARKER_LOOKS, SHAPE_TYPES } from '../utility/diagram-enums';
+
 /** A field of a `define` block in `schemas/diagram.schema.json`. */
 export interface DiagramField {
     type: DiagramValueType | DiagramValueType[];
@@ -73,4 +77,70 @@ export function valuesOf(schema: DiagramSchema, field: DiagramField): Record<str
     const lists = (field.valuesFrom ?? []).map(path => path.split('.').reduce<any>((value, key) => value?.[key], schema) as Record<string, string> | undefined);
 
     return Object.assign({}, field.values, ...lists);
+}
+
+/** The element fields that only some types have, by those types, as the schema describes them. */
+const FIELDS_OF_TYPES: Record<string, readonly string[]> = {
+    image: ['image'],
+    shape: ['image'],
+    angle: ['cone'],
+    fade: ['rectangle'],
+    width: ['link'],
+    // An image has no look, and the colour of a shape or a tether is its look's (`validateDefinitions()`).
+    look: [...SHAPE_TYPES, 'graphic', 'link'],
+    color: ['image', 'graphic']
+};
+/** The element fields that only some kinds have, by those kinds, as the schema describes them. */
+const FIELDS_OF_KINDS: Record<string, readonly string[]> = { margin: ['arena'], speed: ['actor'], reach: ['actor'] };
+
+/**
+ * The element types a `define` block can draw: the `type` it has, or else every type of its kind (the compiler's
+ * `TYPES_OF_KIND`). An action draws one of the shapes, and the other kinds nothing.
+ */
+export function typesOfBlock(kind: string, type: string | undefined): readonly string[] {
+    if (kind === 'action') return SHAPE_TYPES;
+
+    const allowed = TYPES_OF_KIND[kind as Definition['kind']] ?? [];
+
+    return type != null && allowed.includes(type) ? [type] : allowed;
+}
+
+/** The fields worth suggesting in a block of `kind` that draws one of `types`: those of {@link fieldsOfKind} that it can use. */
+export function suggestedFieldsOf(schema: DiagramSchema, kind: string, types: readonly string[]): Record<string, DiagramField> {
+    // A kind with one type implies it (the arena and tethers), so writing it changes nothing.
+    const impliesType = TYPES_OF_KIND[kind as Definition['kind']]?.length === 1;
+
+    return Object.fromEntries(Object.entries(fieldsOfKind(schema, kind)).filter(([key]) =>
+        !(key === 'type' && impliesType) && (FIELDS_OF_KINDS[key]?.includes(kind) ?? true) && (FIELDS_OF_TYPES[key]?.some(type => types.includes(type)) ?? true)));
+}
+
+/**
+ * The values worth suggesting for the field `key` of a block of `kind` that draws one of `types`: only its kind's types,
+ * the looks of those types, and the animations they can play.
+ */
+export function suggestedValuesOf(schema: DiagramSchema, kind: string, types: readonly string[], key: string, field: DiagramField): Record<string, string> {
+    const values = valuesOf(schema, field);
+    const only = (keys: Iterable<string>) => Object.fromEntries([...new Set(keys)].filter(value => values[value] != null).map(value => [value, values[value]!]));
+
+    switch (key) {
+        case 'type':
+            return kind === 'action' ? {} : only(TYPES_OF_KIND[kind as Definition['kind']] ?? []);
+        case 'look':
+            return only(types.flatMap(type => SHAPE_TYPES.includes(type) ? Object.keys(schema.looks.aoes)
+                : type === 'link' ? Object.keys(schema.looks.tethers)
+                : type === 'graphic' ? DDL_MARKER_LOOKS.graphics
+                : []));
+        case 'enter':
+        case 'exit': {
+            const allowed = schema.animations.elements[key];
+
+            return only(Object.keys(values).filter(name => {
+                const on = allowed[name];
+
+                return on == null || on === 'all' || types.some(type => on === 'shapes' ? SHAPE_TYPES.includes(type) : on.includes(type === 'graphic' ? 'marker' : type));
+            }));
+        }
+        default:
+            return values;
+    }
 }

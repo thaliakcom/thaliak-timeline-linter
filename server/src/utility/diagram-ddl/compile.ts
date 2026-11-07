@@ -89,7 +89,7 @@ const REMOVED_KEYS = ['flash', 'flashLook', 'hold', 'hidden'];
 /** The element kinds that `define` declares, by the verb that places them. */
 const KIND_OF_VERB: Record<string, Definition['kind']> = { actor: 'actor', object: 'object', puddle: 'puddle', tether: 'tether' };
 /** The element types each kind can have, as written; `type: graphic` is the viewer's `marker`. A kind with one type implies it. */
-const TYPES_OF_KIND: Partial<Record<Definition['kind'], readonly string[]>> = {
+export const TYPES_OF_KIND: Partial<Record<Definition['kind'], readonly string[]>> = {
     arena: ['image'],
     tether: ['link'],
     actor: ['image', 'graphic'],
@@ -533,6 +533,12 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
     const strategies: CompiledDiagram['strategies'] = [];
 
     for (const definition of definitions) {
+        // A definition without a body does nothing: what it names stays as it would be without it.
+        if (Object.keys(definition.fields).length === 0 && definition.body.length === 0) {
+            error(definition.line, `${definition.kind === 'arena' ? '"define arena"' : `"${definition.id}"`} is empty, which does nothing: give it fields or remove it`);
+            continue;
+        }
+
         if (definition.kind === 'gradient') {
             gradients[definition.id] = definition.body.join(' ');
             continue;
@@ -1258,7 +1264,6 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     const facts = actions[action];
 
                     if (facts == null) error(s.line, `unknown action "${action}"`);
-                    if (actionDefs[action] == null && !isRaidwide(facts)) error(s.line, `"${action}" has no definition`);
 
                     const use = uses.find(u => u.action === action && u.at >= s.at && placedCount(u, within) < expectedCount(u));
 

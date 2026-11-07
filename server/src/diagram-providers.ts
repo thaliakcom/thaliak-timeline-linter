@@ -1,17 +1,17 @@
 // The language features of `.diagram` files other than diagnostics.
-import { CompletionItem, CompletionItemKind, CompletionParams, DefinitionLink, DefinitionParams, Hover, HoverParams, InlayHint, InlayHintParams, Location, Position, Range, ReferenceParams, TextDocuments, TextEdit } from 'vscode-languageserver';
+import { CompletionItem, CompletionItemKind, CompletionParams, DefinitionLink, DefinitionParams, DocumentSymbol, DocumentSymbolParams, Hover, HoverParams, InlayHint, InlayHintParams, Location, Position, Range, ReferenceParams, SymbolKind, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
-import { baseOf, DiagramToken, fieldsOf, idsOf, linesOf, liveIdsOf, occurrencesOf, timelineOf, Timeline, tokensOf, usesOfTimeline } from './diagram-context';
+import { baseOf, DiagramToken, fieldsOf, idsOf, isStrategyToken, linesOf, liveIdsOf, occurrencesOf, timelineOf, Timeline, tokensOf, usesOfTimeline } from './diagram-context';
 import { ParserCache } from './parser-cache';
 import { RESOLVE_PRESETS } from './components/diagram/render/effects/presets';
 import { LinterOptions, ThaliakTimelineLinterSettings } from './server';
 import { actionTooltip, getStatusIcon, statusTooltip, type TooltipContext } from './tooltip';
-import { DEFINE_KINDS, DiagramField, DiagramSchema, fieldsOfKind, valuesOf } from './types/diagram-schema';
+import { DEFINE_KINDS, DiagramField, DiagramSchema, fieldsOfKind, suggestedFieldsOf, suggestedValuesOf, typesOfBlock, valuesOf } from './types/diagram-schema';
 import { OutlineNode, OutlineParams, StatusIcon } from './types/outline';
 import { UnprocessedRaidData } from './types/raids';
 import { parse, tokenize } from './utility/diagram-ddl/parse';
-import { formatTime, getAction, getRange, getStatus, getStrategyKeys } from './util';
+import { formatTime, getAction, getActor, getRange, getStatus, getStrategyKeys } from './util';
 
 const PLAYERS = ['T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2'];
 
@@ -142,31 +142,35 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
                 return [];
             }
 
+            // Only what the block can draw: its `type`, or else any type of its kind.
+            const types = typesOfBlock(definition.kind, fieldsOf(definition, lines).find(x => x.key === 'type')?.value);
+
             if (field == null) {
                 // Without a colon yet, it's a key, unless the line continues `exit`.
                 if (schema == null) {
                     return [];
                 }
 
-                const known = fieldsOfKind(schema, definition.kind);
+                const known = suggestedFieldsOf(schema, definition.kind, types);
 
                 return keyword(Object.keys(known), label => known[label]?.description);
             }
 
             const spec = schema != null ? fieldsOfKind(schema, definition.kind)[field[1]!] : undefined;
+            const valuesOfField = () => spec != null ? suggestedValuesOf(schema!, definition.kind, types, field[1]!, spec) : {};
 
             switch (field[1]) {
                 case 'attached': return member(['true', 'false', ...keysOf(timeline, 'actors')]);
                 case 'headmarker': return /\S\s/.test(field[2]!) ? [] : member(headmarkerLooksOf(options));
                 case 'covers': return member(timeline != null ? getStrategyKeys(timeline.document) : []);
                 case 'exit': {
-                    const values = spec != null ? valuesOf(schema!, spec) : {};
+                    const values = valuesOfField();
                     const hooks = ['+effect', '-actor', '+actor', '+headmarker', '-headmarker', '+object', '-object', '+puddle', '-puddle', '+status', '-status'];
 
                     return [...keyword(hooks, label => schema?.verbs[label]?.description), ...member(Object.keys(values), 'b', label => values[label])];
                 }
                 default: {
-                    const values = spec != null ? valuesOf(schema!, spec) : {};
+                    const values = valuesOfField();
 
                     return member(Object.keys(values), undefined, label => values[label]);
                 }
@@ -304,8 +308,8 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
         const context: TooltipContext = { raid: timeline?.js as UnprocessedRaidData | null ?? null, enums: options.enums };
 
         /** What a `define` block of `id` says, as written. */
-        const definedAs = (id: string) => {
-            const definition = parsed.definitions.find(x => x.id === id);
+        const definedAs = (id: string, strategy: boolean = false) => {
+            const definition = parsed.definitions.find(x => x.id === id && (x.kind === 'strategy') === strategy);
 
             return definition != null ? `\`\`\`thaliak-diagram\n${lines.slice(definition.line - 1, (fieldsOf(definition, lines).at(-1)?.line ?? definition.line - 1) + 1).join('\n')}\n\`\`\`` : null;
         };
@@ -318,6 +322,10 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
 
             if (verb === 'effect' && kind === 'subject') {
                 return schema.animations.exit[id] != null ? `**${id}**\n\n${schema.animations.exit[id]}` : null;
+            }
+
+            if (verb === 'strategy') {
+                return definedAs(id, true);
             }
 
             const base = baseOf(idsOf(id)[0]!);
@@ -537,7 +545,8 @@ export function diagramDefinitionProvider(documents: TextDocuments<TextDocument>
             return [linkTo(token, timeline!.textDocument, action)];
         }
 
-        const definition = parsed.definitions.find(x => x.id === base);
+        const strategy = isStrategyToken(token, parsed.definitions);
+        const definition = parsed.definitions.find(x => x.id === base && (x.kind === 'strategy') === strategy);
 
         if (definition == null) {
             return null;
@@ -568,7 +577,10 @@ export function diagramReferenceProvider(documents: TextDocuments<TextDocument>)
         }
 
         const uri = textDocument.uri;
-        const tokens = tokensOf(textDocument.getText());
+        const source = textDocument.getText();
+        const parsed = parse(source);
+        const { definitions } = parsed;
+        const tokens = tokensOf(source, parsed);
         const token = tokenAt(tokens, params.position);
 
         if (token == null) {
@@ -587,19 +599,27 @@ export function diagramReferenceProvider(documents: TextDocuments<TextDocument>)
             ];
         }
 
+        // A strategy's ID is only ever a strategy's, even where an element has the same one.
+        if (isStrategyToken(token, definitions)) {
+            return tokens
+                .filter(other => isStrategyToken(other, definitions) && other.text === token.text)
+                .map(other => ({ uri, range: { start: { line: other.line, character: other.start }, end: { line: other.line, character: other.end } } }));
+        }
+
         const ids = idsOf(token.text);
         const isDefinition = ids.every(id => !id.includes('#'));
         const bases = new Set(ids.map(baseOf));
         const matches = (other: DiagramToken) => idsOf(other.text).some(id => isDefinition ? bases.has(baseOf(id)) : ids.includes(id));
         const locations: Location[] = tokens
-            .filter(other => other.statement?.verb !== 'status' && other.statement?.verb !== 'effect' && matches(other))
+            .filter(other => other.statement?.verb !== 'status' && other.statement?.verb !== 'effect' && !isStrategyToken(other, definitions) && matches(other))
             .map(other => ({ uri, range: { start: { line: other.line, character: other.start }, end: { line: other.line, character: other.end } } }));
 
         for (const base of bases) {
-            const action = timeline != null ? getAction(timeline.document, base) : null;
-
-            if (action != null) {
-                locations.push({ uri: timeline!.textDocument.uri, range: getRange(timeline!.textDocument, action.key.range!) });
+            // An actor's key is also the timeline's, as with `+actor: garuda` or `attached: garuda`.
+            for (const entry of timeline != null ? [getAction(timeline.document, base), getActor(timeline.document, base)] : []) {
+                if (entry != null) {
+                    locations.push({ uri: timeline!.textDocument.uri, range: getRange(timeline!.textDocument, entry.key.range!) });
+                }
             }
         }
 
@@ -693,5 +713,72 @@ export function diagramOutlineProvider(documents: TextDocuments<TextDocument>): 
             ...(definitions.length > 0 ? [section('elements', definitions)] : []),
             ...(keyframeNodes.length > 0 ? [section('timeline', keyframeNodes)] : [])
         ];
+    };
+}
+
+/** The symbol kind of each kind of `define` block, which picks its icon. */
+const DEFINITION_SYMBOL_KINDS: Record<string, SymbolKind> = {
+    arena: SymbolKind.Package,
+    actor: SymbolKind.Class,
+    object: SymbolKind.Object,
+    puddle: SymbolKind.Struct,
+    tether: SymbolKind.Interface,
+    action: SymbolKind.Function,
+    gradient: SymbolKind.Constant,
+    strategy: SymbolKind.Enum,
+    element: SymbolKind.Class
+};
+
+/** The symbols of a `.diagram` file (Go to Symbol, the outline, breadcrumbs): every `define` block and every timestamp, in file order. */
+export function diagramDocumentSymbolProvider(documents: TextDocuments<TextDocument>): (params: DocumentSymbolParams) => DocumentSymbol[] | null {
+    return (params) => {
+        const textDocument = documents.get(params.textDocument.uri);
+
+        if (textDocument == null) {
+            return null;
+        }
+
+        const source = textDocument.getText();
+        const parsed = parse(source);
+        const lines = linesOf(source);
+        const lineRange = (first: number, last: number): Range => ({ start: { line: first, character: 0 }, end: { line: last, character: lines[last]!.length } });
+        const symbols: DocumentSymbol[] = parsed.definitions.map(definition => {
+            const line = definition.line - 1;
+            const start = lines[line]!.lastIndexOf(definition.id);
+
+            return {
+                name: definition.id,
+                detail: definition.kind,
+                kind: DEFINITION_SYMBOL_KINDS[definition.kind]!,
+                range: lineRange(line, fieldsOf(definition, lines).at(-1)?.line ?? line),
+                selectionRange: { start: { line, character: start }, end: { line, character: start + definition.id.length } }
+            };
+        });
+        /** The 0-based lines that start a timestamp's statements or a `define` block, where a timestamp's statements end. */
+        const starts = lines.flatMap((text, line) => /^(?:\d+(?:\s|$)|define\s)/.test(text) ? [line] : []);
+
+        for (const [i, line] of starts.entries()) {
+            const time = /^\d+/.exec(lines[line]!)?.[0];
+
+            if (time == null) {
+                continue;
+            }
+
+            let last = (starts[i + 1] ?? lines.length) - 1;
+
+            while (last > line && lines[last]!.trim() === '') {
+                last--;
+            }
+
+            symbols.push({
+                name: time,
+                detail: formatTime(Number(time)),
+                kind: SymbolKind.Event,
+                range: lineRange(line, last),
+                selectionRange: { start: { line, character: 0 }, end: { line, character: time.length } }
+            });
+        }
+
+        return symbols.sort((a, b) => a.range.start.line - b.range.start.line);
     };
 }
