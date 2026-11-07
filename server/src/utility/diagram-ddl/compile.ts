@@ -2,15 +2,14 @@
 // and reports everything that makes the file invalid. Runs at build time only.
 import * as yaml from 'js-yaml';
 import { RESOLVE_PRESETS } from '../../components/diagram/render/effects/presets';
-import type { ElementDefinition } from '../../types/graphing';
-import { actionYalms, planeUnitsPerYalm } from '../diagram-sizing';
+import { planeUnitsPerYalm } from '../diagram-sizing';
 import { BOSS_IMAGE, DEFAULT_ACTOR_GRAPHICS } from '../diagram-defaults';
 import { DDL_MARKER_LOOKS } from '../diagram-enums';
 import { expandMargin } from '../margin';
 import { Definition, Diagnostic, parse, Statement } from './parse';
 import { callPlaceholder, PLAYER_GROUPS, resolveWaymarks } from './placeholders';
 import type { Margin } from '../../types/graphing';
-import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, definitionKey, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, XY } from './seek';
+import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, definitionKey, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, Spawn, XY } from './seek';
 
 /** Run speed in yalms per ms. */
 const RUN_SPEED = 6 / 1000;
@@ -69,8 +68,6 @@ function readFieldValue(text: string): unknown {
 
     return yaml.load(text.replace(ROUND_TUPLE, '[$1]'));
 }
-/** How long the hit's element of an AoE stays, unless its definition says otherwise. */
-const DEFAULT_HOLD = 800;
 /** The definition of ghosts: slightly transparent and desaturated. */
 const GHOST_BASE = 'ghost';
 const GHOST_SIZE = 7.5;
@@ -86,7 +83,9 @@ const LABEL_BASE = 'diagram-label';
 const RAIDWIDE_SIZE = 420;
 const DASHED = { look: { type: 'none' }, stroke: { style: 'dashed', color: '#fce76e' } };
 /** Definition keys that describe a placement rather than the drawn element. */
-const NON_VISUAL_KEYS = new Set(['flash', 'hold', 'hidden', 'attached', 'hooks', 'flashLook', 'tracks', 'headmarker']);
+const NON_VISUAL_KEYS = new Set(['attached', 'hooks', 'tracks', 'headmarker']);
+/** The `define action` keys that were removed: an action's hit shows only its resolve effect. */
+const REMOVED_KEYS = ['flash', 'flashLook', 'hold', 'hidden'];
 /** The element kinds that `define` declares, by the verb that places them. */
 const KIND_OF_VERB: Record<string, Definition['kind']> = { actor: 'actor', object: 'object', puddle: 'puddle', tether: 'tether' };
 /** The element types each kind can have, as written; `type: graphic` is the viewer's `marker`. A kind with one type implies it. */
@@ -102,8 +101,6 @@ const HEADMARKER_SIZE = 20;
 const HEADMARKER_SIZES: Partial<Record<string, number>> = { 'rotate-cw': 40, 'rotate-ccw': 40 };
 /** The element that draws an AoE whose omen look is a built-in drawing (`tower`, `exaflare`, `circle-kb`) over its circle. */
 const AOE_GRAPHIC_BASE = 'aoe-graphic';
-/** Resolve effects that are built-in drawings rather than shader presets: shown on the AoE at its hit, fading over its `hold`. */
-const GRAPHIC_EFFECTS = ['hello-world'];
 /** The `define action` keys that are now facts of the timeline action, and where each one went. */
 const MOVED_KEYS: Record<string, string> = {
     telegraph: 'the element comes from the timeline action\'s "shape"',
@@ -580,6 +577,11 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
         if (definition.kind === 'action') {
             if (actions[definition.id] == null) error(definition.line, `"${definition.id}" isn't an action of the timeline`);
             if ('look' in values) error(definition.line, `"${definition.id}" can't have a "look": AoE looks come from omens.yaml`);
+
+            for (const field of REMOVED_KEYS) {
+                if (field in values) error(definition.line, `"${definition.id}" can't have "${field}": it was removed; an action's hit shows only its resolve effect (+effect in exit)`);
+            }
+
             if ('attached' in values && typeof values.attached !== 'boolean' && typeof values.attached !== 'string') error(definition.line, `"attached" of "${definition.id}" is true, false or an actor's key`);
 
             for (const [key, instead] of Object.entries(MOVED_KEYS)) {
@@ -763,8 +765,6 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     const effects: CompiledDiagram['effects'] = [];
     const thumbnails: CompiledDiagram['thumbnails'] = {};
     const pendingEffects: { use: Use, preset: string }[] = [];
-    /** The effects that are built-in drawings ({@link GRAPHIC_EFFECTS}) that action hooks name, for each use. */
-    const graphicEffects: { use: Use, look: string, line: number }[] = [];
 
     /**
      * The definition of an element: its `define`; for a timeline actor, the default look, which a definition without a
@@ -864,17 +864,6 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const box = (elementDefs.arena?.size ?? DEFAULT_ARENA_BOX) as number | [number, number];
         const boxSize: XY = typeof box === 'number' ? [box, box] : box;
         return planeUnitsPerYalm(arena.imageSize, expandMargin(arena.margin ?? 0), boxSize, [1, 1], input.arenaSize);
-    };
-
-    /** The size in yalms from game data of the element `base` that shows an action's hit (its `flash`). */
-    const flashYalmsOf = (base: string, facts: ActionFacts, action: string, line: number): { yalms?: [number, number] } => {
-        const type = elementDefs[base]?.type as ElementDefinition['type'] | undefined;
-        // A marker that stands for an AoE, such as Hello World's, covers its circle.
-        const yalms = type == null ? undefined : actionYalms((type as string) === 'marker' ? 'ellipse' : type, facts.effectRange ?? 0, facts.xAxisModifier, facts.inner);
-
-        if (yalms == null) error(line, `"${action}" as a ${type} can't be sized from its effectRange of ${facts.effectRange ?? 0} and XAxisModifier of ${facts.xAxisModifier ?? 0}`);
-
-        return yalms == null ? {} : { yalms: [...yalms] as [number, number] };
     };
 
     /** What an AoE drawn by an element with this definition covers at `t`, in plane units. */
@@ -994,7 +983,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         // Raidwides have no outline, so they keep their own look.
         const omenLook = drawnFacts.omen != null ? input.omens?.[drawnFacts.omen] : undefined;
         let look: Record<string, unknown> = raidwide ? {} : { look: omenLook ?? 'aoe' };
-        const drawn = raidwide || def.hidden ? undefined : drawnShape(drawnFacts, arenaYalms);
+        const drawn = raidwide ? undefined : drawnShape(drawnFacts, arenaYalms);
 
         if (typeof drawn === 'string') error(line, `"${use.action}" ${drawn}`);
 
@@ -1022,7 +1011,6 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             action: use.action,
             show,
             hit: use.at,
-            hold: (def.hold as number | undefined) ?? DEFAULT_HOLD,
             omen,
             raidwide,
             // A drawing has no outline to dash.
@@ -1063,25 +1051,10 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             aoe.area = { kind: 'composite', size: [0, 0], origin: [0.5, 0.5], parts: parts.map(({ renderId: _, ...part }) => part) };
         }
 
-        if (def.flash != null) {
-            const flash = def.flash as string;
-            aoe.flashId = `${flash}#${unique}-hit${suffix}`;
-            const { yalms } = flashYalmsOf(flash, drawnFacts, use.action, line);
-            aoe.flashProps = { ...visual, ...look, ...(def.flashLook as object | undefined), ...(yalms != null ? { yalms } : {}) };
-            requireBase(flash, line);
-
-            // What only shows as its hit, such as Hello World, covers what that shows.
-            if (aoe.area == null && !raidwide) {
-                const area = areaOf(elementDefs[flash] ?? {}, use.at, visual, yalms);
-
-                if (area != null) aoe.area = area;
-            }
-        }
-
         if (!raidwide) {
-            const drawnBase = aoe.renderId != null ? base : aoe.parts != null ? undefined : def.flash as string | undefined;
+            const drawnBase = aoe.renderId != null ? base : undefined;
             const definition = drawnBase == null ? undefined : AOE_DEFINITIONS[drawnBase] ?? elementDefs[drawnBase];
-            const yalms = (aoe.renderId != null ? aoe.props.yalms : aoe.flashProps?.yalms) as XY | undefined;
+            const yalms = aoe.props.yalms as XY | undefined;
             const facing = definition == null ? 0 : facingOf({ ...definition, ...visual, ...(yalms != null ? { size: yalms } : {}) });
 
             if (facing !== 0) aoe.facing = facing;
@@ -1098,6 +1071,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     const openHints = new Map<string, CompiledDiagram['hints'][number]>();
     /** The line of each hint's `+hint`, for its errors. */
     const hintLines = new Map<CompiledDiagram['hints'][number], number>();
+    /** Each `+headmarker`'s spawn, with its element and line, for the error about those that are never removed. */
+    const headmarkerSpawns: { id: string, spawn: Spawn, line: number }[] = [];
     const lastKeyframes = new Map<string, number>();
 
     /** Applies one statement. `effectTarget` is the element whose `exit` hook this statement comes from. */
@@ -1139,13 +1114,6 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             case 'effect': {
                 const name = s.subjects[0] ?? '';
                 const preset = EFFECT_ALIASES[name] ?? name;
-
-                if (GRAPHIC_EFFECTS.includes(preset)) {
-                    if (hookUse == null) error(s.line, `effect "${name}" shows on an action's AoE at its hit, so it goes in the action's "exit"`);
-                    else graphicEffects.push({ use: hookUse, look: preset, line: s.line });
-
-                    break;
-                }
 
                 if (!(RESOLVE_PRESETS as readonly string[]).includes(preset)) error(s.line, `unknown effect "${name}"`);
 
@@ -1231,7 +1199,10 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
                     // A puddle with a `duration` disappears by itself.
                     const lifetime = s.verb === 'puddle' ? elementDef(base)?.duration as string | number | undefined : undefined;
-                    element.spawns.push({ ...within, from: s.at, to: lifetime == null ? Infinity : s.at + duration(String(lifetime)) });
+                    const spawn = { ...within, from: s.at, to: lifetime == null ? Infinity : s.at + duration(String(lifetime)) };
+                    element.spawns.push(spawn);
+
+                    if (s.verb === 'headmarker') headmarkerSpawns.push({ id, spawn, line: s.line });
 
                     if (s.verb === 'tether') {
                         // `far-tether@T1>R2`: a tether refers to its two ends, and points from the first to the second.
@@ -1609,27 +1580,6 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     for (const aoe of aoes) {
         /** What makes this placement's own elements unique: its label's ID without the label's base. */
         const unique = aoe.labelId.slice(aoe.labelId.indexOf('#') + 1);
-        const effect = graphicEffects.find(e => e.use.action === aoe.action && e.use.at === aoe.hit);
-
-        // A drawing as the resolve effect shows over the AoE's circle at the hit, like a `flash`, and fades over its `hold`.
-        if (effect != null) {
-            const facts = actions[aoe.action] ?? {};
-            const yalms = actionYalms('ellipse', facts.effectRange ?? 0, facts.xAxisModifier, facts.inner);
-            const base = `effect-${effect.look}`;
-
-            if (aoe.flashId != null) error(effect.line, `"${aoe.action}" can't have both a "flash" and the effect "${effect.look}"`);
-            if (yalms == null) error(effect.line, `effect "${effect.look}" on "${aoe.action}" can't be sized: it has no effectRange in game data`);
-
-            definitions[base] = { type: 'marker', look: effect.look, opacity: 0.85, shadow: false };
-            aoe.flashId = `${base}#${unique}-hit`;
-            aoe.flashProps = yalms == null ? {} : { yalms: [...yalms] };
-
-            if (aoe.area == null && !aoe.raidwide && yalms != null) {
-                const area = areaOf(definitions[base] as Record<string, unknown>, aoe.hit, {}, [...yalms] as [number, number]);
-
-                if (area != null) aoe.area = area;
-            }
-        }
 
         // `headmarker:` marks what the AoE is placed on, `lead` before its hit, until the hit or for its own duration.
         const mark = actionDefs[aoe.action]?.headmarker as HeadmarkerField | undefined;
@@ -1650,17 +1600,27 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         }
     }
 
+    // A headmarker that stays until the end of the fight is a missing `-headmarker`. Once per statement and
+    // headmarker, however many strategies or branches it's in.
+    const unremovedHeadmarkers = new Set<string>();
+
+    for (const { id, spawn, line } of headmarkerSpawns) {
+        if (spawn.to !== Infinity || unremovedHeadmarkers.has(`${line} ${id}`)) continue;
+
+        unremovedHeadmarkers.add(`${line} ${id}`);
+        error(line, `headmarker "${id}" is never removed: add a -headmarker where it goes away`);
+    }
+
     simulateFollows();
 
     // What hits leaves a resolve effect: the one its hook names, otherwise a plain flash. A raidwide sweeps.
     for (const aoe of aoes) {
         const named = pendingEffects.filter(effect => effect.use.action === aoe.action && effect.use.at === aoe.hit);
         // A composite plays its effect on each of its rectangles.
-        const targets = aoe.parts?.map(part => part.renderId) ?? [aoe.renderId ?? aoe.flashId].filter(target => target != null);
-        const drawsBeforeHit = aoe.renderId != null || aoe.parts != null;
+        const targets = aoe.parts?.map(part => part.renderId) ?? [aoe.renderId].filter(target => target != null);
 
         for (const target of targets) {
-            for (const preset of named.length > 0 ? named.map(effect => effect.preset) : !drawsBeforeHit ? [] : [aoe.raidwide ? 'sweep' : 'flash']) {
+            for (const preset of named.length > 0 ? named.map(effect => effect.preset) : [aoe.raidwide ? 'sweep' : 'flash']) {
                 effects.push({ ...scopeOf(aoe), at: aoe.hit, target, preset });
             }
         }

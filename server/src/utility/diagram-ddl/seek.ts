@@ -47,24 +47,15 @@ export interface CompiledAoe extends Scope {
     /** The DDL's ID, which elements refer to. Several uses of an action can share it. */
     id: string;
     action: string;
-    /**
-     * The ID of the telegraph or outline element. Unique to this use. `undefined` if nothing shows before the hit,
-     * or if {@link parts} draw it.
-     */
+    /** The ID of the telegraph or outline element. Unique to this use. `undefined` if {@link parts} draw it. */
     renderId?: string;
     /** The rectangles that draw a composite AoE (`sides`, `grid`, `plus`, `cross`, `star`), each its own element. */
     parts?: AoePart[];
-    /** The ID of the element that shows the hit itself, if the action has one. */
-    flashId?: string;
     /** When the telegraph or outline appears. */
     show: number;
     hit: number;
-    /** How long the hit's element stays, from {@link hit}. */
-    hold: number;
     /** What the telegraph or outline's element adds to its definition. */
     props: Record<string, unknown>;
-    /** What the hit's element adds to its definition. */
-    flashProps?: Record<string, unknown>;
     /** A solid telegraph, as opposed to a dashed outline. */
     omen: boolean;
     raidwide: boolean;

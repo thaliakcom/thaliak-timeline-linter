@@ -7,7 +7,7 @@ import { ParserCache } from './parser-cache';
 import { RESOLVE_PRESETS } from './components/diagram/render/effects/presets';
 import { LinterOptions, ThaliakTimelineLinterSettings } from './server';
 import { actionTooltip, getStatusIcon, statusTooltip, type TooltipContext } from './tooltip';
-import { DEFINE_KINDS, DiagramField, DiagramSchema, ELEMENT_KINDS, fieldsOfKind, valuesOf } from './types/diagram-schema';
+import { DEFINE_KINDS, DiagramField, DiagramSchema, fieldsOfKind, valuesOf } from './types/diagram-schema';
 import { OutlineNode, OutlineParams, StatusIcon } from './types/outline';
 import { UnprocessedRaidData } from './types/raids';
 import { parse, tokenize } from './utility/diagram-ddl/parse';
@@ -156,7 +156,6 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             const spec = schema != null ? fieldsOfKind(schema, definition.kind)[field[1]!] : undefined;
 
             switch (field[1]) {
-                case 'flash': return member(definedAs(...ELEMENT_KINDS));
                 case 'attached': return member(['true', 'false', ...keysOf(timeline, 'actors')]);
                 case 'headmarker': return /\S\s/.test(field[2]!) ? [] : member(headmarkerLooksOf(options));
                 case 'covers': return member(timeline != null ? getStrategyKeys(timeline.document) : []);
@@ -375,7 +374,7 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
 
             const spec = known[field.key];
             const values: Record<string, string> = spec != null ? valuesOf(schema, spec) : {};
-            const description = values[word] ?? (field.key === 'flashLook' ? { ...valuesOf(schema, known.look!), ...valuesOf(schema, known.enter!), ...valuesOf(schema, known.exit!) }[word] : undefined);
+            const description = values[word];
 
             return description != null ? hover(`**${word}**\n\n${description}`) : null;
         }

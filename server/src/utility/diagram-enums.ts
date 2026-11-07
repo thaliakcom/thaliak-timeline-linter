@@ -102,7 +102,7 @@ export const LOOKS = {
 
 /**
  * What the `.diagram` DDL uses each marker look as. The viewer draws them all as `marker` elements; the DDL keeps
- * "marker" for headmarkers. `hello-world` is in none of them: the DDL plays it as a resolve effect.
+ * "marker" for headmarkers. `hello-world` is in none of them: the DDL doesn't use it.
  */
 export const DDL_MARKER_LOOKS = {
     /** Headmarkers (`+headmarker`, `headmarker:` on `define action`). Their size and look are fixed. */
