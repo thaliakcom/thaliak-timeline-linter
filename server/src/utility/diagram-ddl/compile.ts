@@ -1765,7 +1765,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         order,
         aoes,
         keyframes,
-        chapters: uses.filter(use => use.parent == null && actions[use.action]?.emphasis === 'more').map(use => ({ at: use.at, id: use.action, name: name(use.action) })),
+        chapters: uses.filter(use => use.parent == null && actions[use.action]?.emphasis === 'more').map(use => ({ at: use.at, id: use.action, name: name(use.action), ...(use.lastChild != null ? { end: use.lastChild } : {}) })),
         hints,
         statuses,
         statusInfo: {},

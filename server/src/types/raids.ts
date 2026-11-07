@@ -684,8 +684,16 @@ export interface Contributor {
     role: ContributorRole;
 }
 
+/**
+ * One stretch of the timeline between phase changes: from a `<phase>` item (or an `<endphase>` item or the start, for
+ * time outside of any phase, named `nophase`) to the next of either. A phase that recurs has one of these per stretch.
+ */
 export interface RaidDataPhase {
     name: string;
+    /** When it starts, in ms. */
+    from: number;
+    /** When the next phase change ends it, in ms; none if the timeline doesn't end it. */
+    to?: number;
     actions: Set<string | integer>;
     status: Set<string | integer>;
 }

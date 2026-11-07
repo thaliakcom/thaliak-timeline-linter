@@ -139,8 +139,11 @@ export interface CompiledDiagram {
     order: string[];
     aoes: CompiledAoe[];
     keyframes: (Scope & { at: number })[];
-    /** The `emphasis: more` actions on the timeline itself, not those inside another action. */
-    chapters: { at: number, id: string, name: string }[];
+    /**
+     * The `emphasis: more` actions on the timeline itself, not those inside another action. `end` is when the last
+     * of its children hits; it has none if it has no children.
+     */
+    chapters: { at: number, id: string, name: string, end?: number }[];
     hints: (Scope & { from: number, to: number, text: string })[];
     statuses: (Scope & { player: string, name: string, from: number, to: number })[];
     /** What the viewer needs for each status in {@link statuses}, by name. Filled in by the data extension. */

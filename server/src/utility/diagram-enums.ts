@@ -71,7 +71,7 @@ export const LOOKS = {
         plain: { description: 'A flat band of `color`, `width` wide. Default.', params: ['color'] },
         glow: { description: 'A bright core with a soft glow (Mid/Remote Glitch).', params: ['color'] },
         flicker: { description: 'A flickering line (generic unpassable tether).', params: ['speed'] },
-        pulse: { description: 'Bright and dark segments drifting towards the target, with a ring around it (passable tether, Blaster).', params: ['speed'] },
+        pulse: { description: 'Red dashes and white-hot blobs flowing towards the target, with a glow around it and rings pulsing outwards from it (passable tether, Blaster).', params: ['speed'] },
         strands: { description: 'A band of irregular width made of noisy strands drifting towards the target (Mesohigh).', params: ['speed'] },
         braid: { description: 'Strands twisting around each other, up to two colours (Far Patch).', params: ['speed'] },
         coil: { description: 'A filled ribbon twisted around itself (Near Patch).', params: ['speed'] },
