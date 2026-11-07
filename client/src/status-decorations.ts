@@ -3,18 +3,23 @@ import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import type { OutlineParams, StatusIcon } from './outline-types';
 
-/** The in-game status icons after status keys and in front of `s:` placeholders. */
+/** The in-game status icons after status keys and in front of `s:` placeholders, and the shape icons of AoEs. */
 const decoration = vscode.window.createTextEditorDecorationType({});
 
-/** The data URIs of the PNGs read so far, by path. Icons never change, so they're kept for the session. */
+/** The data URIs of the icons read so far, by path. Icons never change, so they're kept for the session. */
 const dataUris = new Map<string, string>();
 
-/** The PNG at `path` as a data URI. */
-function pngDataUri(path: string): string {
+/** The icon as a data URI: its inline SVG, or the PNG or SVG at its path. */
+function iconDataUri(icon: StatusIcon): string {
+    if (icon.svg != null) {
+        return `data:image/svg+xml;base64,${Buffer.from(icon.svg).toString('base64')}`;
+    }
+
+    const path = icon.path!;
     let uri = dataUris.get(path);
 
     if (uri == null) {
-        uri = `data:image/png;base64,${fs.readFileSync(path).toString('base64')}`;
+        uri = `data:${path.endsWith('.svg') ? 'image/svg+xml' : 'image/png'};base64,${fs.readFileSync(path).toString('base64')}`;
         dataUris.set(path, uri);
     }
 
@@ -49,12 +54,13 @@ export async function updateStatusDecorations(editor: vscode.TextEditor, isTimel
         renderOptions: {
             before: {
                 contentText: '',
-                // Status icons are 3:4 (48×64), as tall as the line. It comes after the inlay hint at its position, so the
-                // left margin pulls it back over that. The margins add up to its width, so it takes up no room.
+                // Status icons are 3:4 (48×64), as tall as the line; square shape icons shrink to its width. It comes after the
+                // inlay hint at its position, so the left margin pulls it back over that. The margins add up to its width, so it
+                // takes up no room.
                 width: '1em',
                 height: '1.35em',
                 margin: '0 0.35em 0 -1.35em',
-                textDecoration: `none; display: inline-block; vertical-align: middle; background: url("${pngDataUri(icon.path)}") center / contain no-repeat`
+                textDecoration: `none; display: inline-block; vertical-align: middle; background: url("${iconDataUri(icon)}") center / contain no-repeat`
             }
         }
     })));

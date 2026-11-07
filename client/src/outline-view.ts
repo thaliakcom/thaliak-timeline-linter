@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { LanguageClient } from 'vscode-languageclient/node';
+import { DidChangeConfigurationNotification, type LanguageClient } from 'vscode-languageclient/node';
 import { iconFor } from './outline-icons';
 import type { OutlineNode, OutlineParams, TooltipParams } from './outline-types';
 import { updateSectionLines } from './section-lines';
@@ -223,6 +223,14 @@ export function registerOutlineView(context: vscode.ExtensionContext, client: La
         vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration('editor.inlayHints.enabled')) {
                 view.refresh();
+            }
+
+            // The server reads these on every icon request, but has to be told to have the inlay hints that reserve the
+            // icons' room requested anew. The client doesn't forward configuration changes by itself.
+            if (e.affectsConfiguration('thaliak-timeline-linter.icons')) {
+                view.refresh();
+                // A server that isn't running has no inlay hints to refresh.
+                client.sendNotification(DidChangeConfigurationNotification.type, { settings: null }).catch(() => undefined);
             }
         }),
         vscode.workspace.onDidChangeTextDocument(e => {

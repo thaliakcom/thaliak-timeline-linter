@@ -46,9 +46,14 @@ export interface TooltipParams {
     symbol: string;
 }
 
-/** An in-game status icon shown in front of a status key or reference (result of `thaliak/statusIcons`). */
+/**
+ * An icon shown in front of a status key or reference, a mechanic `shape`, `ms:` reference or `+aoe` action
+ * (result of `thaliak/statusIcons`). It has either a `path` or an `svg`.
+ */
 export interface StatusIcon {
     range: Range;
-    /** The absolute path of the PNG. */
-    path: string;
+    /** The absolute path of the PNG or SVG. */
+    path?: string;
+    /** Inline SVG markup, for the icons generated for one action (cones and donuts of their own size). */
+    svg?: string;
 }

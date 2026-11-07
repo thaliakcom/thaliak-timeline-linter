@@ -49,7 +49,7 @@ const CAST_TYPE_NAMES = [
 const ASPECT_NAMES = [undefined, 'Fire', 'Ice', 'Wind', 'Earth', 'Lightning', 'Water', undefined];
 
 /** The icon file in `media/shapes` of each mechanic shape. Keep in sync with `client/src/outline-icons.ts`. */
-const SHAPE_FILES: Record<string, string> = {
+export const SHAPE_FILES: Record<string, string> = {
     'chariot': 'circle',
     'defamation': 'circle',
     'dynamo': 'donut',
@@ -66,7 +66,7 @@ const SHAPE_FILES: Record<string, string> = {
 };
 
 /** The extension's `media` directory. The server runs from `out/server/src`. */
-const MEDIA = paths.resolve(__dirname, '..', '..', '..', 'media');
+export const MEDIA = paths.resolve(__dirname, '..', '..', '..', 'media');
 
 /**
  * Matches templates in descriptions: `[prefix:key<modifiers>]` and `[alias](prefix:key<modifiers>)`.
@@ -212,6 +212,21 @@ export function paddedEffectRange(action: GameAction, radius: number): number {
     const padding = action.effectRange > 0 && PADDED_CAST_TYPES.includes(action.castType) ? radius : 0;
 
     return Math.round((action.effectRange + padding) * 1000) / 1000;
+}
+
+/**
+ * The padded `effectRange` of the action with the timeline definition `definition` and the game ID `id`, as thaliak's
+ * `processAction()` finds it: the hit is the AoE unless it's one of the children, and comes from a helper; otherwise
+ * the first actor's hitbox pads the range. 0 without game data.
+ */
+export async function actionEffectRange(raid: UnprocessedRaidData | null, definition: Partial<UnprocessedAction>, id: number | undefined): Promise<number> {
+    const game = id != null ? await getGameAction(id) : null;
+    const hit = definition.hit != null ? await getGameAction(definition.hit) : null;
+    const hitIsChild = hit != null && (definition.children ?? []).some(child => raid?.actions?.[child.id]?.id === definition.hit);
+    const aoe = hitIsChild ? game : hit ?? game;
+    const firstActor = definition.actor == null ? undefined : Array.isArray(definition.actor) ? definition.actor[0] : definition.actor;
+
+    return aoe != null ? paddedEffectRange(aoe, await hitboxRadius(aoe === hit ? undefined : raid?.actors?.[firstActor ?? '']?.id)) : 0;
 }
 
 /** `value (name)`, or just `value` if `names` has no name for it. */
@@ -414,10 +429,8 @@ export async function actionTooltip(context: TooltipContext, key: string): Promi
     const source = isPlayerSource ? 'player' : 'enemy';
     let type: string | undefined = definition.type;
     let element: string | undefined = definition.element;
-    // As thaliak's `processAction()`: the hit decides the damage type and element, and the AoE unless it's one of the children.
+    // As thaliak's `processAction()`: the hit decides the damage type and element.
     const hit = definition.hit != null ? await getGameAction(definition.hit) : null;
-    const hitIsChild = hit != null && (definition.children ?? []).some(child => context.raid?.actions?.[child.id]?.id === definition.hit);
-    const aoe = hitIsChild ? game : hit ?? game;
     const damage = hit ?? game;
 
     if (damage != null && (damage.attackType !== 0 || damage.aspect !== 0 || damage.canTargetHostile)) {
@@ -425,9 +438,7 @@ export async function actionTooltip(context: TooltipContext, key: string): Promi
         element = ELEMENTS[damage.aspect];
     }
 
-    // A hit comes from a helper; otherwise the first actor's hitbox pads the range.
-    const firstActor = definition.actor == null ? undefined : Array.isArray(definition.actor) ? definition.actor[0] : definition.actor;
-    const effectRange = aoe != null ? paddedEffectRange(aoe, await hitboxRadius(aoe === hit ? undefined : context.raid?.actors?.[firstActor ?? '']?.id)) : 0;
+    const effectRange = await actionEffectRange(context.raid, definition, action.id);
     const cast = definition.cast ?? (game != null ? castTimeOf(game) : 0);
     const captionIcons: string[] = [];
     let caption: string;

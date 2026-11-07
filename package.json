@@ -67,6 +67,18 @@
                     "default": "",
                     "description": "The directory game data is cached in, laid out like thaliak's `.cache` (so it can point at it). The extension never clears a directory set here. Empty: the extension's own storage, which is cleared after game updates (except icons)."
                 },
+                "thaliak-timeline-linter.icons.status": {
+                    "scope": "window",
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Shows the in-game icons of statuses inline, after status keys and in front of status references. Needs game data and inlay hints."
+                },
+                "thaliak-timeline-linter.icons.aoes": {
+                    "scope": "window",
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Shows the icons of AoE shapes inline, in front of `shape` values, `ms:` references and the actions of `+aoe` statements. Needs inlay hints."
+                },
                 "thaliak-timeline-linter.trace.server": {
                     "scope": "window",
                     "type": "string",

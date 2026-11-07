@@ -30,12 +30,13 @@ import referenceProvider from './reference-provider';
 import { renameProvider, prepareRenameProvider } from './rename-provider';
 import type { Common, DamageTypes, Headmarkers, MechanicShapes, MechanicTypes, Omens, StatusTypes, Terms, Tethers } from './types/enum-schema';
 import type { DiagramSchema } from './types/diagram-schema';
-import type { OutlineNode, OutlineParams } from './types/outline';
+import type { OutlineNode, OutlineParams, StatusIcon } from './types/outline';
 import documentColorProvider from './document-color-provider';
 import colorPresentationProvider from './color-presentation-provider';
 import inlayHintProvider from './inlay-hint-provider';
 import outlineProvider from './outline-provider';
 import statusIconProvider, { iconSpacers } from './status-icon-provider';
+import { diagramShapeIconProvider, shapeIconProvider } from './shape-icon-provider';
 import { configureIronworks, type IronworksOptions } from './ironworks';
 import { diagramOf, isDiagramUri, statusKeysOf } from './diagram-context';
 import { lintDiagram } from './diagram-linter';
@@ -154,12 +155,14 @@ let globalSettings: ThaliakTimelineLinterSettings = defaultSettings;
 
 connection.onDidChangeConfiguration(change => {
     globalSettings = <ThaliakTimelineLinterSettings>(
-        (change.settings['thaliak-timeline-linter'] || defaultSettings)
+        (change.settings?.['thaliak-timeline-linter'] || defaultSettings)
     );
     // Refresh the diagnostics since the `maxNumberOfProblems` could have changed.
     // We could optimize things here and re-fetch the setting first can compare it
     // to the existing setting, but this is out of scope for this example.
     connection.languages.diagnostics.refresh();
+    // The blank inlay hints that reserve the room of icons, as `thaliak-timeline-linter.icons` could have changed.
+    connection.languages.inlayHint.refresh();
 });
 
 const documentCache = getParserCache();
@@ -267,7 +270,21 @@ connection.onCodeAction(codeActionProvider(documents, documentCache, globalSetti
 connection.onDocumentColor(documentColorProvider(documents, documentCache, globalSettings));
 connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));
 const inlayHints = byFileType(textDocumentUri, diagramInlayHintProvider(documents), inlayHintProvider(documents, documentCache, globalSettings));
-const statusIcons = byFileType(outlineUri, diagramStatusIconProvider(documents, documentCache, globalSettings), statusIconProvider(documents, documentCache, globalSettings));
+const statusIconsOnly = byFileType(outlineUri, diagramStatusIconProvider(documents, documentCache, globalSettings), statusIconProvider(documents, documentCache, globalSettings));
+const shapeIcons = byFileType(outlineUri, diagramShapeIconProvider(documents, documentCache, globalSettings), shapeIconProvider(documents, documentCache, globalSettings));
+/**
+ * The status and shape icons of a file, all drawn by the client the same way, each kind unless the user turned it off
+ * (`thaliak-timeline-linter.icons`, read on every request). `null` if it's neither a timeline nor a `.diagram` file.
+ */
+const statusIcons = async (params: OutlineParams): Promise<StatusIcon[] | null> => {
+    const enabled = await connection.workspace.getConfiguration('thaliak-timeline-linter.icons') as { status?: boolean, aoes?: boolean } | null;
+    const [status, shapes] = await Promise.all([
+        enabled?.status !== false ? statusIconsOnly(params) : [],
+        enabled?.aoes !== false ? shapeIcons(params) : []
+    ]);
+
+    return status == null && shapes == null ? null : [...status ?? [], ...shapes ?? []];
+};
 
 connection.languages.inlayHint.on(async params => [...inlayHints(params), ...iconSpacers(await statusIcons({ uri: params.textDocument.uri }), params.range)]);
 connection.onRequest('thaliak/outline', byFileType<OutlineParams, Promise<OutlineNode[] | null>>(outlineUri, async params => diagramOutlineProvider(documents)(params), outlineProvider(documents, documentCache, globalSettings)));

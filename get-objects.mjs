@@ -21,6 +21,7 @@ const FILES = [
     ['src/utility/diagram-defaults.ts', './server/src/utility/diagram-defaults.ts', 'thaliak'],
     ['src/utility/diagram-enums.ts', './server/src/utility/diagram-enums.ts', 'thaliak'],
     ['src/utility/margin.ts', './server/src/utility/margin.ts', 'thaliak'],
+    ['src/eleventy/utility/shape-icons.ts', './server/src/utility/shape-icons.ts', 'thaliak'],
     ['src/components/diagram/render/effects/presets.ts', './server/src/components/diagram/render/effects/presets.ts', 'thaliak']
 ];
 

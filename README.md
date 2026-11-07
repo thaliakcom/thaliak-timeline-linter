@@ -26,6 +26,10 @@ in-game names, descriptions and icons of actions and statuses in hovers, tree vi
 view and in front of status keys, `inflicts` statuses and `s:` placeholders. It also reports what
 thaliak's build reports from game data, such as an encrypted name or a damage type that repeats the game's.
 
+AoE shapes get their icon in the text too, in front of `shape` values, `ms:` placeholders and the actions of
+`+aoe` statements; that needs no game data, except for donuts sized by their `inner` radius. Turn either kind
+off with `thaliak-timeline-linter.icons.status` or `thaliak-timeline-linter.icons.aoes`.
+
 The icons in the text only show while `editor.inlayHints.enabled` is `on` or `onUnlessPressed`, as
 they're drawn over blank inlay hints: those are the only way for an extension to reserve room in a
 wrapped line.
