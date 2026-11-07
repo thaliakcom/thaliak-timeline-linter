@@ -5,6 +5,8 @@
     "patterns": [
         { "include": "#comment" },
         { "include": "#define-gradient" },
+        { "include": "#define-arena" },
+        { "include": "#define-kind" },
         { "include": "#define-element" },
         { "include": "#define-action" },
         { "include": "#define-strategy" },
@@ -32,6 +34,26 @@
                 { "include": "#comment" },
                 { "include": "#values" }
             ]
+        },
+        "define-arena": {
+            "comment": "`define arena` has no ID of its own.",
+            "begin": "^(define)\\s+(arena)(?=\\s*(?://|$))",
+            "beginCaptures": {
+                "1": { "name": "keyword.other.define.thaliak-diagram" },
+                "2": { "name": "storage.modifier.thaliak-diagram" }
+            },
+            "end": "^(?=\\S)",
+            "patterns": [{ "include": "#define-body" }]
+        },
+        "define-kind": {
+            "begin": "^(define)\\s+(actor|object|puddle|tether)\\s+(\\S+)",
+            "beginCaptures": {
+                "1": { "name": "keyword.other.define.thaliak-diagram" },
+                "2": { "name": "storage.modifier.thaliak-diagram" },
+                "3": { "name": "entity.name.type.$2.thaliak-diagram" }
+            },
+            "end": "^(?=\\S)",
+            "patterns": [{ "include": "#define-body" }]
         },
         "define-element": {
             "begin": "^(define)\\s+(element)\\s+(\\S+)",
