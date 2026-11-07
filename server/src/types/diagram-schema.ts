@@ -85,20 +85,32 @@ const FIELDS_OF_TYPES: Record<string, readonly string[]> = {
     shape: ['image'],
     angle: ['cone'],
     fade: ['rectangle'],
+    depth: ['prism'],
     width: ['link'],
     // An image has no look, and the colour of a shape or a tether is its look's (`validateDefinitions()`).
     look: [...SHAPE_TYPES, 'graphic', 'link'],
-    color: ['image', 'graphic']
+    color: ['image', 'graphic', 'prism']
 };
 /** The element fields that only some kinds have, by those kinds, as the schema describes them. */
 const FIELDS_OF_KINDS: Record<string, readonly string[]> = { margin: ['arena'], speed: ['actor'], reach: ['actor'] };
 
 /**
- * The element types a `define` block can draw: the `type` it has, or else every type of its kind (the compiler's
- * `TYPES_OF_KIND`). An action draws one of the shapes, and the other kinds nothing.
+ * The element types an action's AoE can be drawn as, by its timeline `shape` (the compiler's `drawnShape()`). Where
+ * game data decides between two, both. Composite shapes are drawn as rectangles.
  */
-export function typesOfBlock(kind: string, type: string | undefined): readonly string[] {
-    if (kind === 'action') return SHAPE_TYPES;
+const TYPES_OF_SHAPE: Record<string, readonly string[]> = {
+    chariot: ['ellipse'], defamation: ['ellipse'], dynamo: ['donut'], cone: ['cone'], line: ['rectangle'], rect: ['rectangle'],
+    halfroom: ['cone', 'rectangle'], 'in-or-out': ['ellipse', 'donut'],
+    plus: ['rectangle'], cross: ['rectangle'], star: ['rectangle'], sides: ['rectangle'], grid: ['rectangle']
+};
+
+/**
+ * The element types a `define` block can draw: the `type` it has, or else every type of its kind (the compiler's
+ * `TYPES_OF_KIND`). An action draws the shapes its timeline action's `shape` can be, or any shape if that's unknown,
+ * and the other kinds nothing.
+ */
+export function typesOfBlock(kind: string, type: string | undefined, shape?: string): readonly string[] {
+    if (kind === 'action') return (shape != null ? TYPES_OF_SHAPE[shape] : undefined) ?? SHAPE_TYPES;
 
     const allowed = TYPES_OF_KIND[kind as Definition['kind']] ?? [];
 

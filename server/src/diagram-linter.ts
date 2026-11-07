@@ -2,9 +2,9 @@
 import { Diagnostic, DiagnosticSeverity, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
-import { diagramInputOf, DefinitionField, fieldsOf, hasBalancedBrackets, isDiagramWip, linesOf, timelineOf, tokensOf } from './diagram-context';
+import { baseOf, diagramInputOf, DefinitionField, fieldsOf, hasBalancedBrackets, isDiagramWip, linesOf, Timeline, timelineOf, tokensOf } from './diagram-context';
 import { fixableDiagnostics, LinterOptions } from './server';
-import { DiagramField, DiagramSchema, DiagramValueType, fieldsOfKind } from './types/diagram-schema';
+import { DiagramField, DiagramSchema, DiagramValueType, fieldsOfKind, typesOfBlock } from './types/diagram-schema';
 import { compileDiagram } from './utility/diagram-ddl/compile';
 import { Definition, parse, ParseResult, Statement } from './utility/diagram-ddl/parse';
 
@@ -37,9 +37,10 @@ function typeOf(value: unknown): string | undefined {
 
 /**
  * The checks of what `define` blocks draw, which `processGraphing()` in thaliak's `data.ts` and the viewer rely on,
- * except for those that need game data or an arena image's size. An action's block draws a built-in shape, from its timeline action.
+ * except for those that need game data or an arena image's size. An action's block draws a built-in shape, which its
+ * timeline action's `shape` in `timeline` narrows down.
  */
-function* validateDefinitions(textDocument: TextDocument, definitions: Definition[], lines: string[], options: LinterOptions): Generator<Diagnostic> {
+function* validateDefinitions(textDocument: TextDocument, definitions: Definition[], lines: string[], options: LinterOptions, timeline: Timeline | null): Generator<Diagnostic> {
     const schema = options.diagramSchema;
     const looks = schema != null ? { aoes: Object.keys(schema.looks.aoes), tethers: Object.keys(schema.looks.tethers), markers: Object.keys(schema.looks.markers) } : undefined;
     const animations = schema?.animations.elements;
@@ -72,14 +73,33 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
             yield error('invalid-donut-size', firstOf('size')!, `Donut size [${size[0]}, ${size[1]}] must be [inner diameter, outer diameter].`);
         }
 
+        // What an animation may play on: the block's type, or for an action every shape its timeline `shape` can be drawn as.
+        const shape = definition.kind === 'action' ? timeline?.js.actions?.[baseOf(definition.id)]?.shape : undefined;
+        const candidates = definition.kind === 'action' ? typesOfBlock('action', undefined, typeof shape === 'string' ? shape : undefined) : [type ?? 'image'];
+        const drawnAs = definition.kind === 'action' ? (typeof shape === 'string' ? `is drawn as ${candidates.join(' or ')} (shape: ${shape})` : 'is drawn as a shape') : `has type ${type ?? 'image'}`;
+        /** The error if the animation `name` of `key` can play on none of the {@link candidates}, as `written` at `field`. */
+        const checkAnimation = (key: 'enter' | 'exit', name: string, written: string, field: DefinitionField) => {
+            const allowed = animations?.[key]?.[name];
+
+            return allowed != null && allowed !== 'all' && !candidates.some(candidate => allowed === 'shapes' ? SHAPE_TYPES.includes(candidate) : allowed.includes(candidate))
+                ? error('invalid-animation', field, `'${written}' is only allowed on ${allowed === 'shapes' ? 'shapes' : allowed.join(', ')}, but '${definition.id}' ${drawnAs}.`)
+                : undefined;
+        };
+
         for (const key of ['enter', 'exit'] as const) {
             const field = fields.find(x => x.key === key && !/^[+-]/.test(x.value) && x.value !== '');
             const name = field != null ? typeOf(key === 'exit' ? valueOf(fields.filter(x => x.key === key && !/^[+-]/.test(x.value)), key) : valueOf(fields, key)) : undefined;
-            const allowed = name != null ? animations?.[key]?.[name] : undefined;
+            const invalid = name != null ? checkAnimation(key, name, `${key}: ${name}`, field!) : undefined;
 
-            if (allowed != null && allowed !== 'all' && !(allowed === 'shapes' ? SHAPE_TYPES.includes(type ?? 'image') : allowed.includes(type ?? 'image'))) {
-                yield error('invalid-animation', field!, `'${key}: ${name}' is only allowed on ${allowed === 'shapes' ? 'shapes' : allowed.join(', ')}, but '${definition.id}' has type ${type ?? 'image'}.`);
-            }
+            if (invalid != null) yield invalid;
+        }
+
+        // An `+effect` hook plays a resolve animation on what the block draws, so it must be one that can play there.
+        for (const field of fields.filter(x => x.key === 'exit')) {
+            const effect = /^\+effect:\s*([\w-]+)/.exec(field.value)?.[1];
+            const invalid = effect != null ? checkAnimation('exit', effect, `+effect: ${effect}`, field) : undefined;
+
+            if (invalid != null) yield invalid;
         }
 
         const look = typeOf(valueOf(fields, 'look'));
@@ -324,7 +344,7 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
         }
     }
 
-    found.push(...validateDefinitions(textDocument, parsed.definitions, lines, options), ...validateAlignment(parsed.statements, lines), ...validateUnknowns(source, parsed, lines));
+    found.push(...validateDefinitions(textDocument, parsed.definitions, lines, options, timeline),...validateAlignment(parsed.statements, lines), ...validateUnknowns(source, parsed, lines));
     fixableDiagnostics.set(textDocument.uri, found.filter(item => item.data?.textEdits != null));
 
     return found;

@@ -98,7 +98,7 @@ export const TYPES_OF_KIND: Partial<Record<Definition['kind'], readonly string[]
     arena: ['image'],
     tether: ['link'],
     actor: ['image', 'graphic'],
-    object: ['ellipse', 'rectangle', 'cone', 'donut', 'image', 'graphic'],
+    object: ['ellipse', 'rectangle', 'cone', 'donut', 'prism', 'image', 'graphic'],
     puddle: ['ellipse', 'rectangle', 'cone', 'donut', 'image', 'graphic']
 };
 /** A headmarker's size in plane units, which isn't the diagram's to choose. */
@@ -655,6 +655,9 @@ function readElementType(definition: Definition, values: Record<string, unknown>
 
         values.type = 'marker';
     }
+
+    // A prism has no default depth to draw its side and top with.
+    if (values.type === 'prism' && typeof values.depth !== 'number') error(definition.line, `"${definition.id}" needs a "depth": prisms are boxes`);
 }
 
 /** Compiles a `.diagram` file. Everything wrong with it is returned as a diagnostic, and the result is then incomplete. */

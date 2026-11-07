@@ -134,6 +134,12 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
         // Inside a `define` block, which runs until the next line in the first column.
         const block = blockOf(lines, line, before);
         const definition = block >= 0 ? parsed.definitions.find(x => x.line - 1 === block) : undefined;
+        // The statement whose arguments are being written: on its own line, or as a hook of `exit` (`exit: +effect: wind`).
+        let sign: string;
+        let verb: string;
+        let args: string;
+        /** The element types an `+effect` hook plays on, inside a `define` block. */
+        let effectTypes: readonly string[] | undefined;
 
         if (definition != null) {
             const field = /^\s+([a-zA-Z][\w-]*):\s*(.*)$/.exec(before);
@@ -143,7 +149,8 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             }
 
             // Only what the block can draw: its `type`, or else any type of its kind.
-            const types = typesOfBlock(definition.kind, fieldsOf(definition, lines).find(x => x.key === 'type')?.value);
+            const shape = definition.kind === 'action' ? timeline?.js.actions?.[baseOf(definition.id)]?.shape : undefined;
+            const types = typesOfBlock(definition.kind, fieldsOf(definition, lines).find(x => x.key === 'type')?.value, typeof shape === 'string' ? shape : undefined);
 
             if (field == null) {
                 // Without a colon yet, it's a key, unless the line continues `exit`.
@@ -164,6 +171,16 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
                 case 'headmarker': return /\S\s/.test(field[2]!) ? [] : member(headmarkerLooksOf(options));
                 case 'covers': return member(timeline != null ? getStrategyKeys(timeline.document) : []);
                 case 'exit': {
+                    const hook = /^([+-])([a-z][a-z-]*):\s*(.*)$/.exec(field[2]!);
+
+                    // After a hook's colon come its arguments, and an effect only plays on what the block draws.
+                    if (hook != null) {
+                        [, sign, verb, args] = hook as unknown as [string, string, string, string];
+                        effectTypes = types;
+
+                        return argumentsCompletion();
+                    }
+
                     const values = valuesOfField();
                     const hooks = ['+effect', '-actor', '+actor', '+headmarker', '-headmarker', '+object', '-object', '+puddle', '-puddle', '+status', '-status'];
 
@@ -179,9 +196,6 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 
         const rest = before.replace(/^\s*(?:\d+\s+)?/, '');
         const verbOnLine = /^([+-]?)([a-z][a-z-]*):\s*(.*)$/.exec(rest);
-        let sign: string;
-        let verb: string;
-        let args: string;
 
         if (verbOnLine != null) {
             [, sign, verb, args] = verbOnLine as unknown as [string, string, string, string];
@@ -232,8 +246,14 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
                     return member(keysOf(timeline, 'actions'));
                 case 'status':
                     return member(new Set([...keysOf(timeline, 'status'), ...Object.keys(documentCache.getLinterOptions(settings).enums.common?.yaml.status ?? {})]));
-                case 'effect':
-                    return member([...RESOLVE_PRESETS, 'hello-world'], undefined, label => schema?.animations.exit[label] ?? schema?.looks.markers[label]);
+                case 'effect': {
+                    // In a `define` block, only the resolve animations its `exit` could play.
+                    const exit = effectTypes != null && schema != null && definition != null ? fieldsOfKind(schema, definition.kind).exit : undefined;
+                    const playable = exit != null ? suggestedValuesOf(schema!, definition!.kind, effectTypes!, 'exit', exit) : undefined;
+                    const effects = [...RESOLVE_PRESETS, 'hello-world'].filter(label => playable == null || schema?.animations.exit[label] == null || playable[label] != null);
+
+                    return member(effects, undefined, label => schema?.animations.exit[label] ?? schema?.looks.markers[label]);
+                }
                 case 'strategy':
                     return member(strategies);
                 case 'thumbnail':
