@@ -274,6 +274,14 @@ export interface DiagramToken {
     statement?: Statement;
     /** The clause it's a value of. */
     clause?: string;
+    /** For a `field` token, the key it's the value of. */
+    field?: string;
+}
+
+/** Whether a token names a strategy (`define strategy` or `+strategy:`), whose IDs are apart from those of elements. */
+export function isStrategyToken(token: DiagramToken, definitions: Definition[]): boolean {
+    return token.statement?.verb === 'strategy'
+        || token.kind === 'definition' && definitions.some(definition => definition.kind === 'strategy' && definition.line - 1 === token.line);
 }
 
 /** Where the arguments of a statement's line start: past the timestamp and verb. */
@@ -283,6 +291,14 @@ const ELEMENT_FIELDS = new Set(['flash']);
 
 /** Finds a statement's words in `raw`, its line. */
 function* statementTokens(statement: Statement, raw: string, line: number): Generator<DiagramToken> {
+    // `+strategy: <ID>` takes free text, which is the ID of a `define strategy`.
+    if (statement.verb === 'strategy' && statement.sign === '+' && statement.text !== '') {
+        const start = raw.indexOf(statement.text, LINE_PREFIX.exec(raw)![0].length);
+
+        yield { text: statement.text, line, start, end: start + statement.text.length, kind: 'subject', statement };
+        return;
+    }
+
     if (statement.subjects.length === 0) {
         return;
     }
@@ -326,8 +342,8 @@ export function tokensOf(source: string, parsed: ParseResult = parse(source)): D
         tokens.push({ text: definition.id, line, start, end: start + definition.id.length, kind: 'definition' });
 
         for (const field of fieldsOf(definition, lines)) {
-            if (ELEMENT_FIELDS.has(field.key) && field.value !== '') {
-                tokens.push({ text: field.value, line: field.line, start: field.valueStart, end: field.valueStart + field.value.length, kind: 'field' });
+            if (ELEMENT_FIELDS.has(field.key) && field.value !== '' || field.key === 'attached' && definition.kind === 'action' && !/^(?:true|false)$/.test(field.value)) {
+                tokens.push({ text: field.value, line: field.line, start: field.valueStart, end: field.valueStart + field.value.length, kind: 'field', field: field.key });
             } else if (field.key === 'exit' && /^[+-]/.test(field.value)) {
                 // A hook line has no timestamp of its own, and only its columns matter here.
                 for (const hook of parse(`0 ${field.value}`).statements) {
@@ -397,10 +413,11 @@ function namesAs(token: DiagramToken, kind: 'action' | 'status' | 'actor', key: 
 
     if (kind === 'actor') {
         // An `+aoe`'s subject is an action, and a `flash` an element of the diagram.
-        return named && verb != null && verb !== 'status' && verb !== 'effect' && !(verb === 'aoe' && token.kind === 'subject');
+        return named && verb != null && verb !== 'status' && verb !== 'effect' && verb !== 'strategy' && !(verb === 'aoe' && token.kind === 'subject');
     }
 
-    return named && verb !== 'status' && verb !== 'effect';
+    // An `attached` value is an actor's key, and a `+strategy` a strategy's ID.
+    return named && verb !== 'status' && verb !== 'effect' && verb !== 'strategy' && token.field !== 'attached';
 }
 
 /** Where the `.diagram` file `textDocument` names the action, status effect or timeline actor `key`: only the key itself, without a sub-ID. */
