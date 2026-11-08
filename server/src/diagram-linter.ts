@@ -95,7 +95,7 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
         }
 
         // An `+effect` hook plays a resolve animation on what the block draws, so it must be one that can play there.
-        for (const field of fields.filter(x => x.key === 'exit')) {
+        for (const field of fields.filter(x => x.key === 'on:enter' || x.key === 'on:exit')) {
             const effect = /^\+effect:\s*([\w-]+)/.exec(field.value)?.[1];
             const invalid = effect != null ? checkAnimation('exit', effect, `+effect: ${effect}`, field) : undefined;
 
@@ -167,7 +167,11 @@ function* validateFields(definitions: Definition[], lines: string[], schema: Dia
                 continue;
             }
 
-            // `exit` also holds statements, which aren't values.
+            // Hooks hold statements, which aren't values.
+            if (key === 'on:enter' || key === 'on:exit') {
+                continue;
+            }
+
             const own = fields.filter(field => field.key === key && !/^[+-]/.test(field.value));
 
             if (own.length === 0 || own.every(field => field.value === '')) {

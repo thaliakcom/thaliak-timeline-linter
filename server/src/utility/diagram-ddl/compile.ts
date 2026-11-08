@@ -28,6 +28,14 @@ const MIN_HINT_DURATION = 3000;
 const PLAYER_ICON_RADIUS = 7.5 / 2 / 4.39;
 /** How often a follow is played out, in ms. */
 const FOLLOW_STEP = 50;
+// A `teleport`'s phases in ms, as in game, from the author's frame-by-frame replays: it turns in place, then slides to its
+// target, arriving at the statement's time. The game's 600 ms dash animation after that isn't drawn.
+const TELEPORT_TURN = 280;
+const TELEPORT_SLIDE = 233;
+/** How long a `teleport`'s slide speeds up, in ms: barely, as in game. Tuned by eye. */
+const TELEPORT_EASE_IN = 40;
+/** How long a `teleport`'s slide slows down, in ms. The game doesn't, but a little looks less abrupt. At most 100 ms. */
+const TELEPORT_EASE_OUT = 80;
 /**
  * How fast a follower turns toward what it follows, in degrees per ms, so that it turns rather than snaps where its
  * target got far from its front, as after a cast lock. Provisional, until tested against footage.
@@ -124,13 +132,15 @@ const GHOST_SIZE = 7.5;
  */
 const SHOW_ENEMY_GHOSTS = false;
 const RAIDWIDE_BASE = 'diagram-raidwide';
+/** The subject that an action hook's statement without one gets: the action's caster, as of the use. Not for authors to write. */
+const CASTER = '$caster';
 /** The element that shows an action's name as it hits. */
 const LABEL_BASE = 'diagram-label';
 /** Large enough for a sweep from the arena's edge to reach the far edge. */
 const RAIDWIDE_SIZE = 420;
 const DASHED = { look: { type: 'none' }, stroke: { style: 'dashed', color: '#fce76e' } };
 /** Definition keys that describe a placement rather than the drawn element. */
-const NON_VISUAL_KEYS = new Set(['attached', 'hooks', 'tracks', 'headmarker']);
+const NON_VISUAL_KEYS = new Set(['attached', 'enterHooks', 'exitHooks', 'tracks', 'headmarker']);
 /** The `define action` keys that were removed: an action's hit shows only its resolve effect. */
 const REMOVED_KEYS = ['flash', 'flashLook', 'hold', 'hidden'];
 /** The element kinds that `define` declares, by the verb that places them. */
@@ -166,8 +176,8 @@ const AOE_DEFINITIONS: Record<string, Record<string, unknown>> = {
     [AOE_BASES.ellipse]: { type: 'ellipse', ...AOE_LOOK },
     [AOE_BASES.cone]: { type: 'cone', ...AOE_LOOK },
     [AOE_BASES.donut]: { type: 'donut', ...AOE_LOOK },
-    // A line starts at its caster and runs forward.
-    [AOE_BASES.rectangle]: { type: 'rectangle', origin: [0.5, 1], ...AOE_LOOK },
+    // A line starts at its caster, on its top edge, where the AoE pulse and `sweep` start, and runs forward.
+    [AOE_BASES.rectangle]: { type: 'rectangle', origin: [0.5, 0], ...AOE_LOOK },
     [AOE_PART_BASE]: { type: 'rectangle', ...AOE_LOOK },
     [AOE_GRAPHIC_BASE]: { type: 'marker', ...AOE_LOOK }
 };
@@ -323,8 +333,9 @@ export function drawnShape(facts: ActionFacts, arena: number | undefined): Drawn
     const cone = (angle: number | undefined): DrawnShape | string => range <= 0 ? noRange
         : angle == null ? 'needs an "angle" on its timeline action'
         : { type: 'cone', yalms: [0, range], angle };
-    // A line without a width in game data is infinitely wide, so it reaches across the arena.
-    const line = (): DrawnShape | string => range <= 0 ? noRange : { type: 'rectangle', yalms: [width > 0 ? width : across, range] };
+    // A line without a width in game data is infinitely wide. Its axis may run anywhere through the arena, so it
+    // reaches the arena's width to either side of it and covers the whole arena wherever it is.
+    const line = (): DrawnShape | string => range <= 0 ? noRange : { type: 'rectangle', yalms: [width > 0 ? width : across * 2, range] };
     const cross = (angles: number[]): DrawnShape | string => range <= 0 || width <= 0 ? 'needs an effectRange and an XAxisModifier in game data'
         : { type: 'parts', parts: angles.map(rotate => ({ offset: [0, 0], rotate, size: [width, range * 2] })) };
 
@@ -603,18 +614,30 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
         const values: Record<string, unknown> = {};
 
         for (const [key, lines] of Object.entries(definition.fields)) {
-            if (key === 'exit') {
-                // `+effect: laser` and the like are statements to run, and anything else is an `exit` animation.
-                const [hooks, animations] = [lines.filter(line => /^[+-]/.test(line)), lines.filter(line => line !== '' && !/^[+-]/.test(line))];
+            if (key === 'on:enter' || key === 'on:exit') {
+                // Statements to run, such as `+effect: laser`.
+                const hooks = lines.filter(line => line !== '');
 
-                values.hooks = hooks;
+                values[key === 'on:enter' ? 'enterHooks' : 'exitHooks'] = hooks;
 
                 for (const effect of hooks.map(hook => /^\+effect:\s*([\w-]+)/.exec(hook)?.[1])) {
                     if (effect != null && PLANNED_EFFECTS.includes(effect)) error(definition.line, plannedEffectMessage(effect));
                 }
 
+                continue;
+            }
+
+            if (key.startsWith('on:')) {
+                error(definition.line, `"${key}" isn't a hook: on:enter or on:exit`);
+                continue;
+            }
+
+            if ((key === 'enter' || key === 'exit') && lines.some(line => /^[+-]/.test(line))) {
+                error(definition.line, `"${definition.id}": statements go under "on:${key}" now; "${key}" holds only an animation`);
+                const animations = lines.filter(line => line !== '' && !/^[+-]/.test(line));
+
                 try {
-                    if (animations.length > 0) values.exit = readFieldValue(animations.join(' '));
+                    if (animations.length > 0) values[key] = readFieldValue(animations.join(' '));
                 } catch (e) {
                     error(definition.line, `"${key}" of "${definition.id}" can't be read: ${e instanceof Error ? e.message : e}`);
                 }
@@ -634,7 +657,7 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
             if ('look' in values) error(definition.line, `"${definition.id}" can't have a "look": AoE looks come from omens.yaml`);
 
             for (const field of REMOVED_KEYS) {
-                if (field in values) error(definition.line, `"${definition.id}" can't have "${field}": it was removed; an action's hit shows only its resolve effect (+effect in exit)`);
+                if (field in values) error(definition.line, `"${definition.id}" can't have "${field}": it was removed; an action's hit shows only its resolve effect (+effect in on:exit)`);
             }
 
             if ('attached' in values && typeof values.attached !== 'boolean' && typeof values.attached !== 'string') error(definition.line, `"attached" of "${definition.id}" is true, false or an actor's key`);
@@ -853,7 +876,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         if (def == null && !PLAYERS.includes(base)) {
             error(line, `"${base}" has no definition`);
         } else if (def != null) {
-            const { hooks: _hooks, duration: _duration, ...visual } = def;
+            const { enterHooks: _enterHooks, exitHooks: _exitHooks, duration: _duration, ...visual } = def;
             definitions[definitionKey(id)] = visual;
         }
     };
@@ -877,6 +900,9 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     /** The elements of the timeline actors `actors` (`omega`, `omega#2`) alive at `at`, in any scope. */
     const aliveOf = (actors: string[], at: number): CompiledElement[] =>
         [...elements.values()].filter(e => actors.includes(e.base) && e.spawns.some(spawn => at >= spawn.from && at <= spawn.to));
+    /** Who casts a use: every alive element of its action's actors, except the helper's, whose casts show nothing. */
+    const castersOf = (use: Use): { id: string, scope: Scope }[] =>
+        aliveOf(actorsOf(actions[use.action]).filter(actor => input.actors?.[actor]?.id != null), use.at).map(e => ({ id: e.id, scope: {} }));
 
     /** Expands a subject into element IDs, resolving `*` against what's alive at `t`. */
     const expandSubject = (token: string, s: Statement, within: Scope): string[] => expandTemplate(token).flatMap(id => {
@@ -1000,9 +1026,13 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const rotate = clauseOf(s, 'rotate');
 
         if (rotate != null) {
-            if (overMs == null) error(s.line, `the rotation of "${id}" needs "over"`);
+            const by = valueFor(rotate, index, ids, s, within)!;
 
-            element.turns.push({ ...within, t: s.verb === 'arrive' ? s.at - (overMs ?? 0) : s.at, over: overMs ?? 0, by: Number(valueFor(rotate, index, ids, s, within)) });
+            if (overMs == null) error(s.line, `the rotation of "${id}" needs "over"`);
+            // An unsigned amount reads like a facing, which is what "toward" is for.
+            if (!/^[+-]\d/.test(by)) error(s.line, `"rotate ${by}" turns by ${by}° from where "${id}" faces now; write "rotate +${by}" for that, or "toward ${by}" to face ${by}° (0 is north, 180 is south)`);
+
+            element.turns.push({ ...within, t: s.verb === 'arrive' ? s.at - (overMs ?? 0) : s.at, over: overMs ?? 0, by: Number(by) });
         }
 
         addToward(element, s, index, ids, within, overMs ?? 0);
@@ -1131,9 +1161,28 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     const headmarkerSpawns: { id: string, spawn: Spawn, line: number }[] = [];
     const lastKeyframes = new Map<string, number>();
 
-    /** Applies one statement. `effectTarget` is the element whose `exit` hook this statement comes from. */
+    /** Runs an element's `on:enter` or `on:exit` statements at the time of `s`, which places or removes it. */
+    const runElementHooks = (element: CompiledElement, hooks: 'enterHooks' | 'exitHooks', s: Statement, within: Scope, id: string) => {
+        for (const line of (elementDef(element.base, element.id.includes('@'))?.[hooks] ?? []) as string[]) {
+            for (const hooked of parse(`${s.at} ${line}`).statements) run({ ...hooked, line: s.line }, within, id);
+        }
+    };
+
+    /** Applies one statement. `effectTarget` is the element whose `on:exit` or `on:enter` hook this statement comes from. */
     const run = (s: Statement, within: Scope, effectTarget?: string, hookUse?: Use): void => {
-        const subjects = () => s.subjects.flatMap(token => expandSubject(token, s, within));
+        const subjects = () => s.subjects.flatMap(token => {
+            if (token !== CASTER) return expandSubject(token, s, within);
+            if (hookUse == null) {
+                error(s.line, `"${CASTER}" only works in an action's hooks`);
+                return [];
+            }
+
+            const casters = castersOf(hookUse).map(caster => caster.id);
+
+            if (casters.length === 0) error(s.line, `"${hookUse.action}" has no caster alive at ${s.at} for its hook's "${s.verb}"`);
+
+            return casters;
+        });
 
         switch (s.verb) {
             case 'keyframe': {
@@ -1254,10 +1303,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                             open.to = s.at;
                         }
 
-                        for (const line of (elementDef(element.base, element.id.includes('@'))?.hooks ?? []) as string[]) {
-                            for (const hooked of parse(`${s.at} ${line}`).statements) run({ ...hooked, line: s.line }, within, id);
-                        }
-
+                        runElementHooks(element, 'exitHooks', s, within, id);
                         return;
                     }
 
@@ -1311,6 +1357,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     }
 
                     addToward(element, s, index, ids, within);
+                    runElementHooks(element, 'enterHooks', s, within, id);
                 });
                 break;
             }
@@ -1391,6 +1438,36 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 ids.forEach((id, index) => addMotion(ensure(id, s.line), s, id, index, ids, within));
                 break;
             }
+            case 'teleport': {
+                // It turns in place first (its `toward` or `rotate`, a `depart` without `to`), then slides (an `arrive`
+                // without them) until the statement's time.
+                const arrival = s.at;
+                const slide = arrival - TELEPORT_SLIDE;
+                const start = slide - TELEPORT_TURN;
+                const turnClauses = s.clauses.filter(c => c.key === 'toward' || c.key === 'rotate');
+                const turn: Statement = { ...s, verb: 'depart', at: start, clauses: [...turnClauses, { key: 'over', values: [`${TELEPORT_TURN}ms`] }] };
+                const move: Statement = { ...s, verb: 'arrive', at: arrival, clauses: [...s.clauses.filter(c => c.key === 'to'), { key: 'over', values: [`${TELEPORT_SLIDE}ms`] }] };
+                const ids = subjects();
+
+                if (clauseOf(s, 'to') == null) error(s.line, '"teleport" needs "to"');
+                if (clauseOf(s, 'over') != null) error(s.line, `"teleport" always takes ${TELEPORT_TURN + TELEPORT_SLIDE} ms, so it can't have "over"`);
+
+                ids.forEach((id, index) => {
+                    const element = ensure(id, s.line);
+
+                    if (turnClauses.length > 0) addMotion(element, turn, id, index, ids, within);
+
+                    const poses = element.poses.length;
+                    addMotion(element, move, id, index, ids, within);
+
+                    // The slide barely speeds up, and slows down only a little, unlike a run.
+                    const pose = element.poses[poses];
+                    if (pose?.kind === 'move') Object.assign(pose, { ramp: TELEPORT_EASE_IN, rampOut: TELEPORT_EASE_OUT });
+
+                    (element.teleports ??= []).push({ ...within, start, slide, arrive: arrival });
+                });
+                break;
+            }
             case 'set': {
                 const ids = subjects();
 
@@ -1464,6 +1541,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
      * is a pure function of time and can't simulate. A follower turns toward its target (at most at `FOLLOW_TURN_SPEED`) and, with `on`, chases it at its
      * `speed` until it's within its `reach`. While it casts an action whose `actor` it is (see `castersOf`), and through the action's
      * attack animation after that (`animationLock`), it holds still, and only turns if the action `tracks`. During a `turn`, it holds still and turns away and back.
+     * Its own moves and turns (`depart`, `teleport`, ...) pause the follow until they end.
      */
     function simulateFollows(): void {
         const sorted = (element: CompiledElement): CompiledElement => ({ ...element, poses: [...element.poses].sort((a, b) => a.start - b.start), turns: [...element.turns].sort((a, b) => a.t - b.t) });
@@ -1480,7 +1558,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             const props: Record<string, unknown> = { ...elementDef(element.base), ...element.props };
             const hitbox = input.hitboxes?.[element.base];
 
-            // Tools such as the editor need to know, since nothing else may move or turn it then.
+            // Tools such as the editor need to know, since the follow decides where it is then.
             (element.follows ??= []).push({ from: follow.from, to, target: follow.target, line: follow.line });
 
             if (follow.chase && hitbox == null) {
@@ -1488,13 +1566,20 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 continue;
             }
 
-            for (const pose of element.poses) {
-                if (pose.start > follow.from && pose.start < to) error(follow.line, `"${follow.id}" follows "${follow.target}" from ${follow.from} to ${to}, so it can't also be placed or moved at ${pose.start}`);
-            }
+            // Its own moves and turns, such as a `teleport` before a cast, pause the follow, which picks up where they leave it.
+            const pauses = [
+                ...element.poses.filter(pose => compatible(pose, follow.within) && pose.start > follow.from && pose.start < to).map((pose): [number, number] => [pose.start, pose.end]),
+                ...element.turns.filter(turn => compatible(turn, follow.within) && turn.t > follow.from && turn.t < to).map((turn): [number, number] => [turn.t, turn.t + turn.over]),
+                // A teleport pauses it as a whole, from its turn to its arrival.
+                ...(element.teleports ?? []).filter(teleport => compatible(teleport, follow.within) && teleport.start > follow.from && teleport.start < to).map((teleport): [number, number] => [teleport.start, teleport.arrive])
+            ].sort((a, b) => a[0] - b[0]).reduce<[number, number][]>((merged, [from, until]) => {
+                const last = merged.at(-1);
 
-            for (const turn of element.turns) {
-                if (turn.t > follow.from && turn.t < to) error(follow.line, `"${follow.id}" follows "${follow.target}" from ${follow.from} to ${to}, so it can't also be turned at ${turn.t}; use "turn"`);
-            }
+                if (last != null && from <= last[1]) last[1] = Math.max(last[1], until);
+                else merged.push([from, until]);
+
+                return merged;
+            }, []);
 
             // Only what `positionAt` and `rotationAt` read.
             const diagram = { elements: Object.fromEntries([...elements.values()].map(e => [e.id, sorted(e)])), aoes } as unknown as CompiledDiagram;
@@ -1510,13 +1595,52 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             const turns = awayTurns.filter(turn => turn.id === follow.id && turn.at >= follow.from && turn.at < to).map(turn => ({ ...turn, start: NaN }));
             let [x, y] = positionAt(diagram, follow.id, follow.from);
             let front = rotationAt(diagram, follow.id, follow.from) + facing;
-            const samples: [t: number, x: number, y: number, front: number][] = [[follow.from, x, y, front]];
-            // Steady steps, plus where each hold starts and ends, so that nothing moves a moment too early or late.
-            const edges = [...locks.flatMap(l => [l.from, l.to]), ...turns.flatMap(turn => [turn.at, turn.at + turn.over, turn.at + turn.over + turn.hold, turn.at + 2 * turn.over + turn.hold])];
+            /** The samples since the follow started or last resumed, or `null` while it's paused. */
+            let samples: [t: number, x: number, y: number, front: number][] | null = [[follow.from, x, y, front]];
+            // Steady steps, plus where each hold or pause starts and ends, so that nothing moves a moment too early or late.
+            const edges = [
+                ...locks.flatMap(l => [l.from, l.to]),
+                ...turns.flatMap(turn => [turn.at, turn.at + turn.over, turn.at + turn.over + turn.hold, turn.at + 2 * turn.over + turn.hold]),
+                ...pauses.flat()
+            ];
             const times = [...new Set([...Array.from({ length: Math.floor((to - follow.from) / FOLLOW_STEP) }, (_, i) => follow.from + (i + 1) * FOLLOW_STEP), ...edges.filter(t => t > follow.from && t <= to)])].sort((a, b) => a - b);
             let previous = follow.from;
 
+            /** Writes samples as poses and turns. A sample that lies halfway between its neighbours, as on a straight run at a steady speed or while standing still, adds nothing. */
+            const write = (written: [t: number, x: number, y: number, front: number][]) => {
+                const halfway = (a: number, b: number, c: number) => Math.abs(b - (a + c) / 2) < 0.01;
+                const kept = written.filter((sample, i) => i === 0 || i === written.length - 1
+                    || !sample.every((value, k) => halfway(written[i - 1]![k]!, value, written[i + 1]![k]!)));
+
+                for (let i = 1; i < kept.length; i++) {
+                    const [from, , , previousFront] = kept[i - 1]!;
+                    const [t, px, py, sampleFront] = kept[i]!;
+                    const [lastX, lastY] = [kept[i - 1]![1], kept[i - 1]![2]];
+
+                    if (px !== lastX || py !== lastY) element.poses.push({ ...follow.within, start: from, end: t, kind: 'move', to: [px, py], ramp: 0 });
+                    if (sampleFront !== previousFront) element.turns.push({ ...follow.within, t: from, over: t - from, abs: sampleFront });
+                }
+            };
+
             for (const t of times) {
+                const pause = pauses.find(([from, until]) => t > from && t <= until);
+
+                if (pause != null) {
+                    if (samples != null) write(samples);
+
+                    samples = null;
+
+                    if (t < pause[1]) continue;
+
+                    // It resumes from where the pause left it, which only the poses and turns written so far say.
+                    diagram.elements[follow.id] = sorted(element);
+                    [x, y] = positionAt(diagram, follow.id, t);
+                    front = rotationAt(diagram, follow.id, t) + facing;
+                    samples = [[t, x, y, front]];
+                    previous = t;
+                    continue;
+                }
+
                 const elapsed = t - previous;
                 previous = t;
                 const target = positionAt(diagram, follow.target, t);
@@ -1550,28 +1674,22 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     }
                 }
 
-                samples.push([t, x, y, front]);
+                samples!.push([t, x, y, front]);
             }
 
-            // A sample that lies halfway between its neighbours, as on a straight run at a steady speed or while standing still, adds nothing.
-            const halfway = (a: number, b: number, c: number) => Math.abs(b - (a + c) / 2) < 0.01;
-            const kept = samples.filter((sample, i) => i === 0 || i === samples.length - 1
-                || !sample.every((value, k) => halfway(samples[i - 1]![k]!, value, samples[i + 1]![k]!)));
-
-            for (let i = 1; i < kept.length; i++) {
-                const [from, , , previousFront] = kept[i - 1]!;
-                const [t, px, py, sampleFront] = kept[i]!;
-                const [lastX, lastY] = [kept[i - 1]![1], kept[i - 1]![2]];
-
-                if (px !== lastX || py !== lastY) element.poses.push({ ...follow.within, start: from, end: t, kind: 'move', to: [px, py], ramp: 0 });
-                if (sampleFront !== previousFront) element.turns.push({ ...follow.within, t: from, over: t - from, abs: sampleFront });
-            }
+            if (samples != null) write(samples);
         }
     }
 
-    // Action hooks become ordinary statements at each use of the action.
-    const hooked: { statement: Statement, use: Use }[] = uses.flatMap(use => ((actionDefs[use.action]?.hooks ?? []) as string[])
-        .flatMap(line => parse(`${use.at} ${line}`).statements.map(statement => ({ statement: { ...statement, line: 0 }, use }))));
+    // Action hooks become ordinary statements at each use of the action: `on:enter` as its cast starts, `on:exit` at its hit.
+    // One that starts with a clause instead of a subject (`teleport: to (0, 0)`) moves the caster.
+    const hookStatements = (use: Use, hooks: 'enterHooks' | 'exitHooks', at: number) => ((actionDefs[use.action]?.[hooks] ?? []) as string[])
+        .flatMap(line => parse(`${at} ${line.replace(/^([+-]?[a-z][a-z-]*:)\s+(?=(?:to|toward|rotate|over)\b)/, `$1 ${CASTER} `)}`).statements)
+        .map(statement => ({ statement: { ...statement, line: 0 }, use }));
+    const hooked: { statement: Statement, use: Use }[] = uses.flatMap(use => [
+        ...hookStatements(use, 'enterHooks', use.at - (actions[use.action]?.cast ?? 0)),
+        ...hookStatements(use, 'exitHooks', use.at)
+    ]);
     const timed = [
         ...body.map(statement => ({ statement, use: undefined as Use | undefined })),
         ...hooked
@@ -1584,10 +1702,6 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     if (arenas.length > 0) requireBase('arena', 0);
 
     addNameLabels([...elements.values()], base => elementDef(base)?.image === BOSS_IMAGE ? input.actors?.[base] : undefined);
-
-    /** Who casts a use: every alive element of its action's actors, except the helper's, whose casts show nothing. */
-    const castersOf = (use: Use): { id: string, scope: Scope }[] =>
-        aliveOf(actorsOf(actions[use.action]).filter(actor => input.actors?.[actor]?.id != null), use.at).map(e => ({ id: e.id, scope: {} }));
 
     // Every use must have the right number of placements, unless an action hook covers it.
     for (const use of uses) {

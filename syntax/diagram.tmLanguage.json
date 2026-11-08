@@ -97,17 +97,28 @@
         "define-body": {
             "patterns": [
                 { "include": "#comment" },
+                { "include": "#hook-key" },
                 { "include": "#hook" },
                 { "include": "#element-field" },
                 { "include": "#values" }
             ]
         },
+        "hook-key": {
+            "comment": "`on:enter` and `on:exit` are one key each.",
+            "match": "(?<![\\w-])(on:(?:enter|exit))\\s*(:)",
+            "captures": {
+                "1": { "name": "entity.name.tag.field.thaliak-diagram" },
+                "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
+            }
+        },
         "hook": {
-            "begin": "(?<![\\w-])([+-])([a-z][a-z-]*)(:)",
+            "comment": "A statement of a hook: signed, or one of the unsigned verbs that move or turn (not `headmarker`, which is also a field).",
+            "begin": "(?<![\\w-])(?:([+-])([a-z][a-z-]*)|(teleport|arrive|depart|move|set|turn))(:)",
             "beginCaptures": {
                 "1": { "name": "entity.name.tag.verb.operator.thaliak-diagram" },
                 "2": { "name": "entity.name.tag.verb.thaliak-diagram" },
-                "3": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
+                "3": { "name": "entity.name.tag.verb.thaliak-diagram" },
+                "4": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
             },
             "end": "$",
             "patterns": [{ "include": "#arguments" }]

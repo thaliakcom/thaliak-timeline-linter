@@ -241,6 +241,8 @@ export function linesOf(source: string): string[] {
 export function fieldsOf(definition: Definition, lines: string[]): DefinitionField[] {
     const fields: DefinitionField[] = [];
     let key: string | null = null;
+    /** How far the keys are indented. A line indented deeper continues the last field, as a second hook statement does. */
+    let keyIndent = Infinity;
 
     for (let line = definition.line; line < lines.length; line++) {
         const raw = lines[line]!;
@@ -249,10 +251,11 @@ export function fieldsOf(definition: Definition, lines: string[]): DefinitionFie
         if (!/^\s/.test(raw)) break;
 
         const start = raw.length - raw.trimStart().length;
-        const match = definition.kind !== 'gradient' ? /^([a-zA-Z][\w-]*):(\s*)(.*)$/.exec(raw.trimStart()) : null;
+        const match = definition.kind !== 'gradient' ? /^((?:on:)?[a-zA-Z][\w-]*):(\s*)(.*)$/.exec(raw.trimStart()) : null;
 
-        if (match != null) {
+        if (match != null && !(key != null && start > keyIndent)) {
             key = match[1]!;
+            keyIndent = Math.min(keyIndent, start);
             fields.push({ key, line, start, value: match[3]!.trimEnd(), valueStart: start + key.length + 1 + match[2]!.length });
         } else if (key != null) {
             fields.push({ key, line, start, value: raw.trim(), valueStart: start });
@@ -289,8 +292,11 @@ const LINE_PREFIX = /^\s*(?:\d+\s+)?(?:[+-]?[a-z][a-z-]*:\s*)?/;
 /** The fields whose value names an element. */
 const ELEMENT_FIELDS = new Set(['flash']);
 
-/** Finds a statement's words in `raw`, its line. */
-function* statementTokens(statement: Statement, raw: string, line: number): Generator<DiagramToken> {
+/** A hook statement that starts with a clause instead of a subject (`teleport: to (0, 0)`), which moves the action's caster. */
+export const SUBJECTLESS_HOOK = /^[+-]?[a-z][a-z-]*:\s+(?:to|toward|rotate|over)\b/;
+
+/** Finds a statement's words in `raw`, its line. A `subjectless` one starts with a clause. */
+function* statementTokens(statement: Statement, raw: string, line: number, subjectless: boolean = false): Generator<DiagramToken> {
     // `+strategy: <ID>` takes free text, which is the ID of a `define strategy`.
     if (statement.verb === 'strategy' && statement.sign === '+' && statement.text !== '') {
         const start = raw.indexOf(statement.text, LINE_PREFIX.exec(raw)![0].length);
@@ -307,7 +313,7 @@ function* statementTokens(statement: Statement, raw: string, line: number): Gene
     const tokens = tokenize(statement.text);
     let index = 0;
     let clause: string | undefined;
-    let expectValue = true;
+    let expectValue = !subjectless;
 
     for (const text of tokens) {
         const start = raw.indexOf(text, offset);
@@ -344,10 +350,10 @@ export function tokensOf(source: string, parsed: ParseResult = parse(source)): D
         for (const field of fieldsOf(definition, lines)) {
             if (ELEMENT_FIELDS.has(field.key) && field.value !== '' || field.key === 'attached' && definition.kind === 'action' && !/^(?:true|false)$/.test(field.value)) {
                 tokens.push({ text: field.value, line: field.line, start: field.valueStart, end: field.valueStart + field.value.length, kind: 'field', field: field.key });
-            } else if (field.key === 'exit' && /^[+-]/.test(field.value)) {
+            } else if ((field.key === 'on:enter' || field.key === 'on:exit') && field.value !== '') {
                 // A hook line has no timestamp of its own, and only its columns matter here.
                 for (const hook of parse(`0 ${field.value}`).statements) {
-                    tokens.push(...statementTokens(hook, lines[field.line]!, field.line));
+                    tokens.push(...statementTokens(hook, lines[field.line]!, field.line, SUBJECTLESS_HOOK.test(field.value)));
                 }
             }
         }

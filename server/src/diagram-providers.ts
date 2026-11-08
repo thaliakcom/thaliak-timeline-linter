@@ -2,7 +2,7 @@
 import { CompletionItem, CompletionItemKind, CompletionParams, DefinitionLink, DefinitionParams, DocumentSymbol, DocumentSymbolParams, Hover, HoverParams, InlayHint, InlayHintParams, Location, Position, Range, ReferenceParams, SymbolKind, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
-import { baseOf, DiagramToken, fieldsOf, idsOf, isStrategyToken, linesOf, liveIdsOf, occurrencesOf, timelineOf, Timeline, tokensOf, usesOfTimeline } from './diagram-context';
+import { baseOf, DiagramToken, fieldsOf, idsOf, isStrategyToken, linesOf, liveIdsOf, occurrencesOf, SUBJECTLESS_HOOK, timelineOf, Timeline, tokensOf, usesOfTimeline } from './diagram-context';
 import { ParserCache } from './parser-cache';
 import { RESOLVE_PRESETS } from './components/diagram/render/effects/presets';
 import { LinterOptions, ThaliakTimelineLinterSettings } from './server';
@@ -14,6 +14,12 @@ import { parse, tokenize } from './utility/diagram-ddl/parse';
 import { formatTime, getAction, getActor, getRange, getStatus, getStrategyKeys } from './util';
 
 const PLAYERS = ['T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2'];
+/** The fields of a `define` block that hold statements. */
+const HOOK_KEYS = new Set(['on:enter', 'on:exit']);
+/** The verbs worth suggesting for a hook statement. */
+const HOOK_VERBS = ['+effect', '-actor', '+actor', '+headmarker', '-headmarker', '+object', '-object', '+puddle', '-puddle', '+status', '-status', 'teleport', 'arrive', 'depart'];
+/** The verbs that move or turn their subject, which an action's hook may leave out to move the caster. */
+const MOVES = new Set(['teleport', 'arrive', 'depart']);
 
 /** The placeholders that stand for groups of players: all of them but the subject's sub-ID. */
 function groupsOf(schema: DiagramSchema | undefined): string[] {
@@ -134,7 +140,7 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
         // Inside a `define` block, which runs until the next line in the first column.
         const block = blockOf(lines, line, before);
         const definition = block >= 0 ? parsed.definitions.find(x => x.line - 1 === block) : undefined;
-        // The statement whose arguments are being written: on its own line, or as a hook of `exit` (`exit: +effect: wind`).
+        // The statement whose arguments are being written: on its own line, or as a hook (`on:exit: +effect: wind`).
         let sign: string;
         let verb: string;
         let args: string;
@@ -142,7 +148,7 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
         let effectTypes: readonly string[] | undefined;
 
         if (definition != null) {
-            const field = /^\s+([a-zA-Z][\w-]*):\s*(.*)$/.exec(before);
+            const field = /^\s+((?:on:)?[a-zA-Z][\w-]*):\s*(.*)$/.exec(before);
 
             if (definition.kind === 'gradient') {
                 return [];
@@ -150,10 +156,17 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 
             // Only what the block can draw: its `type`, or else any type of its kind.
             const shape = definition.kind === 'action' ? timeline?.js.actions?.[baseOf(definition.id)]?.shape : undefined;
-            const types = typesOfBlock(definition.kind, fieldsOf(definition, lines).find(x => x.key === 'type')?.value, typeof shape === 'string' ? shape : undefined);
+            const fields = fieldsOf(definition, lines);
+            const types = typesOfBlock(definition.kind, fields.find(x => x.key === 'type')?.value, typeof shape === 'string' ? shape : undefined);
+            // A line indented deeper than the keys continues the field above it, which for a hook is one more statement.
+            const continued = fields.find(x => x.line === line && x.valueStart === x.start);
+
+            if (continued != null && HOOK_KEYS.has(continued.key)) {
+                return hookCompletion(before.trimStart());
+            }
 
             if (field == null) {
-                // Without a colon yet, it's a key, unless the line continues `exit`.
+                // Without a colon yet, it's a key.
                 if (schema == null) {
                     return [];
                 }
@@ -170,27 +183,37 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
                 case 'attached': return member(['true', 'false', ...keysOf(timeline, 'actors')]);
                 case 'headmarker': return /\S\s/.test(field[2]!) ? [] : member(headmarkerLooksOf(options));
                 case 'covers': return member(timeline != null ? getStrategyKeys(timeline.document) : []);
-                case 'exit': {
-                    const hook = /^([+-])([a-z][a-z-]*):\s*(.*)$/.exec(field[2]!);
-
-                    // After a hook's colon come its arguments, and an effect only plays on what the block draws.
-                    if (hook != null) {
-                        [, sign, verb, args] = hook as unknown as [string, string, string, string];
-                        effectTypes = types;
-
-                        return argumentsCompletion();
-                    }
-
-                    const values = valuesOfField();
-                    const hooks = ['+effect', '-actor', '+actor', '+headmarker', '-headmarker', '+object', '-object', '+puddle', '-puddle', '+status', '-status'];
-
-                    return [...keyword(hooks, label => schema?.verbs[label]?.description), ...member(Object.keys(values), 'b', label => values[label])];
-                }
+                case 'on:enter':
+                case 'on:exit':
+                    return hookCompletion(field[2]!);
                 default: {
                     const values = valuesOfField();
 
                     return member(Object.keys(values), undefined, label => values[label]);
                 }
+            }
+
+            /** Completes a hook statement, `text` being what's written of it. */
+            function hookCompletion(text: string): CompletionItem[] {
+                const hook = /^([+-]?)([a-z][a-z-]*):\s*(.*)$/.exec(text);
+
+                // Before a colon, it's the verb.
+                if (hook == null) {
+                    return keyword(HOOK_VERBS, label => schema?.verbs[label]?.description);
+                }
+
+                // After a hook's colon come its arguments, and an effect only plays on what the block draws.
+                [, sign, verb, args] = hook as unknown as [string, string, string, string];
+                effectTypes = types;
+
+                // In an action's hook, a statement may leave out its subject to move the caster, and start with a clause.
+                if (definition!.kind === 'action' && SUBJECTLESS_HOOK.test(text)) {
+                    args = `$caster ${args}`;
+                } else if (definition!.kind === 'action' && args === '' && MOVES.has(verb)) {
+                    return [...argumentsCompletion(), ...keyword(verbsOfSchema[verb]?.clauses ?? [], label => schema?.clauses[label]?.description)];
+                }
+
+                return argumentsCompletion();
             }
         }
 
@@ -375,25 +398,30 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
         const block = blockOf(lines, line);
         const definition = block >= 0 ? parsed.definitions.find(x => x.line - 1 === block) : undefined;
 
-        // What runs under `exit` reads like a statement, also on the line of the key itself.
+        // What runs under `on:enter` or `on:exit` reads like a statement, also on the line of the key itself.
         if (definition != null && (token?.statement != null || schema.verbs[word] != null && text[end] === ':')) {
             return schema.verbs[word] != null && text[end] === ':' ? hover(`**${word}**\n\n${schema.verbs[word]!.description}`) : hover(await named(token!.text, token!.statement?.verb, token!.kind));
         }
 
-        if (definition != null && !/^\s*[+-][a-z]/.test(text)) {
-            const fields = fieldsOf(definition, lines);
-            const field = fields.findLast(x => x.line <= line);
+        const fields = definition != null ? fieldsOf(definition, lines) : [];
+        const field = fields.findLast(x => x.line <= line);
+        /** Whether `word` is a key, rather than in its value. */
+        const onKey = field != null && field.line === line && character < field.valueStart;
+
+        // The rest of a hook's statement, such as its clauses, is explained below like any statement's.
+        if (definition != null && !(field != null && HOOK_KEYS.has(field.key) && !onKey) && !/^\s*[+-][a-z]/.test(text)) {
             const known = fieldsOfKind(schema, definition.kind);
 
             if (field == null) {
                 return null;
             }
 
-            // A key, at the start of the line or inside a value such as `{ type: plain }`.
+            // A key, at the start of the line or inside a value such as `{ type: plain }`. `on:enter` is one key.
             if (text[end] === ':') {
-                const spec = known[word];
+                const key = onKey ? field.key : word;
+                const spec = known[key];
 
-                return spec != null ? hover(describeField(word, spec)) : null;
+                return spec != null ? hover(describeField(key, spec)) : null;
             }
 
             if (token?.kind === 'field') {
@@ -412,8 +440,8 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
             return hover(`**${formatTime(Number(word))}**`);
         }
 
-        // A verb: the line's first word after its time, or the start of a statement under `exit`.
-        const statementStart = /^\s*(?:\d+\s+)?(?:[a-zA-Z][\w-]*:\s*)?/.exec(text)?.[0].length ?? 0;
+        // A verb: the line's first word after its time, or the start of a statement under `on:enter` or `on:exit`.
+        const statementStart = /^\s*(?:\d+\s+)?(?:(?:on:)?[a-zA-Z][\w-]*:\s*)?/.exec(text)?.[0].length ?? 0;
         const verb = schema.verbs[word];
 
         if (verb != null && (start === (/^\s*(?:\d+\s+)?/.exec(text)?.[0].length ?? 0) || start === statementStart)) {
@@ -440,7 +468,7 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
 }
 
 /**
- * The `duration` of the puddle each `+puddle` spawns, by the 0-based line of the statement (or of the `exit` hook line),
+ * The `duration` of the puddle each `+puddle` spawns, by the 0-based line of the statement (or of the `on:enter` or `on:exit` hook line),
  * for the puddles whose `define puddle` has one. With several subjects on one line, the first with a duration counts.
  */
 function puddleLifetimesOf(source: string): Map<number, string> {

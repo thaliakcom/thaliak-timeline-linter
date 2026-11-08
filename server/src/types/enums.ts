@@ -8,7 +8,7 @@ export type MarkerLookType = 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' 
 export type HeadmarkerLookType = 'flare' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'unknown';
 export type AoeGraphicLookType = 'circle-kb' | 'exaflare' | 'tower';
 export type EnterAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y';
-export type ExitAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'blast' | 'sweep' | 'feather-rain' | 'wind' | 'tornado' | 'vortex' | 'ice' | 'splash';
+export type ExitAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'blast' | 'sweep' | 'feather-rain' | 'wind' | 'tornado' | 'vortex' | 'ice' | 'splash' | 'sound';
 export type ParameterName = 'speed' | 'height' | 'length' | 'opacity' | 'color';
 /** The look, as its name or as `{ type, ...parameters }`. */
 export type LookTypeValue = LookType | {
@@ -145,7 +145,7 @@ export type ExitAnimationValue = ExitAnimation | {
     color?: string;
 } | {
     /** The animation. */
-    type: 'blast';
+    type: 'blast' | 'sound';
     /**
      * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
      * @minimum 0.1

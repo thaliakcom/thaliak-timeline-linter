@@ -47,7 +47,7 @@ export interface ParseResult {
 
 /** Verbs whose argument is free text rather than a subject and clauses. */
 const TEXT_VERBS = new Set(['hint', 'branch', 'strategy', 'thumbnail']);
-const VERBS = new Set(['keyframe', 'skip', 'thumbnail', 'hint', 'branch', 'strategy', 'actor', 'object', 'puddle', 'headmarker', 'tether', 'status', 'aoe', 'effect', 'set', 'depart', 'arrive', 'move', 'follow', 'turn']);
+const VERBS = new Set(['keyframe', 'skip', 'thumbnail', 'hint', 'branch', 'strategy', 'actor', 'object', 'puddle', 'headmarker', 'tether', 'status', 'aoe', 'effect', 'set', 'depart', 'arrive', 'teleport', 'move', 'follow', 'turn']);
 /** Removed verbs, and what replaces them. */
 const REMOVED_VERBS: Record<string, string> = {
     marker: '"marker" is gone: use "headmarker" for headmarkers, "object" for what attaches to an actor and "puddle" for puddles'
@@ -55,7 +55,8 @@ const REMOVED_VERBS: Record<string, string> = {
 const VERB_LINE = /^([+-]?)([a-z][a-z-]*)(:)?(?:\s+(.*))?$/;
 const DEFINE_LINE = /^define\s+(?:(element|actor|object|puddle|tether|action|gradient|strategy)\s+)?(\S+)$/;
 const DEFINE_KINDS = 'define arena, actor, object, puddle, tether, action, gradient or strategy';
-const FIELD_LINE = /^([a-zA-Z][\w-]*):\s*(.*)$/;
+/** A `key: value` line of a `define` block. Hooks have an `on:` prefix (`on:exit: +effect: fire`). */
+const FIELD_LINE = /^((?:on:)?[a-zA-Z][\w-]*):\s*(.*)$/;
 
 /** Removes a `//` comment that isn't inside a string. */
 function stripComment(line: string): string {
@@ -141,6 +142,8 @@ export function parse(source: string): ParseResult {
     let verb: { sign: Statement['sign'], name: string } | null = null;
     let definition: Definition | null = null;
     let field: string | null = null;
+    /** How far the current `define` block's keys are indented. A line indented deeper continues the last field. */
+    let keyIndent = Infinity;
     /** Whether the last verb was a removed one, whose continuation lines its own diagnostic covers. */
     let removed = false;
 
@@ -200,15 +203,19 @@ export function parse(source: string): ParseResult {
             definition = { line, kind, id: define[2]!, fields: {}, body: [] };
             definitions.push(definition);
             field = null;
+            keyIndent = Infinity;
             verb = null;
             return;
         }
 
         if (definition != null && /^\s/.test(raw)) {
             const match = FIELD_LINE.exec(text);
+            const indent = /^\s*/.exec(raw)![0].length;
 
-            // `+effect: laser` under `exit` belongs to that field; only an unsigned word starts a new one.
-            if (match != null && definition.kind !== 'gradient') {
+            // A line indented deeper than the keys, such as a second statement under `on:enter`, belongs to the last field,
+            // and so does a signed one (`-actor: optical-unit`). Only an unsigned word at the keys' indent starts a new one.
+            if (match != null && definition.kind !== 'gradient' && !(field != null && indent > keyIndent)) {
+                keyIndent = Math.min(keyIndent, indent);
                 field = match[1]!;
                 (definition.fields[field] ??= []).push(match[2]!);
             } else if (field != null) {

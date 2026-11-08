@@ -157,6 +157,7 @@ export const ANIMATIONS = {
         tornado: { description: 'The wind plus a spinning tornado rising from the shape (circles).', elements: ['ellipse'], params: ['speed', 'height', 'opacity'] },
         vortex: { description: 'A layer of water spins inside the AoE like in a glass, climbing its edge (water resolve).', elements: ['ellipse'], params: ['speed', 'height', 'opacity'] },
         ice: { description: 'Thick spiral ridges of ice shoot up over the whole AoE and shatter (ice resolve).', elements: ['ellipse', 'donut'], params: ['speed', 'height', 'opacity'] },
-        splash: { description: 'A big drop of water falls straight down onto the centre and splashes; the omen stays until it hits.', elements: ['ellipse'], params: ['speed', 'opacity'] }
+        splash: { description: 'A big drop of water falls straight down onto the centre and splashes; the omen stays until it hits.', elements: ['ellipse'], params: ['speed', 'opacity'] },
+        sound: { description: 'Broken arcs ripple out from an actor in quick succession, like sound in a comic (screams, roars).', elements: ['image', 'marker'], params: ['speed', 'opacity', 'color'] }
     }
 } as const satisfies Record<'enter' | 'exit', Record<string, AnimationDefinition>>;

@@ -18,8 +18,8 @@ export type Pose = Scope & { start: number, end: number } & (
     | { kind: 'fixed', xy: XY }
     | { kind: 'follow', target: string, offset: XY }
     | { kind: 'snap', target: string, snapAt: number, offset: XY }
-    /** `ramp` is how long it speeds up at its start and slows down at its end, in ms. */
-    | { kind: 'move', to: XY | string, ramp: number }
+    /** `ramp` is how long it speeds up at its start and slows down at its end, in ms; `rampOut`, if given, how long it slows down. */
+    | { kind: 'move', to: XY | string, ramp: number, rampOut?: number }
 );
 
 export type Turn = Scope & { t: number, over: number, abs?: number, by?: number, look?: string };
@@ -40,7 +40,11 @@ export interface CompiledElement {
     facing?: number;
     /** When it follows something (`+follow`), which decides its position and rotation then. `line` is the `+follow`'s. */
     follows?: { from: number, to: number, target: string, line: number }[];
+    /** Each `teleport`: it turns from `start`, then slides from `slide` to `arrive`, fading out and back in on the way. */
+    teleports?: Teleport[];
 }
+
+export type Teleport = Scope & { start: number, slide: number, arrive: number };
 
 /** One placement of an action's AoE at one use. */
 export interface CompiledAoe extends Scope {
@@ -216,7 +220,14 @@ export function select(diagram: CompiledDiagram, selection: Selection): Compiled
     const elements: CompiledDiagram['elements'] = {};
 
     for (const [id, element] of Object.entries(diagram.elements)) {
-        elements[id] = { ...element, spawns: keep(element.spawns), poses: keep(element.poses), turns: keep(element.turns), sets: keep(element.sets) };
+        elements[id] = {
+            ...element,
+            spawns: keep(element.spawns),
+            poses: keep(element.poses),
+            turns: keep(element.turns),
+            sets: keep(element.sets),
+            ...(element.teleports != null ? { teleports: keep(element.teleports) } : {})
+        };
     }
 
     const fastForwards = diagram.branches.flatMap((branch): [number, number][] => {
@@ -240,15 +251,16 @@ export function select(diagram: CompiledDiagram, selection: Selection): Compiled
 
 /**
  * How far along a motion is at `u` (0 to 1), when it speeds up evenly over its first `ramp` (as a fraction
- * of its duration, at most 0.5), moves at a constant speed, and slows down evenly over its last `ramp`.
+ * of its duration), moves at a constant speed, and slows down evenly over its last `rampOut` (`ramp` unless
+ * given). Together they take at most the whole motion.
  */
-export function rampProgress(u: number, ramp: number): number {
-    if (ramp <= 0) return u;
+export function rampProgress(u: number, ramp: number, rampOut: number = ramp): number {
+    if (ramp <= 0 && rampOut <= 0) return u;
 
-    const peak = 1 / (1 - ramp);
+    const peak = 1 / (1 - ramp / 2 - rampOut / 2);
 
     if (u < ramp) return peak * u * u / (2 * ramp);
-    if (u > 1 - ramp) return 1 - peak * (1 - u) * (1 - u) / (2 * ramp);
+    if (u > 1 - rampOut) return 1 - peak * (1 - u) * (1 - u) / (2 * rampOut);
 
     return peak * (u - ramp / 2);
 }
@@ -291,7 +303,7 @@ function poseAt(diagram: CompiledDiagram, element: CompiledElement, index: numbe
 
             const from = poseAt(diagram, element, index - 1, pose.start);
             const duration = pose.end - pose.start || 1;
-            const f = rampProgress((t - pose.start) / duration, pose.ramp / duration);
+            const f = rampProgress((t - pose.start) / duration, pose.ramp / duration, (pose.rampOut ?? pose.ramp) / duration);
             return [from[0] + (to[0] - from[0]) * f, from[1] + (to[1] - from[1]) * f];
         }
     }
