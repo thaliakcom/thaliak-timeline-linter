@@ -4,7 +4,8 @@
 import { Diagnostic, DiagnosticSeverity } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
-import { GameAction, GameStatus, getGameAction, getGameStatus } from './ironworks';
+import { getGameAction, getGameStatus } from './ironworks';
+import { type Action as GameAction, type Status as GameStatus } from './types/ironworks.js';
 import { LinterOptions } from './server';
 import { MechanicType, ShapeType } from './types/enums';
 import { WipKind } from './types/raids';

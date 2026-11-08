@@ -4,7 +4,7 @@ import * as yaml from 'js-yaml';
 import { RESOLVE_PRESETS } from '../../components/diagram/render/effects/presets';
 import { planeUnitsPerYalm } from '../diagram-sizing';
 import { BOSS_IMAGE, DEFAULT_ACTOR_GRAPHICS } from '../diagram-defaults';
-import { DDL_MARKER_LOOKS } from '../diagram-enums';
+import { AnimationDefinition, ANIMATIONS, DDL_MARKER_LOOKS, ParameterDefinition, ParameterKey, PARAMETERS } from '../diagram-enums';
 import { expandMargin } from '../margin';
 import { Definition, Diagnostic, parse, Statement } from './parse';
 import { callPlaceholder, PLAYER_GROUPS, resolveWaymarks } from './placeholders';
@@ -73,6 +73,48 @@ function readFieldValue(text: string): unknown {
 
     return yaml.load(text.replace(ROUND_TUPLE, '[$1]'));
 }
+
+/**
+ * The parameters that an `+effect` gives its preset, from its clauses other than `on`, as in `+effect: blast color "#2EA632"`.
+ * Reports a clause that the preset doesn't take (its `params` in `ANIMATIONS`) or whose value isn't valid.
+ */
+function effectParameters(preset: string, s: Statement, error: (line: number, message: string) => void): Record<string, number | string> | undefined {
+    const takes: readonly string[] = (ANIMATIONS.exit as Record<string, AnimationDefinition>)[preset]?.params ?? [];
+    const parameters: Record<string, number | string> = {};
+
+    for (const { key, values } of s.clauses) {
+        if (key === 'on') continue;
+
+        if (!takes.includes(key)) {
+            error(s.line, `effect "${preset}" has no parameter "${key}"${takes.length > 0 ? `; it takes ${takes.join(', ')}` : ''}`);
+            continue;
+        }
+
+        if (values.length !== 1) {
+            error(s.line, `"${key}" of effect "${preset}" takes one value`);
+            continue;
+        }
+
+        const text = values[0]!.replace(/^"(.*)"$/, '$1');
+        const definition: ParameterDefinition = PARAMETERS[key as ParameterKey];
+
+        if (definition.type === 'color') {
+            parameters[key] = text;
+            continue;
+        }
+
+        const value = Number(text);
+
+        if (text === '' || !Number.isFinite(value) || value < (definition.minimum ?? -Infinity) || value > (definition.maximum ?? Infinity)) {
+            error(s.line, `"${key}" of effect "${preset}" must be a number from ${definition.minimum} to ${definition.maximum}`);
+            continue;
+        }
+
+        parameters[key] = value;
+    }
+
+    return Object.keys(parameters).length > 0 ? parameters : undefined;
+}
 /** The definition of ghosts: slightly transparent and desaturated. */
 const GHOST_BASE = 'ghost';
 const GHOST_SIZE = 7.5;
@@ -129,15 +171,15 @@ const AOE_DEFINITIONS: Record<string, Record<string, unknown>> = {
     [AOE_PART_BASE]: { type: 'rectangle', ...AOE_LOOK },
     [AOE_GRAPHIC_BASE]: { type: 'marker', ...AOE_LOOK }
 };
-/** How much of a line's half-width fades out at its sides when game data has no width for it. */
-const UNKNOWN_WIDTH_FADE = 0.8;
 /** The cast types that draw a circle, a donut, a cone and a line, for `in-or-out` and `halfroom`. */
 const CIRCLE_CAST_TYPES = [2, 5, 7];
 const DONUT_CAST_TYPE = 10;
 const CONE_CAST_TYPES = [3, 13];
 const LINE_CAST_TYPES = [4, 8, 12];
-/** Effect names without a preset of their own yet. */
-const EFFECT_ALIASES: Record<string, string> = { laser: 'wave-cannon' };
+/** Effects that are planned but not implemented yet: `+effect` reports them and does nothing else. */
+const PLANNED_EFFECTS: readonly string[] = ['laser'];
+/** What a {@link PLANNED_EFFECTS} effect is reported with. */
+const plannedEffectMessage = (name: string) => `effect "${name}" isn't implemented yet, so it plays nothing`;
 /** Why an actor can't name its BNpcBase with `bnpc` any more. */
 const BNPC_INSTEAD = 'name the actor by its key in the timeline\'s "actors", whose "id" gives its hitbox';
 /** How far out the ring of {@link BOSS_IMAGE} runs, as a fraction of the icon's half-width: its centre line, at 55.5 of 62. */
@@ -260,7 +302,7 @@ export interface DiagramInput {
 
 /** What draws an AoE: one element of a type and size in yalms, or several rectangles (sizes and offsets in yalms). */
 export type DrawnShape =
-    | { type: keyof typeof AOE_BASES, yalms: [number, number], angle?: number, fade?: number }
+    | { type: keyof typeof AOE_BASES, yalms: [number, number], angle?: number }
     | { type: 'parts', parts: { offset: XY, rotate: number, size: XY }[] };
 
 /**
@@ -281,10 +323,8 @@ export function drawnShape(facts: ActionFacts, arena: number | undefined): Drawn
     const cone = (angle: number | undefined): DrawnShape | string => range <= 0 ? noRange
         : angle == null ? 'needs an "angle" on its timeline action'
         : { type: 'cone', yalms: [0, range], angle };
-    // Without a width in game data, the line may be of any width, so it's drawn wide and fades out at its sides.
-    const line = (): DrawnShape | string => range <= 0 ? noRange
-        : width > 0 ? { type: 'rectangle', yalms: [width, range] }
-        : { type: 'rectangle', yalms: [across, range], fade: UNKNOWN_WIDTH_FADE };
+    // A line without a width in game data is infinitely wide, so it reaches across the arena.
+    const line = (): DrawnShape | string => range <= 0 ? noRange : { type: 'rectangle', yalms: [width > 0 ? width : across, range] };
     const cross = (angles: number[]): DrawnShape | string => range <= 0 || width <= 0 ? 'needs an effectRange and an XAxisModifier in game data'
         : { type: 'parts', parts: angles.map(rotate => ({ offset: [0, 0], rotate, size: [width, range * 2] })) };
 
@@ -569,6 +609,10 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
 
                 values.hooks = hooks;
 
+                for (const effect of hooks.map(hook => /^\+effect:\s*([\w-]+)/.exec(hook)?.[1])) {
+                    if (effect != null && PLANNED_EFFECTS.includes(effect)) error(definition.line, plannedEffectMessage(effect));
+                }
+
                 try {
                     if (animations.length > 0) values.exit = readFieldValue(animations.join(' '));
                 } catch (e) {
@@ -778,7 +822,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     const statuses: CompiledDiagram['statuses'] = [];
     const effects: CompiledDiagram['effects'] = [];
     const thumbnails: CompiledDiagram['thumbnails'] = {};
-    const pendingEffects: { use: Use, preset: string }[] = [];
+    const pendingEffects: { use: Use, preset: string, parameters?: Record<string, number | string> }[] = [];
 
     /**
      * The definition of an element: its `define`; for a timeline actor, the default look, which a definition without a
@@ -1043,10 +1087,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             aoe.props.yalms = drawn.yalms;
 
             if (drawn.angle != null) aoe.props.angle = drawn.angle;
-            if (drawn.fade != null) aoe.props.fade = drawn.fade;
 
-            // A line of unknown width hits no one by itself.
-            const area = drawn.fade != null ? undefined : areaOf(AOE_DEFINITIONS[base]!, use.at, { ...visual, ...(drawn.angle != null ? { angle: drawn.angle } : {}) }, drawn.yalms);
+            const area = areaOf(AOE_DEFINITIONS[base]!, use.at, { ...visual, ...(drawn.angle != null ? { angle: drawn.angle } : {}) }, drawn.yalms);
 
             if (area != null) aoe.area = area;
         } else if (drawn != null && typeof drawn !== 'string' && drawn.type === 'parts') {
@@ -1127,12 +1169,20 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             }
             case 'effect': {
                 const name = s.subjects[0] ?? '';
-                const preset = EFFECT_ALIASES[name] ?? name;
+                const preset = name;
+
+                // A hook's is reported at its definition, since the hook runs at every use of the action.
+                if (PLANNED_EFFECTS.includes(name)) {
+                    if (hookUse == null) error(s.line, plannedEffectMessage(name));
+                    break;
+                }
 
                 if (!(RESOLVE_PRESETS as readonly string[]).includes(preset)) error(s.line, `unknown effect "${name}"`);
 
+                const parameters = effectParameters(preset, s, error);
+
                 if (hookUse != null) {
-                    pendingEffects.push({ use: hookUse, preset });
+                    pendingEffects.push({ use: hookUse, preset, ...(parameters != null ? { parameters } : {}) });
                     break;
                 }
 
@@ -1141,7 +1191,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 if (on == null) {
                     error(s.line, `+effect "${name}" has no "on"`);
                 } else {
-                    effects.push({ ...within, at: s.at, target: on, preset });
+                    effects.push({ ...within, at: s.at, target: on, preset, ...(parameters != null ? { parameters } : {}) });
                 }
                 break;
             }
@@ -1633,8 +1683,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const targets = aoe.parts?.map(part => part.renderId) ?? [aoe.renderId].filter(target => target != null);
 
         for (const target of targets) {
-            for (const preset of named.length > 0 ? named.map(effect => effect.preset) : [aoe.raidwide ? 'sweep' : 'flash']) {
-                effects.push({ ...scopeOf(aoe), at: aoe.hit, target, preset });
+            for (const { preset, parameters } of named.length > 0 ? named : [{ preset: aoe.raidwide ? 'sweep' : 'flash', parameters: undefined }]) {
+                effects.push({ ...scopeOf(aoe), at: aoe.hit, target, preset, ...(parameters != null ? { parameters } : {}) });
             }
         }
     }

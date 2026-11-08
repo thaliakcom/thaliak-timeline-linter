@@ -150,6 +150,7 @@ export const ANIMATIONS = {
         flare: { description: 'Small yellow sparks flying out from the centre over a warm glow.', elements: ['ellipse'], params: ['speed', 'opacity'] },
         explosion: { description: 'A flash, a shockwave and a fireball that cools into rising smoke.', elements: 'shapes', params: ['speed', 'opacity'] },
         flash: { description: 'The area flashes bright yellow and slowly fades out (generic resolve).', elements: 'shapes', params: ['speed', 'color'] },
+        blast: { description: 'A blast fired forward from the caster along the line, at full strength across its whole width (generic line resolve; yellow unless given a color).', elements: ['rectangle'], params: ['speed', 'opacity', 'color'] },
         sweep: { description: 'The flash travels over the omen like the pulse of look: aoe (from the centre, the inner edge, the top edge or the apex).', elements: 'shapes', params: ['speed', 'length', 'color'] },
         'feather-rain': { description: 'The omen turns green while sharp feathers rain straight down into the shape (Feather Rain).', elements: 'shapes', params: ['speed', 'opacity'] },
         wind: { description: 'Wind swirls over the area (generic wind resolve; use it for donuts).', elements: 'shapes', params: ['speed', 'opacity'] },

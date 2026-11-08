@@ -69,12 +69,6 @@ interface AoeCapable {
         /** Whether the stroke is a glowing solid line (default) or marching dashes. */
         style?: 'solid' | 'dashed';
     };
-    /**
-     * Only on rectangles, for every look except `plain` and `none`: how much of each half of its width fades
-     * out towards its sides, from 0 (none, the default) to 1 (from its centre line). Diagrams draw a line of
-     * unknown width with it.
-     */
-    fade?: number;
 }
 
 /** The look of a link. Only in its definition and in the first step of a graph. */

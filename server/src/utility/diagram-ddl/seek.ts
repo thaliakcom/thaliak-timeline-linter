@@ -148,8 +148,8 @@ export interface CompiledDiagram {
     statuses: (Scope & { player: string, name: string, from: number, to: number })[];
     /** What the viewer needs for each status in {@link statuses}, by name. Filled in by the data extension. */
     statusInfo: Record<string, StatusInfo>;
-    /** Resolve effects, each on the element whose geometry it takes. */
-    effects: (Scope & { at: number, target: string, preset: string })[];
+    /** Resolve effects, each on the element whose geometry it takes, with the parameters its `+effect` gives the preset. */
+    effects: (Scope & { at: number, target: string, preset: string, parameters?: Record<string, number | string> })[];
     /** Every action use that isn't skipped, in time order. */
     mechanics: { at: number, id: string, name: string, parent?: string }[];
     /** Cast bars, each drawn above the element that casts it. */

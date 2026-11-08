@@ -5,7 +5,8 @@
 // `processStatus()` (`thaliak/src/eleventy/utility/data.ts`).
 import * as fs from 'fs';
 import * as paths from 'path';
-import { castTimeOf, getGameAction, getGameBNpcBase, getGameIcon, getGameModelSkeleton, getGameStatus, type GameAction, type GameIcon } from './ironworks';
+import { castTimeOf, getGameAction, getGameBNpcBase, getGameIcon, getGameModelSkeleton, getGameStatus, type GameIcon } from './ironworks';
+import { type Action as GameAction } from './types/ironworks.js';
 import type { LinterOptions } from './server';
 import type { BaseTimelineItem, UnprocessedAction, UnprocessedRaidData, UnprocessedStatusEffect } from './types/raids';
 import { formatTime } from './util';

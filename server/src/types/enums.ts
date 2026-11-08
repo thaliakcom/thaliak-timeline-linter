@@ -1,5 +1,5 @@
 export type MechanicType = 'unknown' | 'raidwide' | 'raidwide.lb' | 'raidwide.proximity' | 'raidwide.proximity.fake' | 'raidwide.sethp' | 'raidwide.percentual' | 'raidwide.transition' | 'raidwide.ultimate' | 'tb.tether' | 'tb.mt' | 'tb.ot' | 'tb.double' | 'tb.towers' | 'tb.stack' | 'tb.far' | 'tb.far.stack' | 'tb.close' | 'tb.close.stack' | 'tb.close-or-far' | 'tb.close-and-far' | 'tb.flare' | 'auto' | 'auto.single' | 'auto.double' | 'auto.stack' | 'auto.close' | 'auto.far' | 'stack.party' | 'stack.partner' | 'stack.enumeration' | 'stack.role' | 'stack.healers' | 'stack.supports' | 'stack' | 'stack.far' | 'stack.close' | 'stack.ululation' | 'stack.intercept' | 'stack.tower' | 'aoe' | 'aoe.delayed' | 'aoe.exaflares' | 'aoe.orbs' | 'aoe.rotating' | 'aoe.alternating' | 'aoe.expanding' | 'aoe.expanding.rings' | 'aoe.intercept' | 'aoe.chasing' | 'aoe.linger' | 'aoe.puddle' | 'aoe.memory' | 'aoe.condition' | 'aoe.aftershock' | 'aoe.facing' | 'aoe.knockback' | 'aoe.knockback.unavoidable' | 'aoe.3-to-1' | 'spread' | 'spread.close' | 'spread.far' | 'spread.role' | 'spread.tethers' | 'adds' | 'mech' | 'mech.phase' | 'mech.trio' | 'mech.check' | 'mech.status' | 'mech.statusoff' | 'mech.spread-or-stack' | 'mech.close-or-far' | 'mech.center-or-sides' | 'mech.store' | 'mech.lookaway' | 'mech.lookat' | 'mech.los' | 'mech.limit' | 'mech.failure' | 'mech.distance' | 'mech.tether.far' | 'mech.tether.close' | 'mech.tether.snappable' | 'mech.tether.distance' | 'mech.knockback' | 'mech.knockback.unavoidable' | 'mech.pull' | 'mech.pull.unavoidable' | 'mech.stillness' | 'mech.motion' | 'mech.arena' | 'mech.prepare' | 'mech.comet' | 'towers.single' | 'towers.double' | 'towers.triple' | 'towers.quadruple' | 'towers.random' | 'towers.kb' | 'enrage' | 'enrage.threshold' | 'enrage.soft' | 'hint' | 'hint.timed' | 'damage' | 'combination' | 'interruptible';
-export type ShapeType = 'chariot' | 'defamation' | 'dynamo' | 'in-or-out' | 'cone' | 'line' | 'grid' | 'plus' | 'cross' | 'sides' | 'rect' | 'halfroom' | 'star';
+export type ShapeType = 'chariot' | 'defamation' | 'dynamo' | 'in-or-out' | 'cone' | '270°' | 'line' | 'grid' | 'plus' | 'cross' | 'sides' | 'rect' | 'halfroom' | 'star';
 export type StatusType = 'dot' | 'vuln' | 'resistance' | 'condition' | 'delay' | 'form' | 'impairment' | 'impairment.pyretic' | 'indicator' | 'damage-up' | 'rot' | 'rot.pass' | 'rot.immunity';
 export type DamageType = 'physical' | 'magic' | 'dark' | 'mixed';
 export type LookType = 'none' | 'plain' | 'aoe' | 'landslide' | 'sludge' | 'ripple' | 'cracks' | 'flame' | 'wormhole';
@@ -8,7 +8,7 @@ export type MarkerLookType = 'circle-kb' | 'exaflare' | 'flare' | 'hello-world' 
 export type HeadmarkerLookType = 'flare' | 'line-stack' | 'proximity' | 'rotate-ccw' | 'rotate-cw' | 'spread-circle' | 'stack' | 'tankbuster' | 'target-green' | 'unknown';
 export type AoeGraphicLookType = 'circle-kb' | 'exaflare' | 'tower';
 export type EnterAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y';
-export type ExitAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'sweep' | 'feather-rain' | 'wind' | 'tornado' | 'vortex' | 'ice' | 'splash';
+export type ExitAnimation = 'none' | 'fade' | 'scale' | 'scale-x' | 'scale-y' | 'rocks' | 'fire' | 'meteor' | 'wave-cannon' | 'cosmo-arrow' | 'sync-bug' | 'overflow-bug' | 'flare' | 'explosion' | 'flash' | 'blast' | 'sweep' | 'feather-rain' | 'wind' | 'tornado' | 'vortex' | 'ice' | 'splash';
 export type ParameterName = 'speed' | 'height' | 'length' | 'opacity' | 'color';
 /** The look, as its name or as `{ type, ...parameters }`. */
 export type LookTypeValue = LookType | {
@@ -141,6 +141,23 @@ export type ExitAnimationValue = ExitAnimation | {
      * @maximum 10
      */
     speed?: number;
+    /** The colour it's drawn in, as an HTML color string. Replaces its own colour; with the `plain` look, the fill. */
+    color?: string;
+} | {
+    /** The animation. */
+    type: 'blast';
+    /**
+     * How fast it plays, as a factor of its normal speed (2 is twice as fast, 0.5 half as fast).
+     * @minimum 0.1
+     * @maximum 10
+     */
+    speed?: number;
+    /**
+     * The opacity of the effect. If omitted, the opacity of the element itself is used.
+     * @minimum 0
+     * @maximum 1
+     */
+    opacity?: number;
     /** The colour it's drawn in, as an HTML color string. Replaces its own colour; with the `plain` look, the fill. */
     color?: string;
 } | {

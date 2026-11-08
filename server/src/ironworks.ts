@@ -4,7 +4,7 @@ import * as childProcess from 'child_process';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as paths from 'path';
-import { Status as GameStatus, Action as GameAction, BNpcBase as GameBNpcBase, ModelSkeleton as GameModelSkeleton } from './types/ironworks.js';
+import { type Status as GameStatus, type Action as GameAction, type BNpcBase as GameBNpcBase, type ModelSkeleton as GameModelSkeleton } from './types/ironworks.js';
 
 /** The game data settings, which the client passes in `initializationOptions.ironworks`. */
 export interface IronworksOptions {
