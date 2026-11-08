@@ -1,6 +1,10 @@
 import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
+
+/** `js-yaml`, from the server's dependencies. */
+const yaml = createRequire(new URL('./server/package.json', import.meta.url))('js-yaml');
 
 /* eslint-disable */
 
@@ -9,7 +13,7 @@ const FILES = [
     ['src/types/enum-schema.ts', './server/src/types/enum-schema.ts', 'thaliak'],
     ['src/types/raids.ts', './server/src/types/raids.ts', 'thaliak'],
     ['src/types/graphing.ts', './server/src/types/graphing.ts', 'thaliak'],
-    // `src/types/enums.ts` isn't fetched: thaliak generates it and doesn't commit it. The linter keeps its own copy.
+    // `src/types/enums.ts` isn't fetched: thaliak generates it and doesn't commit it. It's generated below instead.
     ['src/types/ironworks.ts', './server/src/types/ironworks.ts', 'thaliak'],
     ['src/types/jobs.ts', './server/src/types/jobs.ts', 'thaliak'],
     // The `.diagram` parser and compiler, at the same relative paths as in thaliak, so that their imports hold.
@@ -25,15 +29,89 @@ const FILES = [
     ['src/components/diagram/render/effects/presets.ts', './server/src/components/diagram/render/effects/presets.ts', 'thaliak']
 ];
 
+/** The union types of `enums.ts` that list the keys of an enum YAML file, as [type name, path in the `data` repository]. */
+const ENUM_YAMLS = [
+    ['MechanicType', 'enums/mechanic-types.yaml'],
+    ['ShapeType', 'enums/mechanic-shapes.yaml'],
+    ['StatusType', 'enums/status-types.yaml'],
+    ['DamageType', 'enums/damage-types.yaml']
+];
+const ENUMS_PATH = './server/src/types/enums.ts';
+const DIAGRAM_ENUMS_PATH = './server/src/utility/diagram-enums.ts';
+
 /** Fetches one file's raw contents from GitHub through the `gh` CLI. */
 async function fetchFile(from, repo) {
     const { stdout } = await promisify(execFile)('gh', ['api', `https://api.github.com/repos/thaliakcom/${repo}/contents/${from}`, '-H', 'Accept: application/vnd.github.v4.raw'], { maxBuffer: 64 * 1024 * 1024 });
     return stdout;
 }
 
+/**
+ * Generates `<name>Value`: a value of the union type `name`, or an object giving one as its `type`
+ * together with its parameters (`{ type: ripple, speed: 2 }`). `values` maps every value to the names of the
+ * parameters it takes; values that take the same parameters share one object type.
+ * Ported from `getValueType` in thaliak's `scripts/generate-schema.mts`; keep the two in step.
+ */
+function getValueType(name, what, values, parameters) {
+    const groups = new Map();
+
+    for (const [value, params] of Object.entries(values)) {
+        if (params.length > 0) {
+            const key = params.join(',');
+            groups.set(key, [...groups.get(key) ?? [], value]);
+        }
+    }
+
+    const objects = [...groups].map(([key, names]) => {
+        const properties = key.split(',').map(param => {
+            const definition = parameters[param];
+
+            if (definition == null) {
+                throw new Error(`Unknown parameter "${param}" (not in PARAMETERS in diagram-enums.ts).`);
+            }
+
+            if (definition.type === 'color') {
+                return `    /** ${definition.description} */\n    ${param}?: string;\n`;
+            }
+
+            return `    /**\n     * ${definition.description}\n     * @minimum ${definition.minimum}\n     * @maximum ${definition.maximum}\n     */\n    ${param}?: number;\n`;
+        });
+
+        return `{\n    /** The ${what}. */\n    type: '${names.join('\' | \'')}';\n${properties.join('')}}`;
+    });
+
+    return `/** The ${what}, as its name or as \`{ type, ...parameters }\`. */\n`
+        + `export type ${name}Value = ${[name, ...objects].join(' | ')};\n`;
+}
+
+/**
+ * Generates `enums.ts` as thaliak's `generateEnumTypes` in `scripts/generate-schema.mts` does (keep the two in step):
+ * from the enum YAML files of the `data` repository, by type name, and the fetched `diagram-enums.ts`.
+ */
+async function generateEnumTypes(yamls) {
+    const { ANIMATIONS, DDL_MARKER_LOOKS, LOOKS, PARAMETERS } = await import(DIAGRAM_ENUMS_PATH);
+    const paramsOf = entries => Object.fromEntries(Object.entries(entries).map(([key, entry]) => [key, entry.params]));
+    const namesOf = entries => `'${Object.keys(entries).join('\' | \'')}'`;
+
+    return Object.entries(yamls).map(([name, file]) => `export type ${name} = '${Object.keys(yaml.load(file)).join('\' | \'')}';\n`).join('')
+        + `export type LookType = ${namesOf(LOOKS.aoes)};\n`
+        + `export type TetherLookType = ${namesOf(LOOKS.tethers)};\n`
+        + `export type MarkerLookType = ${namesOf(LOOKS.markers)};\n`
+        + `export type HeadmarkerLookType = '${DDL_MARKER_LOOKS.headmarkers.join('\' | \'')}';\n`
+        + `export type AoeGraphicLookType = '${DDL_MARKER_LOOKS.aoes.join('\' | \'')}';\n`
+        + `export type EnterAnimation = ${namesOf(ANIMATIONS.enter)};\n`
+        + `export type ExitAnimation = ${namesOf(ANIMATIONS.exit)};\n`
+        + `export type ParameterName = ${namesOf(PARAMETERS)};\n`
+        + getValueType('LookType', 'look', paramsOf(LOOKS.aoes), PARAMETERS)
+        + getValueType('TetherLookType', 'tether look', paramsOf(LOOKS.tethers), PARAMETERS)
+        + getValueType('MarkerLookType', 'marker', paramsOf(LOOKS.markers), PARAMETERS)
+        + getValueType('EnterAnimation', 'animation', paramsOf(ANIMATIONS.enter), PARAMETERS)
+        + getValueType('ExitAnimation', 'animation', paramsOf(ANIMATIONS.exit), PARAMETERS);
+}
+
 // Everything is fetched before anything is written, so that a failure leaves the linter's copies as they were.
-const results = await Promise.allSettled(FILES.map(([from, , repo]) => fetchFile(from, repo)));
-const failures = results.flatMap((result, i) => result.status === 'rejected' ? [`${FILES[i][2]}/${FILES[i][0]}: ${result.reason?.stderr?.trim() || result.reason}`] : []);
+const sources = [...FILES.map(([from, , repo]) => [from, repo]), ...ENUM_YAMLS.map(([, from]) => [from, 'data'])];
+const results = await Promise.allSettled(sources.map(([from, repo]) => fetchFile(from, repo)));
+const failures = results.flatMap((result, i) => result.status === 'rejected' ? [`${sources[i][1]}/${sources[i][0]}: ${result.reason?.stderr?.trim() || result.reason}`] : []);
 
 if (failures.length > 0) {
     console.error(`Nothing was written. These files couldn't be fetched:\n${failures.join('\n')}`);
@@ -41,4 +119,6 @@ if (failures.length > 0) {
 }
 
 await Promise.all(FILES.map(([, to], i) => writeFile(to, results[i].value, { encoding: 'utf-8' })));
-console.log(`Fetched ${FILES.length} files.`);
+const yamls = Object.fromEntries(ENUM_YAMLS.map(([name], i) => [name, results[FILES.length + i].value]));
+await writeFile(ENUMS_PATH, await generateEnumTypes(yamls), { encoding: 'utf-8' });
+console.log(`Fetched ${FILES.length} files and generated ${ENUMS_PATH}.`);
