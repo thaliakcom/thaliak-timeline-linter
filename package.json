@@ -202,17 +202,17 @@
         }
     },
     "scripts": {
-        "vscode:prepublish": "npm run package",
-        "compile-anew": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs",
-        "package-anew": "node ./get-objects.mjs && npm run check-types && node esbuild.mjs --production",
-        "compile": "npm run check-types && node esbuild.mjs",
-        "package": "npm run check-types && node esbuild.mjs --production",
+        "vscode:prepublish": "deno task package",
+        "compile-anew": "deno run -A ./get-objects.mjs && deno task check-types && deno run -A esbuild.mjs",
+        "package-anew": "deno run -A ./get-objects.mjs && deno task check-types && deno run -A esbuild.mjs --production",
+        "compile": "deno task check-types && deno run -A esbuild.mjs",
+        "package": "deno task check-types && deno run -A esbuild.mjs --production",
         "check-types": "tsc --noEmit --project client && tsc --noEmit --project server",
-        "watch": "npm run watch:esbuild & npm run watch:tsc",
-        "watch:esbuild": "node esbuild.mjs --watch",
+        "watch": "deno task watch:esbuild & deno task watch:tsc",
+        "watch:esbuild": "deno run -A esbuild.mjs --watch",
         "watch:tsc": "tsc --noEmit --watch --project client & tsc --noEmit --watch --project server",
         "lint": "eslint ./client/src ./server/src --ext .ts,.tsx",
-        "postinstall": "cd client && npm install && cd ../server && npm install && cd ..",
+        "postinstall": "cd client && deno install && cd ../server && deno install && cd ..",
         "test": "sh ./scripts/e2e.sh"
     },
     "devDependencies": {
