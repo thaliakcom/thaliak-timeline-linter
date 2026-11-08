@@ -100,7 +100,23 @@
                 { "include": "#hook-key" },
                 { "include": "#hook" },
                 { "include": "#element-field" },
+                { "include": "#headmarker-field" },
                 { "include": "#values" }
+            ]
+        },
+        "headmarker-field": {
+            "comment": "An action's `headmarker: <look> at -<lead> [for <duration>]`.",
+            "begin": "(?<![\\w-])(headmarker)\\s*(:)\\s*([a-zA-Z][\\w-]*)?",
+            "beginCaptures": {
+                "1": { "name": "entity.name.tag.field.thaliak-diagram" },
+                "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" },
+                "3": { "name": "variable.other.enummember.thaliak-diagram" }
+            },
+            "end": "$",
+            "patterns": [
+                { "include": "#comment" },
+                { "match": "(?<![\\w-])(at|for)(?![\\w-])", "name": "keyword.operator.expression.thaliak-diagram" },
+                { "include": "#scalars" }
             ]
         },
         "hook-key": {
@@ -183,7 +199,7 @@
                 { "include": "#comment" },
                 { "include": "#string" },
                 { "include": "#player" },
-                { "match": "(?<![\\w#-])(to|on|at|toward|rotate|over|offset|as|hits)(?![\\w#-])", "name": "keyword.operator.expression.thaliak-diagram" },
+                { "match": "(?<![\\w#-])(to|on|at|toward|for|rotate|over|offset|as|hits)(?![\\w#-])", "name": "keyword.operator.expression.thaliak-diagram" },
                 { "match": "(?<![\\w#\\]-])[A-Za-z][\\w-]*(?=\\s+(?:-?\\.?\\d|\"|\\(|\\[|\\{|#|true\\b|false\\b))", "name": "variable.parameter.thaliak-diagram" },
                 { "include": "#placeholder" },
                 { "include": "#scalars" },
@@ -339,7 +355,7 @@
                 { "include": "#function" },
                 { "match": "(?<![\\w-])(?:true|false)(?![\\w-])", "name": "constant.language.boolean.thaliak-diagram" },
                 { "match": "(?<![\\w-])null(?![\\w-])", "name": "constant.language.null.thaliak-diagram" },
-                { "match": "(?<![\\w.#-])-?\\d+(?:\\.\\d+)?(?:ms|s|%|deg)?(?![\\w-])", "name": "constant.numeric.thaliak-diagram" }
+                { "match": "(?<![\\w.#+-])[+-]?\\d+(?:\\.\\d+)?(?:ms|s|%|deg)?(?![\\w-])", "name": "constant.numeric.thaliak-diagram" }
             ]
         },
         "separators": {
