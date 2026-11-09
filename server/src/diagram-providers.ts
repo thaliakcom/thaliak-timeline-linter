@@ -181,13 +181,15 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 
             switch (field[1]) {
                 case 'attached': return member(['true', 'false', ...keysOf(timeline, 'actors')]);
-                // `headmarker: <look> at -<lead> [for <duration>]`: the look, then `at`, then `for` after the lead.
+                // `headmarker: <look> at -<lead> [for <duration>] [size <size>]`: the look, then `at`, then `for` or `size`
+                // after the lead, and `size` after the duration.
                 case 'headmarker': {
                     const value = field[2]!;
 
                     if (!/\s/.test(value)) return member(headmarkerLooksOf(options));
                     if (/^\S+\s+\S*$/.test(value)) return keyword(['at'], () => spec?.description);
-                    if (/^\S+\s+at\s+\S+\s+\S*$/.test(value)) return keyword(['for'], () => spec?.description);
+                    if (/^\S+\s+at\s+\S+\s+\S*$/.test(value)) return keyword(['for', 'size'], () => spec?.description);
+                    if (/^\S+\s+at\s+\S+\s+for\s+\S+\s+\S*$/.test(value)) return keyword(['size'], () => spec?.description);
 
                     return [];
                 }

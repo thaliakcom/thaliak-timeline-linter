@@ -563,27 +563,33 @@ function scopeOf(scope: Scope): Scope {
     return { ...(scope.strategy != null ? { strategy: scope.strategy } : {}), ...(scope.branch != null ? { branch: scope.branch } : {}) };
 }
 
-/** An action's `headmarker: <look> at -<lead> [for <duration>]`, in ms. */
+/** An action's `headmarker: <look> at -<lead> [for <duration>] [size <size>]`, in ms. */
 interface HeadmarkerField {
     look: string;
     lead: number;
     /** How long it shows, which is until the hit unless `for` says otherwise. */
     for: number;
+    /** The size in plane units, if not the look's own (its marker class's). */
+    size?: number;
 }
 
-/** Reads `headmarker: <look> at -<lead> [for <duration>]`, or returns why it can't. */
+/** Reads `headmarker: <look> at -<lead> [for <duration>] [size <size>]`, or returns why it can't. */
 function readHeadmarkerField(value: unknown, headmarkers: ReadonlySet<string>): HeadmarkerField | string {
-    const match = typeof value === 'string' ? /^(\S+)\s+at\s+-(\d+(?:\.\d+)?(?:ms|s)?)(?:\s+for\s+(\d+(?:\.\d+)?(?:ms|s)?))?$/.exec(value.trim()) : null;
+    const match = typeof value === 'string'
+        ? /^(\S+)\s+at\s+-(\d+(?:\.\d+)?(?:ms|s)?)(?:\s+for\s+(\d+(?:\.\d+)?(?:ms|s)?))?(?:\s+size\s+(\d+(?:\.\d+)?))?$/.exec(value.trim())
+        : null;
 
-    if (match == null) return '"headmarker" takes "<look> at -<lead>", optionally followed by "for <duration>", such as "stack at -5s"';
+    if (match == null) return '"headmarker" takes "<look> at -<lead>", optionally followed by "for <duration>" and "size <size>", such as "stack at -5s" or "stack at -5s size 15"';
     if (!headmarkers.has(match[1]!)) return `"${match[1]}" isn't a headmarker look: ${[...headmarkers].join(', ')}`;
 
     const lead = duration(match[2]!);
     const shown = match[3] == null ? lead : duration(match[3]);
+    const size = match[4] == null ? undefined : Number(match[4]);
 
     if (lead <= 0 || shown <= 0) return '"headmarker" needs a lead and a duration above 0';
+    if (size === 0) return '"headmarker" needs a size above 0';
 
-    return { look: match[1]!, lead, for: shown };
+    return { look: match[1]!, lead, for: shown, ...(size != null ? { size } : {}) };
 }
 
 /** Splits `define` blocks into what each one means. Non-simple values keep the viewer's form, parsed as YAML flow. */
@@ -1359,6 +1365,9 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                             element.props.text = text;
                         } else if (clause.key === 'bnpc') {
                             error(s.line, `"${id}" can't have a "bnpc": ${BNPC_INSTEAD}`);
+                        } else if (s.verb === 'headmarker' && clause.key === 'size' && !(Number(literal(value)) > 0)) {
+                            // A headmarker's size overrides its look's own (its marker class's) and is in plane units.
+                            error(s.line, `"size" of headmarker "${id}" takes a number above 0, in plane units`);
                         } else if (clause.key !== 'toward' && clause.key !== 'offset') {
                             element.props[clause.key] = literal(value);
                         }
@@ -1781,6 +1790,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             const element = ensure(`${mark.look}#${unique}`, definitionLine('action', aoe.action));
             const from = aoe.hit - mark.lead;
 
+            if (mark.size != null) element.props.size = mark.size;
             element.spawns.push({ ...scopeOf(aoe), from, to: from + mark.for });
             element.poses.push({ ...scopeOf(aoe), start: from, end: from, kind: 'follow', target: anchor, offset: [0, 0] });
         }

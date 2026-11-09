@@ -105,7 +105,7 @@
             ]
         },
         "headmarker-field": {
-            "comment": "An action's `headmarker: <look> at -<lead> [for <duration>]`.",
+            "comment": "An action's `headmarker: <look> at -<lead> [for <duration>] [size <size>]`.",
             "begin": "(?<![\\w-])(headmarker)\\s*(:)\\s*([a-zA-Z][\\w-]*)?",
             "beginCaptures": {
                 "1": { "name": "entity.name.tag.field.thaliak-diagram" },
@@ -115,7 +115,7 @@
             "end": "$",
             "patterns": [
                 { "include": "#comment" },
-                { "match": "(?<![\\w-])(at|for)(?![\\w-])", "name": "keyword.operator.expression.thaliak-diagram" },
+                { "match": "(?<![\\w-])(at|for|size)(?![\\w-])", "name": "keyword.operator.expression.thaliak-diagram" },
                 { "include": "#scalars" }
             ]
         },
