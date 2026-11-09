@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="1.5 1.5 14 14">
+  <g transform="matrix(1 0 0 1 1.5 1.5)">
+    <path d="M1 1 L13 1 L13 13 L1 13 Z" fill="none" stroke="#ff69f8" stroke-width="2" stroke-miterlimit="10" />
+  </g>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="7.501 7.502 84.999 84.391">
+  <path d="M82 50 A32 32 0 0 1 50 82 A32 32 0 0 1 18 50 A32 32 0 0 1 50 18 A32 32 0 0 1 82 50 Z" fill="none" stroke="#d83939" stroke-width="1" stroke-miterlimit="10" />
+  <g transform="matrix(1 0 0 1 0 0)">
+    <path d="M90 50 A40 40 0 0 1 56.946 89.392" fill="none" stroke="#d83939" stroke-width="5" stroke-miterlimit="10" />
+    <path d="M30 84.641 A40 40 0 0 1 12.412 36.319" fill="none" stroke="#d83939" stroke-width="5" stroke-miterlimit="10" />
+    <path d="M30 15.359 A40 40 0 0 1 80.642 24.288" fill="none" stroke="#d83939" stroke-width="5" stroke-miterlimit="10" />
+    <path d="M90 50 A40 40 0 0 1 90 50" fill="none" stroke="#d83939" stroke-width="5" stroke-miterlimit="10" />
+  </g>
+</svg>

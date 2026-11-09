@@ -28,7 +28,7 @@ thaliak's build reports from game data, such as an encrypted name or a damage ty
 
 AoE shapes get their icon in the text too, in front of `shape` values, `ms:` placeholders and the actions of
 `+aoe` statements; that needs no game data, except for donuts sized by their `inner` radius. So do `i:`
-sub-icon and `hm:` headmarker placeholders, in front of them. Turn each kind off with
+icon placeholders (role icons and headmarkers), in front of them. Turn each kind off with
 `thaliak-timeline-linter.icons.status`, `thaliak-timeline-linter.icons.aoes` or `thaliak-timeline-linter.icons.subIcons`.
 
 The icons in the text only show while `editor.inlayHints.enabled` is `on` or `onUnlessPressed`, as

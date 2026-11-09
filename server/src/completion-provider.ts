@@ -2,8 +2,9 @@ import { CompletionItem, CompletionItemKind, CompletionParams, TextDocuments, Te
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
+import { getIcons } from './sub-icon-provider';
 import { UnprocessedRaidData } from './types/raids';
-import { getKeyValueAt, getNodeAt, getSymbolAt, HEADMARKER_ICONS, ICONS, NodeWrapper, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
+import { getKeyValueAt, getNodeAt, getSymbolAt, NodeWrapper, perPrefix, SPECIAL_TIMELINE_IDS } from './util';
 import * as yaml from 'yaml';
 import { SpecialStatus, SpecialStatuses } from './types/graphing';
 
@@ -92,7 +93,6 @@ export default function completionProvider(documents: TextDocuments<TextDocument
         let accumulateStatusTypes = false;
         let accumulateDamageTypes = false;
         let accumulateIcons = false;
-        let accumulateHeadmarkers = false;
         let accumulateSpecials = false;
 
         if (symbol != null) {
@@ -105,7 +105,6 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                 'st:': () => { accumulateStatusTypes = true; },
                 'dt:': () => { accumulateDamageTypes = true; },
                 'i:': () => { accumulateIcons = true; },
-                'hm:': () => { accumulateHeadmarkers = true; },
                 else: () => {
                     accumulateActions = true;
                     accumulateStatus = true;
@@ -115,7 +114,6 @@ export default function completionProvider(documents: TextDocuments<TextDocument
                     accumulateStatusTypes = true;
                     accumulateDamageTypes = true;
                     accumulateIcons = true;
-                    accumulateHeadmarkers = true;
                     accumulateSpecials = symbol.delimiter === 'square';
                 }
             });
@@ -167,17 +165,9 @@ export default function completionProvider(documents: TextDocuments<TextDocument
         }
 
         if (accumulateIcons) {
-            items.push(...ICONS.map(x => ({
-                label: `i:${x}`,
-                labelDetails: { description: 'icon' },
-                kind: CompletionItemKind.EnumMember
-            })));
-        }
-
-        if (accumulateHeadmarkers) {
-            items.push(...HEADMARKER_ICONS.map(x => ({
-                label: `hm:${x}`,
-                labelDetails: { description: 'headmarker' },
+            items.push(...Array.from(getIcons(), ([name, icon]) => ({
+                label: `i:${name}`,
+                labelDetails: { description: icon.category },
                 kind: CompletionItemKind.EnumMember
             })));
         }

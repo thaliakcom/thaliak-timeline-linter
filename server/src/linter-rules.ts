@@ -3,9 +3,10 @@ import { Range, TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { LinterInput } from './linter';
 import { LinterOptions, PropertyOrder } from './server';
+import { getIcons } from './sub-icon-provider';
 import { SpecialStatuses } from './types/graphing';
 import { UnprocessedRaidData, WipKind } from './types/raids';
-import { getActorValues, getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, getStatusValues, HEADMARKER_ICONS, ICONS, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
+import { getActorValues, getEntry, getIfType, getRange, getRangeFromOffset, getRangeOrStart, getStatusValues, perPrefix, PLACEHOLDER_REGEX, SPECIAL_TIMELINE_IDS } from './util';
 
 /** The action fields that size a shape where game data can't, and the shapes each one applies to (thaliak's `SHAPE_FIELDS`). */
 const SHAPE_FIELDS: Record<string, readonly string[]> = {
@@ -746,8 +747,7 @@ export function* idMustBeValid({ textDocument, document, js: json, options }: Li
             'st:': key => options.enums['status-types'] != null && key in options.enums['status-types'].yaml,
             'dt:': key => options.enums['damage-types'] != null && key in options.enums['damage-types'].yaml,
             't:': key => options.enums.terms != null && key in options.enums.terms.yaml,
-            'i:': key => ICONS.includes(key as typeof ICONS[number]),
-            'hm:': key => HEADMARKER_ICONS.includes(key)
+            'i:': key => getIcons().has(key)
         });
 
         if (!isValid) {
@@ -761,8 +761,7 @@ export function* idMustBeValid({ textDocument, document, js: json, options }: Li
                     'ms:': key => `mechanic shape ${key}`,
                     'st:': key => `status effect type ${key}`,
                     't:': key => `term ${key}`,
-                    'i:': key => `icon ${key}`,
-                    'hm:': key => `headmarker ${key}`
+                    'i:': key => `icon ${key}`
                 })}. Did you forget to define it?`,
                 range: getRange(textDocument, [match.range[0], match.range[1], match.range[2] ?? match.range[1]])
             });

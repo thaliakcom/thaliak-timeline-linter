@@ -153,9 +153,16 @@ export const TYPES_OF_KIND: Partial<Record<Definition['kind'], readonly string[]
     object: ['ellipse', 'rectangle', 'cone', 'donut', 'prism', 'image', 'graphic'],
     puddle: ['ellipse', 'rectangle', 'cone', 'donut', 'image', 'graphic']
 };
-/** A headmarker's size in plane units, which isn't the diagram's to choose. */
-const HEADMARKER_SIZE = 20;
-const HEADMARKER_SIZES: Partial<Record<string, number>> = { 'rotate-cw': 40, 'rotate-ccw': 40 };
+/**
+ * The headmarker looks that lie flat on the floor (planar, so the isometric view projects them). All others stand
+ * upright over their target, like the game's 3D headmarkers.
+ */
+const FLAT_HEADMARKERS: readonly string[] = ['flare', 'line-stack', 'rotate-ccw', 'rotate-cw', 'stack', 'tankbuster'];
+/**
+ * Headmarker looks a diagram can use even though `enums/headmarkers.yaml` maps no game icon to them: their
+ * headmarkers never show up in logs, so there is no icon to map.
+ */
+const UNMAPPED_HEADMARKERS: readonly string[] = ['target-red'];
 /** The element that draws an AoE whose omen look is a built-in drawing (`tower`, `exaflare`, `circle-kb`) over its circle. */
 const AOE_GRAPHIC_BASE = 'aoe-graphic';
 /** The `define action` keys that are now facts of the timeline action, and where each one went. */
@@ -300,8 +307,8 @@ export interface DiagramInput {
     /** AoE looks by the omen of their action, from `enums/omens.yaml`. An AoE whose omen isn't listed looks like `aoe`. */
     omens?: Record<string, unknown>;
     /**
-     * Headmarker looks by game icon, from `enums/headmarkers.yaml`. Its looks, and `unknown`, are the headmarkers a
-     * diagram can use; without it, every headmarker look is.
+     * Headmarker looks by game icon, from `enums/headmarkers.yaml`. Its looks, {@link UNMAPPED_HEADMARKERS} and
+     * `unknown` are the headmarkers a diagram can use; without it, every headmarker look is.
      */
     headmarkers?: Record<string, string>;
     /** Tether looks by game file, from `enums/tethers.yaml`. Its looks, and `unknown`, are tethers without a definition. */
@@ -736,7 +743,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         diagnostics.push({ line, message });
     };
     /** The headmarker looks this diagram can use, and the tether looks it can use without a `define tether`. */
-    const headmarkerLooks = new Set<string>(input.headmarkers == null ? DDL_MARKER_LOOKS.headmarkers : [...Object.values(input.headmarkers), 'unknown']);
+    const headmarkerLooks = new Set<string>(input.headmarkers == null ? DDL_MARKER_LOOKS.headmarkers : [...Object.values(input.headmarkers), ...UNMAPPED_HEADMARKERS, 'unknown']);
     const tetherLooks = new Set<string>([...Object.values(input.tethers ?? {}), 'unknown']);
     const { actionDefs, elementDefs, elementKinds, gradients, strategies } = readDefinitions(parsed.definitions, actions, headmarkerLooks, error);
     const definitionLine = (kind: Definition['kind'], id: string) => parsed.definitions.find(d => d.kind === kind && d.id === id)?.line ?? 0;
@@ -856,7 +863,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     const elementDef = (base: string, tether: boolean = false): Record<string, any> | undefined => {
         const own = elementDefs[base];
 
-        if (own == null && !tether && headmarkerLooks.has(base)) return { type: 'marker', look: base, size: HEADMARKER_SIZES[base] ?? HEADMARKER_SIZE, shadow: false };
+        // A headmarker's size and offset come from its marker class (`markers/Marker.ts`) in the viewer.
+        if (own == null && !tether && headmarkerLooks.has(base)) return { type: 'marker', look: base, shadow: false, planar: FLAT_HEADMARKERS.includes(base) };
         if (own == null && tether && tetherLooks.has(base)) return { type: 'link', look: base };
         if (input.actors?.[base] == null || own?.type != null) return own;
 

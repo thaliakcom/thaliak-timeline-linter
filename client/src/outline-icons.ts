@@ -45,12 +45,15 @@ const ELEMENT_CODICONS: Record<string, string> = {
     'prism': 'symbol-constant'
 };
 
-/** Whether the marker look `look` has an icon in `media/markers`. Memoised, since markers added later have none. */
+/**
+ * Whether the marker look `look` has an icon in `media/icons/headmarkers`. Memoised. Only headmarkers have one;
+ * other looks get the `pin` codicon.
+ */
 const markerIcons = new Map<string, boolean>();
 
 function markerIcon(look: string | undefined, extensionUri: vscode.Uri): vscode.ThemeIcon | vscode.Uri {
     if (look != null) {
-        const uri = vscode.Uri.joinPath(extensionUri, 'media', 'markers', `${look}.svg`);
+        const uri = vscode.Uri.joinPath(extensionUri, 'media', 'icons', 'headmarkers', `${look}.svg`);
 
         if (!markerIcons.has(look)) {
             markerIcons.set(look, fs.existsSync(uri.fsPath));

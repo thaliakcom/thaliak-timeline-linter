@@ -73,7 +73,7 @@ export const MEDIA = paths.resolve(__dirname, '..', '..', '..', 'media');
  * Matches templates in descriptions: `[prefix:key<modifiers>]` and `[alias](prefix:key<modifiers>)`.
  * The modifiers are split off the key per prefix, since keys may contain colons.
  */
-const TEMPLATE_REGEX = /\[(?<prefix>a|s|m|ms|st|dt|t|i|hm):(?<rest>[^[\]\n]+?)\]|\[(?<alias>[^[\]\n]+?)\]\((?<aliasPrefix>a|s|m|ms|st|dt|t|i|hm):(?<aliasRest>[^()\n]+?)\)/g;
+const TEMPLATE_REGEX = /\[(?<prefix>a|s|m|ms|st|dt|t|i):(?<rest>[^[\]\n]+?)\]|\[(?<alias>[^[\]\n]+?)\]\((?<aliasPrefix>a|s|m|ms|st|dt|t|i):(?<aliasRest>[^()\n]+?)\)/g;
 /** The modifiers of a status template: `:c`, `:d`, or stacks and a duration (thaliak's `STATUS_REGEX`). */
 const STATUS_MODIFIERS = /(?::(?<modifier>c|d)|(?::(?<stacks>[1-9]\d*))?(?::(?<duration>[1-9]\d*)s)?)$/;
 /** The modifiers of other templates: `:c` or `:d`. */
@@ -386,7 +386,7 @@ async function renderTemplate(context: TooltipContext, match: RegExpExecArray, d
             return modifier === 'd' ? describe(item.description) : templateName(name(alias ?? item.name));
         }
         default:
-            // `i:` sub-icons and `hm:` headmarkers are images, which tooltips leave out.
+            // `i:` icons are images, which tooltips leave out.
             return null;
     }
 }

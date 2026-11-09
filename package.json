@@ -83,7 +83,7 @@
                     "scope": "window",
                     "type": "boolean",
                     "default": true,
-                    "description": "Shows the images of `i:` sub-icon and `hm:` headmarker references inline, in front of them. Needs inlay hints."
+                    "description": "Shows the images of `i:` icon references (role icons and headmarkers) inline, in front of them. Needs inlay hints."
                 },
                 "thaliak-timeline-linter.completion.schemaEnums": {
                     "scope": "window",

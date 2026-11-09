@@ -44,12 +44,12 @@ const ENUM_YAMLS = [
     ['DamageType', 'enums/damage-types.yaml']
 ];
 /**
- * thaliak's images that the linter shows inline (`sub-icon-provider.ts`), as [directory in the repository, directory
- * in the linter]: the `i:` sub-icons, and the `hm:` headmarkers, which the outline also shows.
+ * thaliak's images that the linter shows inline for `i:` placeholders (`sub-icon-provider.ts`), as [directory in the
+ * repository, directory in the linter]: the role icons, and the headmarkers, which the outline also shows.
  */
 const IMAGE_DIRS = [
-    ['www/images/sub-icons', './media/sub-icons'],
-    ['www/images/headmarkers', './media/markers']
+    ['www/images/icons/roles', './media/icons/roles'],
+    ['www/images/icons/headmarkers', './media/icons/headmarkers']
 ];
 const ENUMS_PATH = './server/src/types/enums.ts';
 const DIAGRAM_ENUMS_PATH = './server/src/utility/diagram-enums.ts';

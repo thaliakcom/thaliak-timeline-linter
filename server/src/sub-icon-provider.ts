@@ -6,28 +6,59 @@ import * as yaml from 'yaml';
 import { ParserCache } from './parser-cache';
 import { MEDIA } from './tooltip';
 import { OutlineParams, StatusIcon } from './types/outline';
-import { HEADMARKER_ICONS, ICONS, perPrefix, PLACEHOLDER_REGEX } from './util';
+import { perPrefix, PLACEHOLDER_REGEX } from './util';
 
-/** The first of `files` that exists, or `null`. */
-function existing(...files: string[]): string | null {
-    return files.find(file => fs.existsSync(file)) ?? null;
+/** An icon an `i:` placeholder can show. */
+export interface Icon {
+    /** The image file. */
+    readonly path: string;
+    /** What kind of icon it is, e.g. `role icon`. */
+    readonly category: string;
 }
 
+/** The category of the icons in each subfolder of `media/icons`. Other subfolders use their name. */
+const ICON_CATEGORIES: Record<string, string> = {
+    roles: 'role icon',
+    headmarkers: 'headmarker'
+};
+
+let icons: Map<string, Icon> | undefined;
+
 /**
- * The image an `i:` or `hm:` placeholder shows, or `null` if it has none: thaliak's sub-icon (`media/sub-icons`,
- * SVG or PNG) or headmarker (`media/markers`), both fetched by `get-objects.mjs`.
+ * The icons an `i:` placeholder can show, by name: the SVG and PNG files in the subfolders of `media/icons`
+ * (thaliak's `www/images/icons`, fetched by `get-objects.mjs`). Read once.
  */
+export function getIcons(): ReadonlyMap<string, Icon> {
+    if (icons == null) {
+        icons = new Map();
+        const root = paths.join(MEDIA, 'icons');
+
+        for (const folder of fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }) : []) {
+            if (!folder.isDirectory()) {
+                continue;
+            }
+
+            for (const file of fs.readdirSync(paths.join(root, folder.name))) {
+                const match = /^(.+)\.(?:svg|png)$/.exec(file);
+
+                if (match != null && !icons.has(match[1]!)) {
+                    icons.set(match[1]!, { path: paths.join(root, folder.name, file), category: ICON_CATEGORIES[folder.name] ?? folder.name });
+                }
+            }
+        }
+    }
+
+    return icons;
+}
+
+/** The image an `i:` placeholder shows, or `null` if it has none. */
 function subIconPath(reference: string): string | null {
     return perPrefix<string | null>(reference, {
-        'i:': key => ICONS.includes(key as typeof ICONS[number]) ? existing(paths.join(MEDIA, 'sub-icons', `${key}.svg`), paths.join(MEDIA, 'sub-icons', `${key}.png`)) : null,
-        'hm:': key => HEADMARKER_ICONS.includes(key) ? existing(paths.join(MEDIA, 'markers', `${key}.svg`)) : null
+        'i:': key => getIcons().get(key)?.path ?? null
     });
 }
 
-/**
- * The icons of a timeline file's `i:` sub-icon and `hm:` headmarker placeholders, one in front of each. `null` if
- * the file isn't a timeline.
- */
+/** The icons of a timeline file's `i:` placeholders, one in front of each. `null` if the file isn't a timeline. */
 export function subIconProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache): (params: OutlineParams) => Promise<StatusIcon[] | null> {
     return async (params) => {
         const textDocument = documents.get(params.uri);

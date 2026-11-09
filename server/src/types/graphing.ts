@@ -193,19 +193,19 @@ export const SpecialStatuses = {
     'dice-6': { name: 'Sixth in Line', description: 'Sixth to be targeted by the mechanic.', image: '/images/dice/6.svg', size: 10 },
     'dice-7': { name: 'Seventh in Line', description: 'Seventh to be targeted by the mechanic.', image: '/images/dice/7.svg', size: 10 },
     'dice-8': { name: 'Eighth in Line', description: 'Eighth to be targeted by the mechanic.', image: '/images/dice/8.svg', size: 10 },
-    'mark1': { name: 'Marked 1', description: 'Marked as player 1.', image: '/images/markers/mark1.svg', size: 6 },
-    'mark2': { name: 'Marked 2', description: 'Marked as player 2.', image: '/images/markers/mark2.svg', size: 6 },
-    'mark3': { name: 'Marked 3', description: 'Marked as player 3.', image: '/images/markers/mark3.svg', size: 6 },
-    'mark4': { name: 'Marked 4', description: 'Marked as player 4.', image: '/images/markers/mark4.svg', size: 6 },
-    'mark5': { name: 'Marked 5', description: 'Marked as player 5.', image: '/images/markers/mark5.svg', size: 6 },
-    'mark6': { name: 'Marked 6', description: 'Marked as player 6.', image: '/images/markers/mark6.svg', size: 6 },
-    'mark7': { name: 'Marked 7', description: 'Marked as player 7.', image: '/images/markers/mark7.svg', size: 6 },
-    'mark8': { name: 'Marked 8', description: 'Marked as player 8.', image: '/images/markers/mark8.svg', size: 6 },
-    'jump': { name: 'Jump Target', description: 'Player is being targeted for a jump.', image: '/images/markers/jump.svg', size: 8 },
-    'cross': { name: 'Cross', description: 'Linked with the other cross player.', image: '/images/sub-icons/cross.svg', size: 8 },
-    'square': { name: 'Square', description: 'Linked with the other square player.', image: '/images/sub-icons/square.svg', size: 8 },
-    'circle': { name: 'Circle', description: 'Linked with the other circle player.', image: '/images/sub-icons/circle.svg', size: 8 },
-    'triangle': { name: 'Triangle', description: 'Linked with the other triangle player.', image: '/images/sub-icons/triangle.svg', size: 8 }
+    'mark1': { name: 'Marked 1', description: 'Marked as player 1.', image: '/images/icons/headmarkers/mark1.svg', size: 6 },
+    'mark2': { name: 'Marked 2', description: 'Marked as player 2.', image: '/images/icons/headmarkers/mark2.svg', size: 6 },
+    'mark3': { name: 'Marked 3', description: 'Marked as player 3.', image: '/images/icons/headmarkers/mark3.svg', size: 6 },
+    'mark4': { name: 'Marked 4', description: 'Marked as player 4.', image: '/images/icons/headmarkers/mark4.svg', size: 6 },
+    'mark5': { name: 'Marked 5', description: 'Marked as player 5.', image: '/images/icons/headmarkers/mark5.svg', size: 6 },
+    'mark6': { name: 'Marked 6', description: 'Marked as player 6.', image: '/images/icons/headmarkers/mark6.svg', size: 6 },
+    'mark7': { name: 'Marked 7', description: 'Marked as player 7.', image: '/images/icons/headmarkers/mark7.svg', size: 6 },
+    'mark8': { name: 'Marked 8', description: 'Marked as player 8.', image: '/images/icons/headmarkers/mark8.svg', size: 6 },
+    'jump': { name: 'Jump Target', description: 'Player is being targeted for a jump.', image: '/images/icons/headmarkers/jump.svg', size: 8 },
+    'cross': { name: 'Cross', description: 'Linked with the other cross player.', image: '/images/icons/headmarkers/ps-cross.svg', size: 8 },
+    'square': { name: 'Square', description: 'Linked with the other square player.', image: '/images/icons/headmarkers/ps-square.svg', size: 8 },
+    'circle': { name: 'Circle', description: 'Linked with the other circle player.', image: '/images/icons/headmarkers/ps-circle.svg', size: 8 },
+    'triangle': { name: 'Triangle', description: 'Linked with the other triangle player.', image: '/images/icons/headmarkers/ps-triangle.svg', size: 8 }
 };
 
 export interface StatusInfo {

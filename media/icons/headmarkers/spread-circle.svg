@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="g0" gradientUnits="userSpaceOnUse" cx="0.5" cy="0.5" r="0.5" gradientTransform="matrix(100 0 0 100 0 0)"><stop offset="0" stop-color="#c854ba00" /><stop offset="0.77" stop-color="#c854ba00" /><stop offset="0.9" stop-color="#e965da9b" /><stop offset="1" stop-color="#ffdbfb" /></radialGradient>
+    <radialGradient id="g1" gradientUnits="userSpaceOnUse" cx="0.5" cy="0.5" r="0.5" gradientTransform="matrix(200 0 0 200 -100 -100)"><stop offset="0" stop-color="#c854ba00" /><stop offset="0.8" stop-color="#c854ba00" /><stop offset="0.93" stop-color="#e965da9b" /><stop offset="1" stop-color="#e87edc" /></radialGradient>
+  </defs>
+  <path d="M100 50 A50 50 0 0 1 50 100 A50 50 0 0 1 0 50 A50 50 0 0 1 50 0 A50 50 0 0 1 100 50 Z" fill="url(#g0)" />
+  <g transform="matrix(0.468 0 0 0.468 50 50)">
+    <path d="M100 0 A100 100 0 0 1 0 100 A100 100 0 0 1 -100 0 A100 100 0 0 1 0 -100 A100 100 0 0 1 100 0 Z" fill="url(#g1)" fill-opacity="0.691" />
+  </g>
+</svg>

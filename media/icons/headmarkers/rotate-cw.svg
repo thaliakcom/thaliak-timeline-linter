@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="7.619 2.467 88.032 95.504">
+  <defs>
+    <linearGradient id="g0" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1" y2="0" gradientTransform="matrix(80 0 0 80 10 10)"><stop offset="0" stop-color="#fffbc3" /><stop offset="0.2" stop-color="#fbb173" stop-opacity="0" /><stop offset="0.9" stop-color="#fbb173" stop-opacity="0" /><stop offset="1" stop-color="#fbb173" /></linearGradient>
+  </defs>
+  <g transform="matrix(-0.809 0.588 -0.588 -0.809 119.84 61.062)">
+    <path d="M90 50 A40 40 0 0 1 50 90 A40 40 0 0 1 10 50 A40 40 0 0 1 50 10 A40 40 0 0 1 90 50 Z" fill="url(#g0)" />
+    <path d="M90 50 A40 40 0 0 1 50 90 A40 40 0 0 1 10 50 A40 40 0 0 1 50 10 A40 40 0 0 1 90 50 Z" fill="none" stroke="#ede9e6" stroke-width="1" stroke-miterlimit="10" stroke-opacity="0.33" />
+  </g>
+  <g transform="matrix(0.174 0.985 -0.985 0.174 90.558 -7.923)">
+    <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+      <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#1a0f09" fill-opacity="0.9" />
+    </g>
+  </g>
+  <g transform="matrix(0.5 0.866 -0.866 0.5 68.301 -18.301)">
+    <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+      <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#21130b" fill-opacity="0.8" />
+    </g>
+  </g>
+  <g transform="matrix(0.766 0.643 -0.643 0.766 43.837 -20.442)">
+    <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+      <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#382113" fill-opacity="0.7" />
+    </g>
+  </g>
+  <g transform="matrix(0.94 0.342 -0.342 0.94 20.116 -14.086)">
+    <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+      <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#915530" fill-opacity="0.5" />
+    </g>
+  </g>
+  <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+    <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#de7f45" fill-opacity="0.3" />
+  </g>
+  <g transform="matrix(0 -1 1 0 0 100)">
+    <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+      <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#1a0f09" fill-opacity="0.9" />
+    </g>
+  </g>
+  <g transform="matrix(-0.342 -0.94 0.94 -0.342 20.116 114.086)">
+    <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+      <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#21130b" fill-opacity="0.8" />
+    </g>
+  </g>
+  <g transform="matrix(-0.643 -0.766 0.766 -0.643 43.837 120.442)">
+    <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+      <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#382113" fill-opacity="0.7" />
+    </g>
+  </g>
+  <g transform="matrix(-0.866 -0.5 0.5 -0.866 68.301 118.301)">
+    <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+      <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#915530" fill-opacity="0.5" />
+    </g>
+  </g>
+  <g transform="matrix(-0.985 -0.174 0.174 -0.985 90.558 107.923)">
+    <g transform="matrix(0.951 -0.309 0.309 0.951 45.125 67.356)">
+      <path d="M10 21 L10 17 L0 25 L10 33 L10 29 L5 25 Z" fill="#de7f45" fill-opacity="0.3" />
+    </g>
+  </g>
+</svg>

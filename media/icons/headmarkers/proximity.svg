@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="8.374 8.376 83.252 83.248">
+  <defs>
+    <radialGradient id="g0" gradientUnits="userSpaceOnUse" cx="0.5" cy="0.5" r="0.5" gradientTransform="matrix(200 0 0 200 -100 -100)"><stop offset="0" stop-color="#ffdd1a" /><stop offset="0.7" stop-color="#ffdd1a" /><stop offset="0.9" stop-color="#d66320" /><stop offset="1" stop-color="#d66320" stop-opacity="0" /></radialGradient>
+  </defs>
+  <g transform="matrix(0.324 0 0 0.324 50 50)">
+    <path d="M100 0 A100 100 0 0 1 0 100 A100 100 0 0 1 -100 0 A100 100 0 0 1 0 -100 A100 100 0 0 1 100 0 Z" fill="url(#g0)" />
+  </g>
+  <path d="M85 50 A35 35 0 0 1 50 85 A35 35 0 0 1 15 50 A35 35 0 0 1 50 15 A35 35 0 0 1 85 50 Z" fill="none" stroke="#d66320" stroke-width="1" stroke-miterlimit="10" />
+  <g transform="matrix(-0.088 -0.996 0.996 -0.088 4.586 104.199)">
+    <path d="M90 50 A40 40 0 0 1 76.896 79.607" fill="none" stroke="#d66320" stroke-width="3" stroke-miterlimit="10" />
+    <path d="M49.499 89.997 A40 40 0 0 1 20.058 76.523" fill="none" stroke="#d66320" stroke-width="3" stroke-miterlimit="10" />
+    <path d="M10.013 48.997 A40 40 0 0 1 23.854 19.728" fill="none" stroke="#d66320" stroke-width="3" stroke-miterlimit="10" />
+    <path d="M51.504 10.028 A40 40 0 0 1 80.598 24.236" fill="none" stroke="#d66320" stroke-width="3" stroke-miterlimit="10" />
+  </g>
+</svg>

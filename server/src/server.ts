@@ -300,7 +300,7 @@ connection.onColorPresentation(colorPresentationProvider(documents, documentCach
 const inlayHints = byFileType(textDocumentUri, diagramInlayHintProvider(documents), inlayHintProvider(documents, documentCache, globalSettings));
 const statusIconsOnly = byFileType(outlineUri, diagramStatusIconProvider(documents, documentCache, globalSettings), statusIconProvider(documents, documentCache, globalSettings));
 const shapeIcons = byFileType(outlineUri, diagramShapeIconProvider(documents, documentCache, globalSettings), shapeIconProvider(documents, documentCache, globalSettings));
-// `.diagram` files have no `i:` or `hm:` placeholders.
+// `.diagram` files have no `i:` placeholders.
 const subIcons = byFileType(outlineUri, async () => [], subIconProvider(documents, documentCache));
 /**
  * The status, shape and sub-icon icons of a file, all drawn by the client the same way, each kind unless the user turned

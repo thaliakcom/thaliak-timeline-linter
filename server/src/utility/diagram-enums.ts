@@ -87,6 +87,10 @@ export const LOOKS = {
         'hello-world': { description: 'A dark disc with gold rings and spokes and a pulsing ring (TOP\'s Hello, World).', params: ['speed'] },
         'line-stack': { description: 'Two columns of arrows pointing at each other (line stack).', params: ['speed'] },
         proximity: { description: 'A yellow disc pulsing outwards inside a rotating dashed ring (proximity damage).', params: ['speed'] },
+        'ps-circle': { description: 'A red circle outline (linked with the other circle player).', params: [] },
+        'ps-cross': { description: 'A blue cross (linked with the other cross player).', params: [] },
+        'ps-square': { description: 'A pink square outline (linked with the other square player).', params: [] },
+        'ps-triangle': { description: 'A green triangle outline (linked with the other triangle player).', params: [] },
         'rotate-ccw': { description: 'A cyan ring with arrows orbiting counter-clockwise (rotation).', params: ['speed'] },
         'rotate-cw': { description: 'An amber ring with arrows orbiting clockwise (rotation).', params: ['speed'] },
         'spread-circle': { description: 'A pink circle with a rim pulsing outwards (spread).', params: ['speed'] },
@@ -97,6 +101,7 @@ export const LOOKS = {
         'satin-plume': { description: 'A pale feather turning gently inside a dense, shifting purple glow (UWU\'s Satin Plume).', params: ['speed'] },
         'spiny-plume': { description: 'A pale feather turning gently inside a dense, shifting green glow, a little bigger than the Satin Plume\'s (UWU\'s Spiny Plume).', params: ['speed'] },
         'target-fire': { description: 'An inverted dark red triangle with yellow-to-red spokes from a pulsing yellow glow in its centre to its corners (UWU\'s Flaming Crush).', params: ['speed'] },
+        'target-red': { description: 'A red winged emblem turning slowly while bouncing, sending out a red ring each time it lands (target marker, e.g. in TOP).', params: ['speed'] },
         unknown: { description: 'A grey disc with a question mark: a headmarker whose game icon no look is mapped to yet (`enums/headmarkers.yaml`).', params: [] }
     }
 } as const satisfies Record<string, Record<string, LookDefinition>>;
@@ -107,11 +112,11 @@ export const LOOKS = {
  */
 export const DDL_MARKER_LOOKS = {
     /** Headmarkers (`+headmarker`, `headmarker:` on `define action`). Their size and look are fixed. */
-    headmarkers: ['flare', 'line-stack', 'proximity', 'rotate-ccw', 'rotate-cw', 'spread-circle', 'stack', 'tankbuster', 'target-green', 'target-fire', 'unknown'],
+    headmarkers: ['flare', 'line-stack', 'ps-circle', 'ps-cross', 'ps-square', 'ps-triangle', 'rotate-ccw', 'rotate-cw', 'spread-circle', 'stack', 'tankbuster', 'target-green', 'target-fire', 'target-red', 'unknown'],
     /** Built-in drawings for `type: graphic`, such as an actor's look. */
     graphics: ['satin-plume', 'spiny-plume'],
     /** AoE looks (in `enums/omens.yaml`) drawn over the AoE's circle. */
-    aoes: ['circle-kb', 'exaflare', 'tower']
+    aoes: ['circle-kb', 'exaflare', 'proximity', 'tower']
 } as const satisfies Record<string, readonly (keyof typeof LOOKS.markers)[]>;
 
 /** An animation diagram elements can play when they appear (`enter`) or disappear (`exit`). */
