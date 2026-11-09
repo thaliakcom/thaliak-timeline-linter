@@ -18,8 +18,11 @@ export type Pose = Scope & { start: number, end: number } & (
     | { kind: 'fixed', xy: XY }
     | { kind: 'follow', target: string, offset: XY }
     | { kind: 'snap', target: string, snapAt: number, offset: XY }
-    /** `ramp` is how long it speeds up at its start and slows down at its end, in ms; `rampOut`, if given, how long it slows down. */
-    | { kind: 'move', to: XY | string, ramp: number, rampOut?: number }
+    /**
+     * `ramp` is how long it speeds up at its start and slows down at its end, in ms; `rampOut`, if given, how long it slows down.
+     * `line` is the 1-based line of the statement that wrote this move, absent for a follow's moves.
+     */
+    | { kind: 'move', to: XY | string, ramp: number, rampOut?: number, line?: number }
 );
 
 export type Turn = Scope & { t: number, over: number, abs?: number, by?: number, look?: string };

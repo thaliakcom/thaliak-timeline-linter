@@ -1,11 +1,10 @@
 // Diagnostics of `.diagram` files: whatever thaliak's build would report, plus the checks of what `define` blocks draw.
 import { Diagnostic, DiagnosticSeverity, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import * as yaml from 'yaml';
 import { baseOf, diagramInputOf, DefinitionField, fieldsOf, hasBalancedBrackets, isDiagramWip, linesOf, Timeline, timelineOf, tokensOf } from './diagram-context';
 import { fixableDiagnostics, LinterOptions } from './server';
 import { DiagramField, DiagramSchema, DiagramValueType, fieldsOfKind, typesOfBlock } from './types/diagram-schema';
-import { compileDiagram } from './utility/diagram-ddl/compile';
+import { compileDiagram, readFieldValue } from './utility/diagram-ddl/compile';
 import { Definition, parse, ParseResult, Statement } from './utility/diagram-ddl/parse';
 
 /** The element IDs that mean something by themselves, and so can't be defined. */
@@ -17,18 +16,18 @@ function diagnostic(severity: DiagnosticSeverity, code: string, message: string,
     return { source: 'thaliak', severity, code, message, range: { start: { line, character: start }, end: { line, character: end } } };
 }
 
-/** A field's value parsed the way the compiler parses it. `undefined` if it can't be. */
+/** A field's value parsed the way the compiler parses it. `undefined` if it can't be, which the compiler reports. */
 function valueOf(fields: DefinitionField[], key: string): unknown {
     const lines = fields.filter(field => field.key === key).map(field => field.value);
 
     try {
-        return lines.length > 0 ? yaml.parse(lines.join(' ')) : undefined;
+        return lines.length > 0 ? readFieldValue(key, lines.join(' ')) : undefined;
     } catch {
         return undefined;
     }
 }
 
-/** The type of a look or animation given as its name (`look: ripple`) or as `{ type, ...parameters }`. */
+/** The type of a look or animation given as its name (`look: ripple`) or with parameters (`look: ripple speed 2`). */
 function typeOf(value: unknown): string | undefined {
     const type = value != null && typeof value === 'object' ? (value as { type?: unknown }).type : value;
 
@@ -109,7 +108,7 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
         }
 
         if (type != null && (SHAPE_TYPES.includes(type) || type === 'link') && firstOf('color') != null) {
-            yield error('color-in-look', firstOf('color')!, `'color' moved into the look: 'look: { type: plain, color: ${firstOf('color')!.value} }'.`);
+            yield error('color-in-look', firstOf('color')!, `'color' moved into the look: 'look: plain color ${firstOf('color')!.value}'.`);
         }
 
         if (type != null && look != null) {
@@ -137,15 +136,15 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
     yield* validateFieldOrder(textDocument, blocks);
 }
 
-/** The name of a value's type, as the schema names it. */
+/**
+ * The name of a value's type, as the schema names it, from {@link readFieldValue}: a list of numbers is a point, which
+ * is written like a coordinate, and a value with clauses (`look: plain color #FFF6D5`) is written as a string.
+ */
 function valueTypeOf(value: unknown): DiagramValueType {
-    if (typeof value === 'string' && POINT.test(value)) return 'point';
+    if (Array.isArray(value)) return 'point';
 
-    return value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value as DiagramValueType;
+    return value === null ? 'null' : typeof value === 'object' ? 'string' : typeof value as DiagramValueType;
 }
-
-/** A fixed-size list of numbers, written like a coordinate. YAML reads it as a string. */
-const POINT = /^\(\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+\s*\)$/;
 
 /** Warns about the fields of `define` blocks that `schema` doesn't know, and values that aren't what it says. */
 function* validateFields(definitions: Definition[], lines: string[], schema: DiagramSchema): Generator<Diagnostic> {

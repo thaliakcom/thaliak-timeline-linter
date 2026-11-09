@@ -427,7 +427,7 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
                 return null;
             }
 
-            // A key, at the start of the line or inside a value such as `{ type: plain }`. `on:enter` is one key.
+            // A key, at the start of the line. `on:enter` is one key.
             if (text[end] === ':') {
                 const key = onKey ? field.key : word;
                 const spec = known[key];

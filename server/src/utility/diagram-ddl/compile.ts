@@ -1,12 +1,11 @@
 // Turns a parsed `.diagram` file and the fight's actions into plain JSON that `seek.ts` can read,
 // and reports everything that makes the file invalid. Runs at build time only.
-import * as yaml from 'js-yaml';
 import { RESOLVE_PRESETS } from '../../components/diagram/render/effects/presets';
 import { planeUnitsPerYalm } from '../diagram-sizing';
 import { BOSS_IMAGE, DEFAULT_ACTOR_GRAPHICS } from '../diagram-defaults';
 import { AnimationDefinition, ANIMATIONS, DDL_MARKER_LOOKS, ParameterDefinition, ParameterKey, PARAMETERS } from '../diagram-enums';
 import { expandMargin } from '../margin';
-import { Definition, Diagnostic, parse, Statement } from './parse';
+import { Definition, Diagnostic, parse, Statement, tokenize } from './parse';
 import { callPlaceholder, PLAYER_GROUPS, resolveWaymarks } from './placeholders';
 import type { Margin } from '../../types/graphing';
 import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, definitionKey, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, Spawn, XY } from './seek';
@@ -41,10 +40,22 @@ const TELEPORT_EASE_OUT = 80;
  * target got far from its front, as after a cast lock. Provisional, until tested against footage.
  */
 const FOLLOW_TURN_SPEED = 360 / 1000;
-/** A fixed-size list of numbers in round brackets, `(0.5, 0)`, not right after a name, so that `rgba(0, 0, 0, 1)` stays as it is. */
-const ROUND_TUPLE = /(?<![\w-])\(\s*(-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+)\s*\)/g;
-/** The same in square brackets, which are only for placeholders. */
-const SQUARE_TUPLE = /(?<![\w-])\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+\s*\]/;
+/** A whole value that's a fixed-size list of numbers in round brackets, written like a coordinate: `(0.5, 0)`. */
+const ROUND_TUPLE = /^\(\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+\s*\)$/;
+/**
+ * The `define` fields whose value is a kind, which is never optional, followed by `key value` clauses:
+ * `look: plain color #FFF6D5`. `kind` names what comes first, `example` shows the form, and `clauses` lists the
+ * clauses it takes, if not any parameter of its look or animation.
+ */
+const CLAUSE_FIELDS: Record<string, { kind: string, example: string, clauses?: readonly string[] }> = {
+    look: { kind: 'type', example: 'look: plain color #FFF6D5' },
+    enter: { kind: 'type', example: 'enter: scale speed 2' },
+    exit: { kind: 'type', example: 'exit: tornado speed 0.5 height 1.5' },
+    stroke: { kind: 'style', example: 'stroke: dashed color #FFB4B4', clauses: ['color'] },
+    extrude: { kind: 'height', example: 'extrude: 1.5 color #000000BB', clauses: ['color'] }
+};
+/** The styles a `stroke` can have. */
+const STROKE_STYLES = ['solid', 'dashed'];
 
 /** The game action IDs that a `.diagram` file's `+aoe` statements draw instead with `as`, whose facts {@link DiagramInput.variants} needs. */
 export function variantIdsOf(source: string): number[] {
@@ -73,13 +84,56 @@ function facingOf(definition: Record<string, unknown>): number {
 }
 
 /**
- * Reads the value of a `define` field, which is YAML flow except that fixed-size values are written like
- * coordinates, `origin: (0.5, 0)`. Throws on the square form, since square brackets only insert elements.
+ * Reads the value of the `define` field `key`: `true` or `false`, a number, a fixed-size list of numbers written like a
+ * coordinate (`origin: (0.5, 0)`), or else the text as it is. {@link CLAUSE_FIELDS} take their kind and clauses
+ * instead. Throws on objects and lists (`{ … }`, `[ … ]`), which aren't part of the DDL.
  */
-function readFieldValue(text: string): unknown {
-    if (SQUARE_TUPLE.test(text)) throw new Error('fixed-size values take round brackets, as in (0.5, 0)');
+export function readFieldValue(key: string, text: string): unknown {
+    const clauseField = CLAUSE_FIELDS[key];
 
-    return yaml.load(text.replace(ROUND_TUPLE, '[$1]'));
+    if (/^[{[]/.test(text)) throw new Error(`objects and lists aren't part of the DDL${clauseField != null ? `: write it as "${clauseField.example}"` : ''}`);
+    if (clauseField != null) return readClauseField(key, text, clauseField);
+    if (text === 'true' || text === 'false') return text === 'true';
+    if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text);
+    if (ROUND_TUPLE.test(text)) return text.slice(1, -1).split(',').map(Number);
+
+    return text;
+}
+
+/**
+ * Reads the value of one of the {@link CLAUSE_FIELDS}: its kind, then its clauses, as in `exit: tornado speed 0.5`.
+ * A `look`, `enter` or `exit` is its type alone, or `{ type, ...parameters }`; a `stroke` is `{ style, color }`; an
+ * `extrude` is `"<height> <color>"`, as the viewer takes it, and needs its color.
+ */
+function readClauseField(key: string, text: string, { kind, example, clauses: allowed }: { kind: string, example: string, clauses?: readonly string[] }): unknown {
+    const [first, ...rest] = tokenize(text);
+
+    if (first == null || first.startsWith('#')) throw new Error(`it starts with its ${kind}, which is never optional, as in "${example}"`);
+
+    const clauses: Record<string, number | string> = {};
+
+    for (let i = 0; i < rest.length; i += 2) {
+        const clause = rest[i]!;
+        const value = rest[i + 1];
+
+        if (allowed != null && !allowed.includes(clause)) throw new Error(`only ${allowed.map(name => `"${name}"`).join(', ')} can follow its ${kind}, not "${clause}", as in "${example}"`);
+        if (value == null || value === ',') throw new Error(`"${clause}" has no value, as in "${example}"`);
+        if (clause in clauses) throw new Error(`"${clause}" is given twice`);
+
+        clauses[clause] = /^-?\d+(\.\d+)?$/.test(value) ? Number(value) : value;
+    }
+
+    switch (key) {
+        case 'stroke':
+            if (!STROKE_STYLES.includes(first)) throw new Error(`its style is ${STROKE_STYLES.join(' or ')}, not "${first}", as in "${example}"`);
+            return { style: first, ...clauses };
+        case 'extrude':
+            if (!/^\d+(\.\d+)?$/.test(first)) throw new Error(`its height is a number, not "${first}", as in "${example}"`);
+            if (clauses.color == null) throw new Error(`it needs a color, as in "${example}"`);
+            return `${first} ${clauses.color}`;
+        default:
+            return rest.length === 0 ? first : { type: first, ...clauses };
+    }
 }
 
 /**
@@ -140,7 +194,7 @@ const LABEL_BASE = 'diagram-label';
 const RAIDWIDE_SIZE = 420;
 const DASHED = { look: { type: 'none' }, stroke: { style: 'dashed', color: '#fce76e' } };
 /** Definition keys that describe a placement rather than the drawn element. */
-const NON_VISUAL_KEYS = new Set(['attached', 'enterHooks', 'exitHooks', 'tracks', 'headmarker']);
+const NON_VISUAL_KEYS = new Set(['attached', 'enterHooks', 'exitHooks', 'tracks', 'headmarker', 'lead']);
 /** The `define action` keys that were removed: an action's hit shows only its resolve effect. */
 const REMOVED_KEYS = ['flash', 'flashLook', 'hold', 'hidden'];
 /** The element kinds that `define` declares, by the verb that places them. */
@@ -514,6 +568,11 @@ function literal(value: string): number | string | number[] {
     return value;
 }
 
+/** Whether an action shows a telegraph: an omen, and a cast for it to show during. */
+function hasTelegraph(action: ActionFacts): boolean {
+    return action.hasOmen === true && (action.cast ?? 0) > 0;
+}
+
 /** Returns whether two scopes can both apply under one selection. */
 function compatible(a: Scope, b: Scope): boolean {
     if (a.strategy != null && b.strategy != null && a.strategy !== b.strategy) return false;
@@ -650,7 +709,7 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
                 const animations = lines.filter(line => line !== '' && !/^[+-]/.test(line));
 
                 try {
-                    if (animations.length > 0) values[key] = readFieldValue(animations.join(' '));
+                    if (animations.length > 0) values[key] = readFieldValue(key, animations.join(' '));
                 } catch (e) {
                     error(definition.line, `"${key}" of "${definition.id}" can't be read: ${e instanceof Error ? e.message : e}`);
                 }
@@ -658,8 +717,11 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
                 continue;
             }
 
+            // The parser reported the quotes already, and the value would only be reported again for them.
+            if (lines.some(line => line.includes('"'))) continue;
+
             try {
-                values[key] = readFieldValue(lines.join(' '));
+                values[key] = readFieldValue(key, lines.join(' '));
             } catch (e) {
                 error(definition.line, `"${key}" of "${definition.id}" can't be read: ${e instanceof Error ? e.message : e}`);
             }
@@ -677,6 +739,21 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
 
             for (const [key, instead] of Object.entries(MOVED_KEYS)) {
                 if (key in values) error(definition.line, `"${definition.id}" can't have a "${key}": ${instead}`);
+            }
+
+            if ('lead' in values) {
+                const lead = typeof values.lead === 'number' ? values.lead : typeof values.lead === 'string' && /^\d+(\.\d+)?m?s$/.test(values.lead) ? duration(values.lead) : NaN;
+                const facts = actions[definition.id];
+
+                if (!(lead > 0)) {
+                    error(definition.line, `"lead" of "${definition.id}" is a duration above 0, such as "lead: 2s"`);
+                    delete values.lead;
+                } else if (facts != null && hasTelegraph(facts)) {
+                    error(definition.line, `"${definition.id}" has a telegraph, which its cast times; "lead" is for actions without one`);
+                    delete values.lead;
+                } else {
+                    values.lead = lead;
+                }
             }
 
             if ('headmarker' in values) {
@@ -1034,7 +1111,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             }
 
             const finish = s.verb === 'arrive' ? Math.max(s.at, start) : start + time;
-            element.poses.push({ ...within, start, end: finish, kind: 'move', to: target, ramp: Math.min(MOTION_RAMP, (finish - start) / 2) });
+            element.poses.push({ ...within, start, end: finish, kind: 'move', to: target, ramp: Math.min(MOTION_RAMP, (finish - start) / 2), line: s.line });
         }
 
         const rotate = clauseOf(s, 'rotate');
@@ -1068,7 +1145,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
      * Adds one placement of an action at one use. `variant` is the game action ID that `as` draws it as instead, whose
      * shape, size and look this placement takes; its timing stays the action's.
      */
-    const addAoe = (id: string, use: Use, shown: number | null, within: Scope, fields: Partial<CompiledAoe>, line: number, variant?: number): CompiledAoe => {
+    const addAoe = (id: string, use: Use, within: Scope, fields: Partial<CompiledAoe>, line: number, variant?: number): CompiledAoe => {
         const action = actions[use.action] ?? {};
         const variantFacts = variant == null ? undefined : input.variants?.[variant];
 
@@ -1078,9 +1155,11 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const drawnFacts: ActionFacts = variantFacts == null ? action : { ...action, ...variantFacts, shape: action.shape };
         const def = actionDefs[use.action] ?? {};
         const raidwide = isRaidwide(action);
-        const omen = action.hasOmen === true && (action.cast ?? 0) > 0;
+        const omen = hasTelegraph(action);
         const telegraphStart = use.at - (action.cast ?? 0) + (action['omen-delay'] ?? 0);
-        const show = raidwide ? use.at : omen ? telegraphStart : shown ?? telegraphStart;
+        // Without a telegraph, its outline stands in for one, for its `lead` (by default its cast) before the hit.
+        const lead = typeof def.lead === 'number' ? def.lead : action.cast ?? 0;
+        const show = raidwide ? use.at : omen ? telegraphStart : use.at - lead;
         const visual: Record<string, unknown> = Object.fromEntries(Object.entries(def).filter(([key]) => !NON_VISUAL_KEYS.has(key)));
         // Raidwides have no outline, so they keep their own look.
         const omenLook = drawnFacts.omen != null ? input.omens?.[drawnFacts.omen] : undefined;
@@ -1115,8 +1194,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             hit: use.at,
             omen,
             raidwide,
-            // A drawing has no outline to dash.
-            props: { ...visual, ...look, ...(omen || raidwide || base === AOE_GRAPHIC_BASE ? {} : DASHED) },
+            // A drawing has no outline to dash. What the action's definition says wins over the dashed outline.
+            props: { ...look, ...(omen || raidwide || base === AOE_GRAPHIC_BASE ? {} : DASHED), ...visual },
             labelId: `${LABEL_BASE}#${unique}${suffix}`,
             label: action.name ?? use.action,
             ...fields
@@ -1443,9 +1522,9 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
                     if (variant != null && !Number.isInteger(variant)) error(s.line, `"as" on +aoe takes a game action ID`);
 
-                    const aoe = addAoe(id, use, s.at, within, fields, s.line, variant);
+                    const aoe = addAoe(id, use, within, fields, s.line, variant);
 
-                    if (aoe.omen && s.at > aoe.show) error(s.line, `"${id}" is placed ${s.at - aoe.show} ms after its telegraph appears`);
+                    if (!aoe.raidwide && s.at > aoe.show) error(s.line, `"${id}" is placed ${s.at - aoe.show} ms after its ${aoe.omen ? 'telegraph' : 'outline'} appears`);
                 });
                 break;
             }
@@ -1745,7 +1824,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             if (attachedTo.length === 0) error(0, raidwide ? `raidwide "${use.action}" at ${use.at} has no origin: place it, or give its timeline action an "actor"` : `"${use.action}" is attached, but its timeline action has no "actor"`);
             else if (actors.length === 0) error(0, raidwide ? `raidwide "${use.action}" at ${use.at} has no origin: none of ${names} is alive then` : `"${use.action}" at ${use.at} is attached to ${names}, but none is alive then`);
 
-            for (const actor of actors) addAoe(`${use.action}#${subIdOf(actor.id)}`, use, null, {}, { attachedTo: actor.id }, 0);
+            for (const actor of actors) addAoe(`${use.action}#${subIdOf(actor.id)}`, use, {}, { attachedTo: actor.id }, 0);
 
             continue;
         }

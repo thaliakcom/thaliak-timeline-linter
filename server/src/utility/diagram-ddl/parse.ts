@@ -116,6 +116,21 @@ export function tokenize(text: string): string[] {
     return tokens;
 }
 
+/**
+ * The first quoted value in `text`, a statement's arguments or a `define` field's value, unless it's an `as` label:
+ * values are written bare (`color #2EA632`), and only a label may need the quotes for its spaces.
+ */
+function quotedValue(text: string): string | undefined {
+    const tokens = tokenize(text);
+
+    return tokens.find((token, i) => token.includes('"') && tokens[i - 1] !== 'as');
+}
+
+/** Why `quoted`, from {@link quotedValue}, is wrong. */
+function quoteMessage(quoted: string): string {
+    return `quoted values aren't part of the DDL, except "as" labels: write ${quoted} as ${quoted.replaceAll('"', '')}`;
+}
+
 /** Reads a `value, value, ...` list starting at `start`. Returns the values and the index after them. */
 function readList(tokens: string[], start: number): [string[], number] {
     const values: string[] = [];
@@ -156,6 +171,10 @@ export function parse(source: string): ParseResult {
         const statement: Statement = { line, at, sign: verb.sign, verb: verb.name, text, subjects: [], clauses: [] };
 
         if (!TEXT_VERBS.has(verb.name) && text !== '') {
+            const quoted = quotedValue(text);
+
+            if (quoted != null) diagnostics.push({ line, message: quoteMessage(quoted) });
+
             const tokens = tokenize(text);
             const [subjects, first] = readList(tokens, 0);
             let i = first;
@@ -214,6 +233,11 @@ export function parse(source: string): ParseResult {
 
             // A line indented deeper than the keys, such as a second statement under `on:enter`, belongs to the last field,
             // and so does a signed one (`-actor: optical-unit`). Only an unsigned word at the keys' indent starts a new one.
+            const value = match != null && definition.kind !== 'gradient' && !(field != null && indent > keyIndent) ? match[2]! : field != null ? text : undefined;
+            const quoted = value != null ? quotedValue(value) : undefined;
+
+            if (quoted != null) diagnostics.push({ line, message: quoteMessage(quoted) });
+
             if (match != null && definition.kind !== 'gradient' && !(field != null && indent > keyIndent)) {
                 keyIndent = Math.min(keyIndent, indent);
                 field = match[1]!;
