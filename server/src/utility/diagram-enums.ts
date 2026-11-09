@@ -96,6 +96,7 @@ export const LOOKS = {
         tower: { description: 'Concentric solid and turning dashed rings with a pulsing rim (tower).', params: ['speed'] },
         'satin-plume': { description: 'A pale feather turning gently inside a dense, shifting purple glow (UWU\'s Satin Plume).', params: ['speed'] },
         'spiny-plume': { description: 'A pale feather turning gently inside a dense, shifting green glow, a little bigger than the Satin Plume\'s (UWU\'s Spiny Plume).', params: ['speed'] },
+        'target-fire': { description: 'An inverted dark red triangle with yellow-to-red spokes from a pulsing yellow glow in its centre to its corners (UWU\'s Flaming Crush).', params: ['speed'] },
         unknown: { description: 'A grey disc with a question mark: a headmarker whose game icon no look is mapped to yet (`enums/headmarkers.yaml`).', params: [] }
     }
 } as const satisfies Record<string, Record<string, LookDefinition>>;
@@ -106,7 +107,7 @@ export const LOOKS = {
  */
 export const DDL_MARKER_LOOKS = {
     /** Headmarkers (`+headmarker`, `headmarker:` on `define action`). Their size and look are fixed. */
-    headmarkers: ['flare', 'line-stack', 'proximity', 'rotate-ccw', 'rotate-cw', 'spread-circle', 'stack', 'tankbuster', 'target-green', 'unknown'],
+    headmarkers: ['flare', 'line-stack', 'proximity', 'rotate-ccw', 'rotate-cw', 'spread-circle', 'stack', 'tankbuster', 'target-green', 'target-fire', 'unknown'],
     /** Built-in drawings for `type: graphic`, such as an actor's look. */
     graphics: ['satin-plume', 'spiny-plume'],
     /** AoE looks (in `enums/omens.yaml`) drawn over the AoE's circle. */

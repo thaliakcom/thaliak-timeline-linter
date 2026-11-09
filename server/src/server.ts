@@ -40,6 +40,7 @@ import inlayHintProvider from './inlay-hint-provider';
 import outlineProvider from './outline-provider';
 import statusIconProvider, { iconSpacers } from './status-icon-provider';
 import { diagramShapeIconProvider, shapeIconProvider } from './shape-icon-provider';
+import { subIconProvider } from './sub-icon-provider';
 import { configureIronworks, type IronworksOptions } from './ironworks';
 import { diagramOf, isDiagramUri, statusKeysOf } from './diagram-context';
 import { lintDiagram } from './diagram-linter';
@@ -299,18 +300,21 @@ connection.onColorPresentation(colorPresentationProvider(documents, documentCach
 const inlayHints = byFileType(textDocumentUri, diagramInlayHintProvider(documents), inlayHintProvider(documents, documentCache, globalSettings));
 const statusIconsOnly = byFileType(outlineUri, diagramStatusIconProvider(documents, documentCache, globalSettings), statusIconProvider(documents, documentCache, globalSettings));
 const shapeIcons = byFileType(outlineUri, diagramShapeIconProvider(documents, documentCache, globalSettings), shapeIconProvider(documents, documentCache, globalSettings));
+// `.diagram` files have no `i:` or `hm:` placeholders.
+const subIcons = byFileType(outlineUri, async () => [], subIconProvider(documents, documentCache));
 /**
- * The status and shape icons of a file, all drawn by the client the same way, each kind unless the user turned it off
- * (`thaliak-timeline-linter.icons`, read on every request). `null` if it's neither a timeline nor a `.diagram` file.
+ * The status, shape and sub-icon icons of a file, all drawn by the client the same way, each kind unless the user turned
+ * it off (`thaliak-timeline-linter.icons`, read on every request). `null` if it's neither a timeline nor a `.diagram` file.
  */
 const statusIcons = async (params: OutlineParams): Promise<StatusIcon[] | null> => {
-    const enabled = await connection.workspace.getConfiguration('thaliak-timeline-linter.icons') as { status?: boolean, aoes?: boolean } | null;
-    const [status, shapes] = await Promise.all([
+    const enabled = await connection.workspace.getConfiguration('thaliak-timeline-linter.icons') as { status?: boolean, aoes?: boolean, subIcons?: boolean } | null;
+    const [status, shapes, sub] = await Promise.all([
         enabled?.status !== false ? statusIconsOnly(params) : [],
-        enabled?.aoes !== false ? shapeIcons(params) : []
+        enabled?.aoes !== false ? shapeIcons(params) : [],
+        enabled?.subIcons !== false ? subIcons(params) : []
     ]);
 
-    return status == null && shapes == null ? null : [...status ?? [], ...shapes ?? []];
+    return status == null && shapes == null && sub == null ? null : [...status ?? [], ...shapes ?? [], ...sub ?? []];
 };
 
 connection.languages.inlayHint.on(async params => [...inlayHints(params), ...iconSpacers(await statusIcons({ uri: params.textDocument.uri }), params.range)]);

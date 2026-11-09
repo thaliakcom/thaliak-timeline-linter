@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 
@@ -43,12 +43,26 @@ const ENUM_YAMLS = [
     ['StatusType', 'enums/status-types.yaml'],
     ['DamageType', 'enums/damage-types.yaml']
 ];
+/**
+ * thaliak's images that the linter shows inline (`sub-icon-provider.ts`), as [directory in the repository, directory
+ * in the linter]: the `i:` sub-icons, and the `hm:` headmarkers, which the outline also shows.
+ */
+const IMAGE_DIRS = [
+    ['www/images/sub-icons', './media/sub-icons'],
+    ['www/images/headmarkers', './media/markers']
+];
 const ENUMS_PATH = './server/src/types/enums.ts';
 const DIAGRAM_ENUMS_PATH = './server/src/utility/diagram-enums.ts';
 
 /** Fetches one file's raw contents from GitHub through the `gh` CLI. */
 async function fetchFile(from, repo) {
     const { stdout } = await promisify(execFile)('gh', ['api', `https://api.github.com/repos/thaliakcom/${repo}/contents/${from}`, '-H', 'Accept: application/vnd.github.v4.raw'], { maxBuffer: 64 * 1024 * 1024 });
+    return stdout;
+}
+
+/** Fetches one file's raw bytes from GitHub through the `gh` CLI, for images. */
+async function fetchBinaryFile(from, repo) {
+    const { stdout } = await promisify(execFile)('gh', ['api', `https://api.github.com/repos/thaliakcom/${repo}/contents/${from}`, '-H', 'Accept: application/vnd.github.v4.raw'], { maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' });
     return stdout;
 }
 
@@ -141,13 +155,34 @@ const failures = results.flatMap((result, i) => {
     return result.status === 'rejected' ? [`${repo}/${from}: ${result.reason?.stderr?.trim() || result.reason}`] : [];
 });
 
+// The images, as [repository path, linter path]: listed first, then fetched, unless something already failed.
+const imageNames = failures.length > 0 ? [] : await Promise.allSettled(IMAGE_DIRS.map(([from]) => fetchFileNames(from, 'thaliak')));
+const images = imageNames.flatMap((result, i) => {
+    const [from, to] = IMAGE_DIRS[i];
+
+    if (result.status === 'rejected') {
+        failures.push(`thaliak/${from}: ${result.reason?.stderr?.trim() || result.reason}`);
+        return [];
+    }
+
+    return result.value.map(name => [`${from}/${name}`, `${to}/${name}`]);
+});
+const imageResults = failures.length > 0 ? [] : await Promise.allSettled(images.map(([from]) => fetchBinaryFile(from, 'thaliak')));
+imageResults.forEach((result, i) => {
+    if (result.status === 'rejected') {
+        failures.push(`thaliak/${images[i][0]}: ${result.reason?.stderr?.toString().trim() || result.reason}`);
+    }
+});
+
 if (failures.length > 0) {
     console.error(`Nothing was written. These files couldn't be fetched:\n${failures.join('\n')}`);
     process.exit(1);
 }
 
 await Promise.all(FILES.map(([, to], i) => writeFile(to, results[i].value, { encoding: 'utf-8' })));
+await Promise.all(IMAGE_DIRS.map(([, to]) => mkdir(to, { recursive: true })));
+await Promise.all(images.map(([, to], i) => writeFile(to, imageResults[i].value)));
 const yamls = Object.fromEntries(ENUM_YAMLS.map(([name], i) => [name, results[FILES.length + i].value]));
 await writeFile(ENUMS_PATH, await generateEnumTypes(yamls), { encoding: 'utf-8' });
 await writeFile(PRESETS_PATH, generatePresets(results.at(-1).value), { encoding: 'utf-8' });
-console.log(`Fetched ${FILES.length} files and generated ${ENUMS_PATH} and ${PRESETS_PATH}.`);
+console.log(`Fetched ${FILES.length} files and ${images.length} images, and generated ${ENUMS_PATH} and ${PRESETS_PATH}.`);

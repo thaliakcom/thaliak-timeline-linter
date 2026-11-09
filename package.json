@@ -79,6 +79,12 @@
                     "default": true,
                     "description": "Shows the icons of AoE shapes inline, in front of `shape` values, `ms:` references and the actions of `+aoe` statements. Needs inlay hints."
                 },
+                "thaliak-timeline-linter.icons.subIcons": {
+                    "scope": "window",
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Shows the images of `i:` sub-icon and `hm:` headmarker references inline, in front of them. Needs inlay hints."
+                },
                 "thaliak-timeline-linter.completion.schemaEnums": {
                     "scope": "window",
                     "type": "boolean",

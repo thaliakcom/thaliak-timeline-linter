@@ -1554,7 +1554,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
         for (const follow of [...follows].sort((a, b) => a.from - b.from)) {
             const element = elements.get(follow.id)!;
-            const to = Math.min(follow.to, end);
+            // A follow also ends when its actor is removed.
+            const to = Math.min(follow.to, end, element.spawns.find(spawn => compatible(spawn, follow.within) && spawn.from <= follow.from && follow.from < spawn.to)?.to ?? end);
             const props: Record<string, unknown> = { ...elementDef(element.base), ...element.props };
             const hitbox = input.hitboxes?.[element.base];
 

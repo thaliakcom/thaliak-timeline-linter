@@ -1,12 +1,15 @@
 import { Position, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
+import { DDL_MARKER_LOOKS } from './utility/diagram-enums';
 
-export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|dt|t|i):[^()\n]+?)(?::\d+)?(?::\d+s)?\))|(?:\[((?:a|s|m|ms|st|dt|t|i):[^[\]\n]+?)(?:(?::c)|(?::d)|(?::\d+)?(?::\d+s)?)\]))/g;
+export const PLACEHOLDER_REGEX = /(?:\[[^[\]\n]+\](?:\(((?:a|s|m|ms|st|dt|t|i|hm):[^()\n]+?)(?::\d+)?(?::\d+s)?\))|(?:\[((?:a|s|m|ms|st|dt|t|i|hm):[^[\]\n]+?)(?:(?::c)|(?::d)|(?::\d+)?(?::\d+s)?)\]))/g;
 export const KEY_REGEX = /^\s{2}([^\s]+):\s/g;
 export const SUFFIX_REGEX = /(?:.+?):(?:.+?)((?::\d+)?:\d+s|:(?:\d+|d|c))$/g;
 
 export const ICONS = ['tank', 'healer', 'dps', 'melee', 'ranged', 'pranged', 'caster', 'circle', 'cross', 'square', 'triangle'] as const;
+/** The headmarker looks an `hm:` placeholder can show: all but `unknown`, which has no icon. */
+export const HEADMARKER_ICONS: readonly string[] = DDL_MARKER_LOOKS.headmarkers.filter(look => look !== 'unknown');
 
 export const SPECIAL_TIMELINE_IDS: Array<{ id: string, description: string }> = [
     { id: '<untargetable>', description: 'Indicates that the enemy or enemies on the field become untargetable. Should be followed by a <targetable> item.' },
@@ -495,6 +498,8 @@ interface Prefixes<T> {
     'dt:'?: (key: string) => T;
     't:'?: (key: string) => T;
     'i:'?: (key: string) => T;
+    /** A headmarker look, shown as an icon. */
+    'hm:'?: (key: string) => T;
     /** A timeline actor, by its key in `actors`; only an action's `actor` value names one. */
     'ac:'?: (key: string) => T;
     else?: (key: string) => T;
