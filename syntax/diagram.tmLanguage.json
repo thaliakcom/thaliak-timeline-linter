@@ -12,6 +12,7 @@
         { "include": "#define-strategy" },
         { "include": "#define" },
         { "include": "#text-statement" },
+        { "include": "#enum-statement" },
         { "include": "#statement" },
         { "include": "#bare-statement" },
         { "include": "#time" },
@@ -98,9 +99,20 @@
             "patterns": [
                 { "include": "#comment" },
                 { "include": "#hook-key" },
+                { "include": "#enum-hook" },
                 { "include": "#hook" },
                 { "include": "#element-field" },
                 { "include": "#headmarker-field" },
+                {
+                    "comment": "A key still being typed, before its colon. Not a string, so that VS Code suggests the fields while it's typed.",
+                    "match": "^\\s+([a-zA-Z][\\w-]*)\\s*$",
+                    "captures": { "1": { "name": "entity.name.tag.field.thaliak-diagram" } }
+                },
+                {
+                    "comment": "A clause of a value, as in `look: plain color #FFF6D5` or `exit: tornado speed 0.5`: a word followed by its value.",
+                    "match": "(?<![\\w#\\]-])[A-Za-z][\\w-]*(?=\\s+(?:-?\\.?\\d|\\(|#|true\\b|false\\b))",
+                    "name": "variable.parameter.thaliak-diagram"
+                },
                 { "include": "#values" }
             ]
         },
@@ -165,6 +177,31 @@
                 "5": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" },
                 "6": { "name": "string.unquoted.plain.thaliak-diagram" }
             }
+        },
+        "enum-statement": {
+            "comment": "`+effect:` and `+headmarker:` (and their `-` forms), whose first argument is a preset or a look: `+effect: sweep`, `+headmarker: target-green#H1`.",
+            "begin": "^(\\d+)?\\s*([+-])(effect|headmarker)(:)\\s*([a-zA-Z][\\w-]*)",
+            "beginCaptures": {
+                "1": { "name": "constant.numeric.time.thaliak-diagram" },
+                "2": { "name": "entity.name.tag.verb.operator.thaliak-diagram" },
+                "3": { "name": "entity.name.tag.verb.thaliak-diagram" },
+                "4": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" },
+                "5": { "name": "variable.other.enummember.thaliak-diagram" }
+            },
+            "end": "$",
+            "patterns": [{ "include": "#arguments" }]
+        },
+        "enum-hook": {
+            "comment": "The same as `enum-statement`, in a hook: `on:exit: +effect: wind`.",
+            "begin": "(?<![\\w-])([+-])(effect|headmarker)(:)\\s*([a-zA-Z][\\w-]*)",
+            "beginCaptures": {
+                "1": { "name": "entity.name.tag.verb.operator.thaliak-diagram" },
+                "2": { "name": "entity.name.tag.verb.thaliak-diagram" },
+                "3": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" },
+                "4": { "name": "variable.other.enummember.thaliak-diagram" }
+            },
+            "end": "$",
+            "patterns": [{ "include": "#arguments" }]
         },
         "statement": {
             "begin": "^(\\d+)?\\s*([+-])?([a-z][a-z-]*)(:)",
@@ -368,7 +405,7 @@
             "patterns": [
                 { "include": "#string" },
                 {
-                    "match": "(?<![\\w-])(type|look|shape)\\s*(:)\\s*([a-zA-Z][\\w-]*)",
+                    "match": "(?<![\\w-])(type|look|shape|enter|exit|stroke)\\s*(:)\\s*([a-zA-Z][\\w-]*)",
                     "captures": {
                         "1": { "name": "entity.name.tag.field.thaliak-diagram" },
                         "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" },
