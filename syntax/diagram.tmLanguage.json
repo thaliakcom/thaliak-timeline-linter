@@ -200,7 +200,10 @@
                 "5": { "name": "variable.other.enummember.thaliak-diagram" }
             },
             "end": "$",
-            "patterns": [{ "include": "#arguments" }]
+            "patterns": [
+                { "include": "#look-sub-id" },
+                { "include": "#arguments" }
+            ]
         },
         "enum-hook": {
             "comment": "The same as `enum-statement`, in a hook: `on:exit: +effect: wind`.",
@@ -212,7 +215,17 @@
                 "4": { "name": "variable.other.enummember.thaliak-diagram" }
             },
             "end": "$",
-            "patterns": [{ "include": "#arguments" }]
+            "patterns": [
+                { "include": "#look-sub-id" },
+                { "include": "#arguments" }
+            ]
+        },
+        "look-sub-id": {
+            "comment": "The sub-ID right after the look of `enum-statement` or `enum-hook`: the `#H1` of `+headmarker: target-green#H1`, `#[1..3]`, `#[*]`.",
+            "begin": "\\G(#)",
+            "beginCaptures": { "1": { "name": "punctuation.separator.hash.thaliak-diagram" } },
+            "end": "(?=[\\s,)\\]]|//|$)",
+            "patterns": [{ "include": "#sub-id" }]
         },
         "statement": {
             "begin": "^(\\d+)?\\s*([+-])?([a-z][a-z-]*)(:)",
