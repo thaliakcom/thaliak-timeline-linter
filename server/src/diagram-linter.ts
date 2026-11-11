@@ -304,6 +304,19 @@ function* validateUnknowns(source: string, parsed: ParseResult, lines: string[])
     }
 }
 
+/** A placement of a `place` statement, from {@link compileDiagram}: its 1-based line, its subject's ID and the time of its use. */
+export type Placement = ReturnType<typeof compileDiagram>['placements'][number];
+
+/** The placements of each `.diagram` file's last compile, by URI, with the document version they were compiled from. */
+const lastPlacements = new Map<string, { version: number, placements: Placement[] }>();
+
+/** The placements of `textDocument`'s last compile, if it compiled its current version. */
+export function placementsOf(textDocument: TextDocument): Placement[] | undefined {
+    const last = lastPlacements.get(textDocument.uri);
+
+    return last?.version === textDocument.version ? last.placements : undefined;
+}
+
 /** Everything wrong with the `.diagram` file `textDocument`. Errors of a fight with `wip: [diagrams]` are warnings, as thaliak's build doesn't report them. */
 export async function lintDiagram(textDocument: TextDocument, documents: TextDocuments<TextDocument>, options: LinterOptions): Promise<Diagnostic[]> {
     const source = textDocument.getText();
@@ -318,6 +331,8 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
 
         found.push(diagnostic(severity, 'diagrams', message, Math.max(line - 1, 0), text.length - text.trimStart().length, text.trimEnd().length));
     };
+
+    lastPlacements.delete(textDocument.uri);
 
     if (timeline == null) {
         parsed.diagnostics.forEach(({ line, message }) => report(line, message));
@@ -340,7 +355,10 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
         }).join('\n');
 
         try {
-            compileDiagram(complete, input).diagnostics.forEach(({ line, message }) => report(line, message));
+            const { diagnostics, placements } = compileDiagram(complete, input);
+
+            diagnostics.forEach(({ line, message }) => report(line, message));
+            lastPlacements.set(textDocument.uri, { version: textDocument.version, placements });
         } catch (e) {
             // Half-typed lines can break what the compiler assumes the parser has checked.
             report(0, `The diagram can't be compiled: ${e instanceof Error ? e.message : e}`);

@@ -121,7 +121,7 @@ function arenaImageSize(diagramUri: string, image: string): [number, number] | n
 /**
  * What the compiler needs from a timeline, as `processAction()` in thaliak's build fills it in. Without game data,
  * actions get a size of 1 and a cast type that draws their shape, so that all they lose is the telegraph's timing rather
- * than getting a false size error. `source` is the `.diagram` file's text, whose `+aoe ... as <ID>` need game data too.
+ * than getting a false size error. `source` is the `.diagram` file's text, whose `place ... as <ID>` need game data too.
  */
 export async function diagramInputOf(timeline: Timeline, diagramUri: string, source: string): Promise<{ input: DiagramInput, problems: string[] }> {
     const { js } = timeline;
@@ -169,7 +169,7 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string, sou
         actions[key] = facts;
     }));
 
-    // What `+aoe ... as <game action ID>` draws instead.
+    // What `place ... as <game action ID>` draws instead.
     const variants: Record<number, ActionFacts> = {};
 
     await Promise.all(variantIdsOf(source).map(async id => {
@@ -388,7 +388,7 @@ export function liveIdsOf(tokens: DiagramToken[]): Set<string> {
     for (const token of tokens) {
         const { statement } = token;
 
-        if (token.kind === 'subject' && statement?.sign === '+' && ['actor', 'object', 'puddle', 'headmarker', 'tether', 'aoe'].includes(statement.verb)) {
+        if (token.kind === 'subject' && (statement?.sign === '+' && ['actor', 'object', 'puddle', 'headmarker', 'tether'].includes(statement.verb) || statement?.verb === 'place')) {
             idsOf(token.text).filter(id => !id.includes('*')).forEach(id => ids.add(id));
         }
     }
@@ -420,8 +420,8 @@ function namesAs(token: DiagramToken, kind: 'action' | 'status' | 'actor', key: 
     }
 
     if (kind === 'actor') {
-        // An `+aoe`'s subject is an action, and a `flash` an element of the diagram.
-        return named && verb != null && verb !== 'status' && verb !== 'effect' && verb !== 'strategy' && !(verb === 'aoe' && token.kind === 'subject');
+        // A `place`'s subject is an action, and a `flash` an element of the diagram.
+        return named && verb != null && verb !== 'status' && verb !== 'effect' && verb !== 'strategy' && !(verb === 'place' && token.kind === 'subject');
     }
 
     // An `attached` value is an actor's key, and a `+strategy` a strategy's ID.
@@ -442,7 +442,7 @@ export function namesElement(token: DiagramToken, definitions: Definition[]): bo
     if (token.kind === 'field') return true;
     if (token.kind === 'value') return ELEMENT_CLAUSES.has(token.clause ?? '');
 
-    return verb !== 'status' && verb !== 'effect' && verb !== 'aoe';
+    return verb !== 'status' && verb !== 'effect' && verb !== 'place';
 }
 
 /** Where `id` stands in a token's text as a whole ID or an ID's base: in `id`, `id#2` and the ends of `x@id>T1`, not in `boss#id`. */

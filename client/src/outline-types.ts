@@ -47,7 +47,7 @@ export interface TooltipParams {
 }
 
 /**
- * An icon shown in front of a status key or reference, a mechanic `shape`, `ms:` reference or `+aoe` action
+ * An icon shown in front of a status key or reference, a mechanic `shape`, `ms:` reference or `place` action
  * (result of `thaliak/statusIcons`). It has either a `path` or an `svg`.
  */
 export interface StatusIcon {

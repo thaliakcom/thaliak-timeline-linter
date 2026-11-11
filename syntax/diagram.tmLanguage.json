@@ -152,7 +152,7 @@
         },
         "hook": {
             "comment": "A statement of a hook: signed, or one of the unsigned verbs that move or turn (not `headmarker`, which is also a field).",
-            "begin": "(?<![\\w-])(?:([+-])([a-z][a-z-]*)|(teleport|arrive|depart|move|set|turn))(:)",
+            "begin": "(?<![\\w-])(?:([+-])([a-z][a-z-]*)|(teleport|arrive|depart|set|turn))(:)",
             "beginCaptures": {
                 "1": { "name": "entity.name.tag.verb.operator.thaliak-diagram" },
                 "2": { "name": "entity.name.tag.verb.thaliak-diagram" },
@@ -226,7 +226,7 @@
             "patterns": [{ "include": "#arguments" }]
         },
         "bare-statement": {
-            "match": "^(\\d+)?\\s*(?:([+-])([a-z][a-z-]*)|(keyframe|skip|thumbnail|set|depart|arrive|move))(?=\\s*(?://|$))",
+            "match": "^(\\d+)?\\s*(?:([+-])([a-z][a-z-]*)|(keyframe|skip|thumbnail|set|depart|arrive))(?=\\s*(?://|$))",
             "captures": {
                 "1": { "name": "constant.numeric.time.thaliak-diagram" },
                 "2": { "name": "entity.name.tag.verb.operator.thaliak-diagram" },

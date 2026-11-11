@@ -81,7 +81,7 @@ export function shapeIconProvider(documents: TextDocuments<TextDocument>, docume
     };
 }
 
-/** The shape icons of a `.diagram` file: one in front of each action of a `+aoe` statement, for the shape of its timeline action. */
+/** The shape icons of a `.diagram` file: one in front of each action of a `place` statement, for the shape of its timeline action. */
 export function diagramShapeIconProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: OutlineParams) => Promise<StatusIcon[] | null> {
     return async (params) => {
         const textDocument = documents.get(params.uri);
@@ -94,7 +94,7 @@ export function diagramShapeIconProvider(documents: TextDocuments<TextDocument>,
         const raid = (timeline?.js ?? null) as UnprocessedRaidData | null;
         const enums = documentCache.getLinterOptions(settings).enums;
         const icons = tokensOf(textDocument.getText())
-            .filter(token => token.statement?.verb === 'aoe' && token.kind === 'subject')
+            .filter(token => token.statement?.verb === 'place' && token.kind === 'subject')
             .map(async (token): Promise<StatusIcon | null> => {
                 const action = raid?.actions?.[baseOf(token.text)];
 

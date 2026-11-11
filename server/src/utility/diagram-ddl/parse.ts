@@ -48,11 +48,34 @@ export interface ParseResult {
 
 /** Verbs whose argument is free text rather than a subject and clauses. */
 const TEXT_VERBS = new Set(['hint', 'branch', 'strategy', 'thumbnail']);
-const VERBS = new Set(['keyframe', 'skip', 'thumbnail', 'hint', 'branch', 'strategy', 'actor', 'object', 'puddle', 'headmarker', 'tether', 'status', 'aoe', 'effect', 'set', 'depart', 'arrive', 'teleport', 'move', 'follow', 'turn']);
+const VERBS = new Set(['keyframe', 'skip', 'thumbnail', 'hint', 'branch', 'strategy', 'actor', 'object', 'puddle', 'headmarker', 'tether', 'status', 'place', 'effect', 'set', 'depart', 'arrive', 'teleport', 'follow', 'turn']);
 /** Removed verbs, and what replaces them. */
 const REMOVED_VERBS: Record<string, string> = {
-    marker: '"marker" is gone: use "headmarker" for headmarkers, "object" for what attaches to an actor and "puddle" for puddles'
+    marker: '"marker" is gone: use "headmarker" for headmarkers, "object" for what attaches to an actor and "puddle" for puddles',
+    aoe: '"+aoe" is gone: use "place", which sets where the next use of the action lands',
+    move: '"move" is gone: use "depart" or "arrive"'
 };
+/**
+ * The signs each verb takes: both `+` (appears) and `-` (is removed), only `+`, or none, for verbs that change or set
+ * something rather than make it appear.
+ */
+const VERB_SIGNS: Record<string, readonly Statement['sign'][]> = {
+    actor: ['+', '-'], object: ['+', '-'], puddle: ['+', '-'], headmarker: ['+', '-'], tether: ['+', '-'], status: ['+', '-'],
+    hint: ['+', '-'], branch: ['+', '-'], strategy: ['+', '-'], follow: ['+', '-'],
+    effect: ['+'],
+    keyframe: [''], skip: [''], thumbnail: [''], set: [''], depart: [''], arrive: [''], teleport: [''], turn: [''], place: ['']
+};
+
+/** What's wrong with `sign` on `verb`, if anything. Unknown verbs have their own error, so they get none here. */
+export function signProblem(sign: string, verb: string): string | undefined {
+    const signs = VERB_SIGNS[verb];
+
+    if (signs == null || (signs as readonly string[]).includes(sign)) return undefined;
+    if (signs.length === 1 && signs[0] === '') return `"${sign}${verb}" takes no sign: write "${verb}"`;
+    if (signs.length === 1) return `"${sign}${verb}" only takes "+": write "+${verb}"`;
+
+    return `"${verb}" needs a sign: "+${verb}" or "-${verb}"`;
+}
 const VERB_LINE = /^([+-]?)([a-z][a-z-]*)(:)?(?:\s+(.*))?$/;
 const DEFINE_LINE = /^define\s+(?:(element|arena|actor|object|puddle|tether|action|gradient|strategy|coordinate-space)\s+)?(\S+)$/;
 const DEFINE_KINDS = 'define arena, actor, object, puddle, tether, action, gradient, strategy or coordinate-space';
@@ -280,6 +303,11 @@ export function parse(source: string): ParseResult {
 
             verb = { sign: match[1] as Statement['sign'], name: match[2]! };
             removed = false;
+            const problem = signProblem(verb.sign, verb.name);
+
+            // Still added, so that the statement's other errors show too.
+            if (problem != null) diagnostics.push({ line, message: problem });
+
             add(line, match[4] ?? '');
             return;
         }

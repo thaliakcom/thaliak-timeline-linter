@@ -5,7 +5,7 @@ import { planeUnitsPerYalm } from '../diagram-sizing';
 import { BOSS_IMAGE, DEFAULT_ACTOR_GRAPHICS } from '../diagram-defaults';
 import { AnimationDefinition, ANIMATIONS, DDL_MARKER_LOOKS, ParameterDefinition, ParameterKey, PARAMETERS } from '../diagram-enums';
 import { expandMargin } from '../margin';
-import { Definition, Diagnostic, parse, Statement, tokenize } from './parse';
+import { Definition, Diagnostic, parse, signProblem, Statement, tokenize } from './parse';
 import { callPlaceholder, PLAYER_GROUPS, resolveWaymarks } from './placeholders';
 import type { Margin } from '../../types/graphing';
 import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, definitionKey, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, Spawn, XY } from './seek';
@@ -57,9 +57,9 @@ const CLAUSE_FIELDS: Record<string, { kind: string, example: string, clauses?: r
 /** The styles a `stroke` can have. */
 const STROKE_STYLES = ['solid', 'dashed'];
 
-/** The game action IDs that a `.diagram` file's `+aoe` statements draw instead with `as`, whose facts {@link DiagramInput.variants} needs. */
+/** The game action IDs that a `.diagram` file's `place` statements draw instead with `as`, whose facts {@link DiagramInput.variants} needs. */
 export function variantIdsOf(source: string): number[] {
-    return [...new Set([...source.matchAll(/^.*\+aoe\b.*$/gm)].flatMap(line => [...line[0].replace(/\/\/.*$/, '').matchAll(/\bas\s+(\d+)\b/g)].map(match => Number(match[1]))))];
+    return [...new Set([...source.matchAll(/^\s*(?:\d+\s+)?place:.*$/gm)].flatMap(line => [...line[0].replace(/\/\/.*$/, '').matchAll(/\bas\s+(\d+)\b/g)].map(match => Number(match[1]))))];
 }
 
 /** The images that a `.diagram` file's `define arena` blocks name, whose sizes {@link DiagramInput.arenaImageSizes} needs. */
@@ -377,7 +377,7 @@ export interface DiagramInput {
     headmarkers?: Record<string, string>;
     /** Tether looks by game file, from `enums/tethers.yaml`. Its looks, and `unknown`, are tethers without a definition. */
     tethers?: Record<string, string>;
-    /** Game data of the actions that `+aoe ... as <game action ID>` draws instead, by those IDs (see {@link variantIdsOf}). */
+    /** Game data of the actions that `place ... as <game action ID>` draws instead, by those IDs (see {@link variantIdsOf}). */
     variants?: Record<number, ActionFacts>;
     /** The keys of the fight's statuses that have a `tick`, which hit their player every 3 s while a `+status` lasts. */
     ticking?: string[];
@@ -730,6 +730,13 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
                     if (effect != null && PLANNED_EFFECTS.includes(effect)) error(definition.line, plannedEffectMessage(effect));
                 }
 
+                // Hooks are parsed again where they run, which drops the parser's errors, so their signs are checked here.
+                for (const statement of hooks.flatMap(hook => parse(`0 ${hook}`).statements)) {
+                    const problem = signProblem(statement.sign, statement.verb);
+
+                    if (problem != null) error(definition.line, problem);
+                }
+
                 continue;
             }
 
@@ -864,11 +871,16 @@ function readElementType(definition: Definition, values: Record<string, unknown>
     if (values.type === 'prism' && typeof values.depth !== 'number') error(definition.line, `"${definition.id}" needs a "depth": prisms are boxes`);
 }
 
-/** Compiles a `.diagram` file. Everything wrong with it is returned as a diagnostic, and the result is then incomplete. */
-export function compileDiagram(source: string, input: DiagramInput): { diagram: CompiledDiagram, diagnostics: Diagnostic[] } {
+/**
+ * Compiles a `.diagram` file. Everything wrong with it is returned as a diagnostic, and the result is then incomplete.
+ * `placements` lists, for each subject a `place` statement placed, its statement's 1-based line, its ID and the time of
+ * the timeline use it binds to, for the linter's hints. Hooks' placements aren't in it.
+ */
+export function compileDiagram(source: string, input: DiagramInput): { diagram: CompiledDiagram, diagnostics: Diagnostic[], placements: { line: number, id: string, at: number }[] } {
     const { actions } = input;
     const parsed = parse(source);
     const diagnostics: Diagnostic[] = [...parsed.diagnostics];
+    const placements: { line: number, id: string, at: number }[] = [];
     const error = (line: number, message: string) => {
         diagnostics.push({ line, message });
     };
@@ -1571,7 +1583,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 });
                 break;
             }
-            case 'aoe': {
+            case 'place': {
                 const ids = subjects();
 
                 ids.forEach((id, index) => {
@@ -1643,9 +1655,12 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     const as = clauseOf(s, 'as');
                     const variant = as == null ? undefined : Number(valueFor(as, index, ids, s, within));
 
-                    if (variant != null && !Number.isInteger(variant)) error(s.line, `"as" on +aoe takes a game action ID`);
+                    if (variant != null && !Number.isInteger(variant)) error(s.line, `"as" on place takes a game action ID`);
 
                     const aoe = addAoe(id, use, within, fields, s.line, variant);
+
+                    // Action hooks have line 0, and element hooks an effect target.
+                    if (s.line > 0 && effectTarget == null) placements.push({ line: s.line, id, at: use.at });
 
                     if (!aoe.raidwide && s.at > aoe.show) error(s.line, `"${id}" is placed ${s.at - aoe.show} ms after its ${aoe.omen ? 'telegraph' : 'outline'} appears`);
                 });
@@ -2203,5 +2218,5 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         waymarks
     };
 
-    return { diagram, diagnostics };
+    return { diagram, diagnostics, placements };
 }

@@ -211,9 +211,14 @@ connection.onShutdown(() => {
 connection.languages.diagnostics.on(async (params) => {
     const document = documents.get(params.textDocument.uri);
     if (document !== undefined && isDiagramUri(document.uri)) {
+        const items = await lintDiagram(document, documents, documentCache.getLinterOptions(globalSettings));
+
+        // The hints after `place` subjects come from this compile, so they follow edits.
+        connection.languages.inlayHint.refresh();
+
         return {
             kind: DocumentDiagnosticReportKind.Full,
-            items: await lintDiagram(document, documents, documentCache.getLinterOptions(globalSettings))
+            items
         } satisfies DocumentDiagnosticReport;
     } else if (document !== undefined && document.getText().trimStart().startsWith('id:')) {
         return {

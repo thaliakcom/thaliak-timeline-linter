@@ -13,6 +13,7 @@ import { UnprocessedRaidData } from './types/raids';
 import { Definition, parse, tokenize } from './utility/diagram-ddl/parse';
 import { formatTime, getAction, getActor, getArenaValues, getRange, getStatus, getStrategyKeys } from './util';
 import { timelineRenameEdit } from './rename-provider';
+import { placementsOf } from './diagram-linter';
 
 const PLAYERS = ['T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2'];
 /** The fields of a `define` block that hold statements. */
@@ -292,7 +293,7 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             }
 
             switch (verb) {
-                case 'aoe':
+                case 'place':
                     return member(keysOf(timeline, 'actions'));
                 case 'status':
                     return member(new Set([...keysOf(timeline, 'status'), ...Object.keys(documentCache.getLinterOptions(settings).enums.common?.yaml.status ?? {})]));
@@ -570,6 +571,23 @@ export function diagramInlayHintProvider(documents: TextDocuments<TextDocument>)
             });
         }
 
+        // After each subject of a `place`, the time of the use it binds to. It only pushes apart what follows the subject,
+        // which the files don't align. The placements come from the linter's last compile, if that was of this version.
+        const placements = placementsOf(textDocument);
+
+        if (placements != null) {
+            const tokens = tokensOf(source).filter(token => token.kind === 'subject' && token.statement?.verb === 'place' && token.line >= params.range.start.line && token.line <= params.range.end.line);
+
+            for (const token of tokens) {
+                const ids = idsOf(token.text);
+                const times = [...new Set(placements.filter(placement => placement.line === token.line + 1 && ids.includes(placement.id)).map(placement => formatTime(placement.at)))];
+
+                if (times.length > 0) {
+                    hints.push({ position: { line: token.line, character: token.end }, label: times.join(', '), paddingLeft: true });
+                }
+            }
+        }
+
         return hints;
     };
 }
@@ -613,7 +631,7 @@ export function diagramDefinitionProvider(documents: TextDocuments<TextDocument>
         }
 
         const base = baseOf(idsOf(token.text)[0]!);
-        const namesAction = token.statement?.verb === 'aoe' || (token.kind === 'definition' && parsed.definitions.some(x => x.kind === 'action' && x.line - 1 === token.line));
+        const namesAction = token.statement?.verb === 'place' || (token.kind === 'definition' && parsed.definitions.some(x => x.kind === 'action' && x.line - 1 === token.line));
         const action = namesAction && timeline != null ? getAction(timeline.document, base) : null;
 
         if (action != null) {
@@ -707,7 +725,7 @@ const ELEMENT_KINDS: readonly Definition['kind'][] = ['actor', 'object', 'puddle
 
 /**
  * What a rename at `position` of a `.diagram` file renames: the ID of a `define` block, at the block or where an ID
- * names it, or an `+aoe`'s action. The ID-less `define arena` and `define coordinate-space` have none to rename.
+ * names it, or a `place`'s action. The ID-less `define arena` and `define coordinate-space` have none to rename.
  */
 function renameTargetAt(textDocument: TextDocument, position: Position): { kind: Definition['kind'], id: string, range: Range } | null {
     const source = textDocument.getText();
@@ -731,7 +749,7 @@ function renameTargetAt(textDocument: TextDocument, position: Position): { kind:
         return definitions.some(x => x.kind === 'strategy' && x.id === token.text) ? target('strategy', token.text, token.start) : null;
     }
 
-    if (token.statement?.verb === 'aoe' && token.kind === 'subject') {
+    if (token.statement?.verb === 'place' && token.kind === 'subject') {
         return target('action', baseOf(token.text), token.start);
     }
 

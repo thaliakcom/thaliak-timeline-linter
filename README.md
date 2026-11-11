@@ -27,7 +27,7 @@ view and in front of status keys, `inflicts` statuses and `s:` placeholders. It 
 thaliak's build reports from game data, such as an encrypted name or a damage type that repeats the game's.
 
 AoE shapes get their icon in the text too, in front of `shape` values, `ms:` placeholders and the actions of
-`+aoe` statements; that needs no game data, except for donuts sized by their `inner` radius. So do `i:`
+`place` statements; that needs no game data, except for donuts sized by their `inner` radius. So do `i:`
 icon placeholders (role icons and headmarkers), in front of them. Turn each kind off with
 `thaliak-timeline-linter.icons.status`, `thaliak-timeline-linter.icons.aoes` or `thaliak-timeline-linter.icons.subIcons`.
 

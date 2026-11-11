@@ -77,7 +77,7 @@
                     "scope": "window",
                     "type": "boolean",
                     "default": true,
-                    "description": "Shows the icons of AoE shapes inline, in front of `shape` values, `ms:` references and the actions of `+aoe` statements. Needs inlay hints."
+                    "description": "Shows the icons of AoE shapes inline, in front of `shape` values, `ms:` references and the actions of `place` statements. Needs inlay hints."
                 },
                 "thaliak-timeline-linter.icons.subIcons": {
                     "scope": "window",
