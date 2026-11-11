@@ -26,12 +26,13 @@ export interface Statement {
 }
 
 /**
- * A `define` block. `define arena` has no ID of its own: its `id` is `arena`. `element` is the kind of the removed
+ * A `define` block. The ID-less `define arena`, which every `define arena <id>` builds on, has the `id` `arena`.
+ * `define coordinate-space` has the space (`cartesian` or `polar`) as its `id`. `element` is the kind of the removed
  * `define element`, which is reported but still read, so that one mistake doesn't also break what refers to it.
  */
 export interface Definition {
     line: number;
-    kind: 'arena' | 'actor' | 'object' | 'puddle' | 'tether' | 'action' | 'gradient' | 'strategy' | 'element';
+    kind: 'arena' | 'actor' | 'object' | 'puddle' | 'tether' | 'action' | 'gradient' | 'strategy' | 'coordinate-space' | 'element';
     id: string;
     /** The block's `key: value` lines. A key's later lines (such as a second `exit` statement) are extra entries. */
     fields: Record<string, string[]>;
@@ -53,8 +54,8 @@ const REMOVED_VERBS: Record<string, string> = {
     marker: '"marker" is gone: use "headmarker" for headmarkers, "object" for what attaches to an actor and "puddle" for puddles'
 };
 const VERB_LINE = /^([+-]?)([a-z][a-z-]*)(:)?(?:\s+(.*))?$/;
-const DEFINE_LINE = /^define\s+(?:(element|actor|object|puddle|tether|action|gradient|strategy)\s+)?(\S+)$/;
-const DEFINE_KINDS = 'define arena, actor, object, puddle, tether, action, gradient or strategy';
+const DEFINE_LINE = /^define\s+(?:(element|arena|actor|object|puddle|tether|action|gradient|strategy|coordinate-space)\s+)?(\S+)$/;
+const DEFINE_KINDS = 'define arena, actor, object, puddle, tether, action, gradient, strategy or coordinate-space';
 /** A `key: value` line of a `define` block. Hooks have an `on:` prefix (`on:exit: +effect: fire`). */
 const FIELD_LINE = /^((?:on:)?[a-zA-Z][\w-]*):\s*(.*)$/;
 
@@ -117,18 +118,19 @@ export function tokenize(text: string): string[] {
 }
 
 /**
- * The first quoted value in `text`, a statement's arguments or a `define` field's value, unless it's an `as` label:
- * values are written bare (`color #2EA632`), and only a label may need the quotes for its spaces.
+ * The first quoted value in `text`, a statement's arguments or a `define` field's value, unless it's a label: an `as`
+ * label, or the `text` of a `set` (`verb`). Values are written bare (`color #2EA632`), and only a label may need the
+ * quotes for its spaces.
  */
-function quotedValue(text: string): string | undefined {
+function quotedValue(text: string, verb?: string): string | undefined {
     const tokens = tokenize(text);
 
-    return tokens.find((token, i) => token.includes('"') && tokens[i - 1] !== 'as');
+    return tokens.find((token, i) => token.includes('"') && tokens[i - 1] !== 'as' && !(verb === 'set' && tokens[i - 1] === 'text'));
 }
 
 /** Why `quoted`, from {@link quotedValue}, is wrong. */
 function quoteMessage(quoted: string): string {
-    return `quoted values aren't part of the DDL, except "as" labels: write ${quoted} as ${quoted.replaceAll('"', '')}`;
+    return `quoted values aren't part of the DDL, except "as" labels and "set … text": write ${quoted} as ${quoted.replaceAll('"', '')}`;
 }
 
 /** Reads a `value, value, ...` list starting at `start`. Returns the values and the index after them. */
@@ -171,7 +173,7 @@ export function parse(source: string): ParseResult {
         const statement: Statement = { line, at, sign: verb.sign, verb: verb.name, text, subjects: [], clauses: [] };
 
         if (!TEXT_VERBS.has(verb.name) && text !== '') {
-            const quoted = quotedValue(text);
+            const quoted = quotedValue(text, verb.name);
 
             if (quoted != null) diagnostics.push({ line, message: quoteMessage(quoted) });
 
@@ -211,8 +213,8 @@ export function parse(source: string): ParseResult {
         const define = DEFINE_LINE.exec(text);
 
         if (define != null && !/^\s/.test(raw)) {
-            // `define arena` is the arena's, and has no ID. Anything else without a kind is read as the removed `element`
-            // anyway, so that the one mistake doesn't also report everything that refers to it.
+            // The ID-less `define arena` is what every arena builds on. Anything else without a kind is read as the removed
+            // `element` anyway, so that the one mistake doesn't also report everything that refers to it.
             const arena = define[1] == null && define[2] === 'arena';
             const kind = arena ? 'arena' : (define[1] as Definition['kind'] | undefined) ?? 'element';
 

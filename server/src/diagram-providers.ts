@@ -1,8 +1,8 @@
 // The language features of `.diagram` files other than diagnostics.
-import { CompletionItem, CompletionItemKind, CompletionParams, DefinitionLink, DefinitionParams, DocumentSymbol, DocumentSymbolParams, Hover, HoverParams, InlayHint, InlayHintParams, Location, Position, Range, ReferenceParams, SymbolKind, TextDocuments, TextEdit } from 'vscode-languageserver';
+import { CompletionItem, CompletionItemKind, CompletionParams, DefinitionLink, DefinitionParams, DocumentSymbol, DocumentSymbolParams, Hover, HoverParams, InlayHint, InlayHintParams, Location, Position, PrepareRenameParams, Range, ReferenceParams, RenameParams, SymbolKind, TextDocuments, TextEdit, WorkspaceEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
-import { baseOf, DiagramToken, fieldsOf, idsOf, isStrategyToken, linesOf, liveIdsOf, occurrencesOf, SUBJECTLESS_HOOK, timelineOf, Timeline, tokensOf, usesOfTimeline } from './diagram-context';
+import { baseOf, definitionOccurrencesOf, DiagramToken, fieldsOf, idColumnsIn, idsOf, isStrategyToken, linesOf, liveIdsOf, namesElement, occurrencesOf, SUBJECTLESS_HOOK, timelineOf, Timeline, tokensOf, usesOfTimeline } from './diagram-context';
 import { ParserCache } from './parser-cache';
 import { RESOLVE_PRESETS } from './components/diagram/render/effects/presets';
 import { LinterOptions, ThaliakTimelineLinterSettings } from './server';
@@ -10,8 +10,9 @@ import { actionTooltip, getStatusIcon, statusTooltip, type TooltipContext } from
 import { DEFINE_KINDS, DiagramField, DiagramSchema, fieldsOfKind, suggestedFieldsOf, suggestedValuesOf, typesOfBlock, valuesOf } from './types/diagram-schema';
 import { OutlineNode, OutlineParams, StatusIcon } from './types/outline';
 import { UnprocessedRaidData } from './types/raids';
-import { parse, tokenize } from './utility/diagram-ddl/parse';
-import { formatTime, getAction, getActor, getRange, getStatus, getStrategyKeys } from './util';
+import { Definition, parse, tokenize } from './utility/diagram-ddl/parse';
+import { formatTime, getAction, getActor, getArenaValues, getRange, getStatus, getStrategyKeys } from './util';
+import { timelineRenameEdit } from './rename-provider';
 
 const PLAYERS = ['T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2'];
 /** The fields of a `define` block that hold statements. */
@@ -130,6 +131,15 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 
         if (/^define\s+actor\s+\S*$/.test(before)) {
             return member(keysOf(timeline, 'actors'));
+        }
+
+        if (/^define\s+coordinate-space\s+\S*$/.test(before)) {
+            return keyword(['polar', 'cartesian'], label => label === 'polar' ? 'A bare pair is `(distance, degrees)` (the default).' : 'A bare pair is plane `(x, y)`, with x to the east and y to the south.');
+        }
+
+        // The arenas that the timeline's `<arena>` items show.
+        if (/^define\s+arena\s+\S*$/.test(before)) {
+            return member(new Set(timeline != null ? getArenaValues(timeline.document).map(value => value.key) : []));
         }
 
         // The ID of anything else is new, so there's nothing to suggest.
@@ -260,8 +270,13 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             }
 
             if (clause != null) {
+                // A spot can say how it reads, whatever the file's `define coordinate-space`.
+                const spots = clause === 'at' || clause === 'to' || clause === 'offset'
+                    ? items(['cart', 'polar'], CompletionItemKind.Function, label => edit(`${label}(`), 'c', label => label === 'cart' ? '`cart(x, y)`: a spot in plane units, with x to the east and y to the south.' : '`polar(distance, degrees)`: a spot by its distance from the centre and its angle clockwise from north.')
+                    : [];
+
                 if (schema?.clauses[clause]?.takes !== 'element') {
-                    return [];
+                    return spots;
                 }
 
                 // Only players have status effects.
@@ -271,7 +286,8 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 
                 return [
                     ...member(liveIdsOf(tokensOf(source, parsed))),
-                    ...member(['<id>', ...PLAYERS, ...groups], 'b', label => schema.placeholders[label])
+                    ...member(['<id>', ...PLAYERS, ...groups], 'b', label => schema.placeholders[label]),
+                    ...spots
                 ];
             }
 
@@ -683,6 +699,98 @@ export function diagramReferenceProvider(documents: TextDocuments<TextDocument>)
         }
 
         return locations;
+    };
+}
+
+/** The kinds of `define` block whose ID is an element's, which statements and element clauses refer to. */
+const ELEMENT_KINDS: readonly Definition['kind'][] = ['actor', 'object', 'puddle', 'tether', 'element'];
+
+/**
+ * What a rename at `position` of a `.diagram` file renames: the ID of a `define` block, at the block or where an ID
+ * names it, or an `+aoe`'s action. The ID-less `define arena` and `define coordinate-space` have none to rename.
+ */
+function renameTargetAt(textDocument: TextDocument, position: Position): { kind: Definition['kind'], id: string, range: Range } | null {
+    const source = textDocument.getText();
+    const parsed = parse(source);
+    const { definitions } = parsed;
+    const token = tokenAt(tokensOf(source, parsed), position);
+
+    if (token == null) {
+        return null;
+    }
+
+    const target = (kind: Definition['kind'], id: string, column: number) => ({ kind, id, range: { start: { line: token.line, character: column }, end: { line: token.line, character: column + id.length } } });
+
+    if (token.kind === 'definition') {
+        const definition = definitions.find(x => x.line - 1 === token.line);
+
+        return definition == null || definition.kind === 'coordinate-space' || (definition.kind === 'arena' && definition.id === 'arena') ? null : target(definition.kind, definition.id, token.start);
+    }
+
+    if (isStrategyToken(token, definitions)) {
+        return definitions.some(x => x.kind === 'strategy' && x.id === token.text) ? target('strategy', token.text, token.start) : null;
+    }
+
+    if (token.statement?.verb === 'aoe' && token.kind === 'subject') {
+        return target('action', baseOf(token.text), token.start);
+    }
+
+    if (!namesElement(token, definitions)) {
+        return null;
+    }
+
+    // The ID under the cursor, as in a tether's `@A>B` ends.
+    for (const definition of definitions.filter(x => ELEMENT_KINDS.includes(x.kind))) {
+        const column = idColumnsIn(token, definition.id).find(start => position.character >= start && position.character <= start + definition.id.length);
+
+        if (column != null) return target(definition.kind, definition.id, column);
+    }
+
+    return null;
+}
+
+/** Where Rename starts in `.diagram` files: on the ID of a `define` block, or where one is named. */
+export function diagramPrepareRenameProvider(documents: TextDocuments<TextDocument>): (params: PrepareRenameParams) => Range | null {
+    return (params) => {
+        const textDocument = documents.get(params.textDocument.uri);
+
+        return textDocument == null ? null : renameTargetAt(textDocument, params.position)?.range ?? null;
+    };
+}
+
+/**
+ * Rename in `.diagram` files. A `define` block's ID changes everywhere the file names it. An action's or a timeline
+ * actor's is the timeline's key, so it changes there too, as a rename in the timeline would; an arena's also changes
+ * in the timeline's `<arena>` items.
+ */
+export function diagramRenameProvider(documents: TextDocuments<TextDocument>): (params: RenameParams) => WorkspaceEdit | null {
+    return (params) => {
+        const textDocument = documents.get(params.textDocument.uri);
+        const target = textDocument == null ? null : renameTargetAt(textDocument, params.position);
+
+        if (textDocument == null || target == null) {
+            return null;
+        }
+
+        const timeline = timelineOf(documents, textDocument.uri);
+        const { kind, id } = target;
+
+        if ((kind === 'action' || kind === 'actor') && timeline != null) {
+            const edit = timelineRenameEdit(documents, timeline.textDocument, timeline.document, `${kind === 'action' ? 'a' : 'ac'}:${id}`, params.newName);
+
+            if (edit != null) return edit;
+        }
+
+        const ranges = kind === 'action' || kind === 'actor' ? occurrencesOf(textDocument, kind, id) : definitionOccurrencesOf(textDocument, kind, id);
+        const changes: Record<string, TextEdit[]> = { [textDocument.uri]: ranges.map(range => TextEdit.replace(range, params.newName)) };
+
+        if (kind === 'arena' && timeline != null) {
+            changes[timeline.textDocument.uri] = getArenaValues(timeline.document)
+                .filter(value => value.key === id)
+                .map(value => TextEdit.replace(getRange(timeline.textDocument, value.range), params.newName));
+        }
+
+        return { changes };
     };
 }
 

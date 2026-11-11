@@ -9,7 +9,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import * as yaml from 'yaml';
 import { castTimeOf, getGameAction } from './ironworks';
 import { hitboxRadius, paddedEffectRange } from './tooltip';
-import { ActionFacts, arenasOf, DiagramInput, expandTemplate, RawItem, usesOf, variantIdsOf } from './utility/diagram-ddl/compile';
+import { ActionFacts, arenaImagesOf, arenasOf, DiagramInput, expandTemplate, RawItem, usesOf, variantIdsOf } from './utility/diagram-ddl/compile';
 import { Definition, parse, ParseResult, Statement, tokenize } from './utility/diagram-ddl/parse';
 
 export const DIAGRAM_LANGUAGE = 'thaliak-diagram';
@@ -184,14 +184,15 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string, sou
     }));
 
     const arenas = arenasOf(rawItems);
+    const arenaImageSizes: Record<string, [number, number]> = {};
 
-    for (const arena of arenas) {
-        const size = arenaImageSize(diagramUri, arena.image);
+    for (const image of arenaImagesOf(source)) {
+        const size = arenaImageSize(diagramUri, image);
 
         if (size != null) {
-            arena.imageSize = size;
+            arenaImageSizes[image] = size;
         } else {
-            problems.push(`Couldn't read the size of the arena image ${arena.image}, so sizes and speeds assume the default of 5 units per yalm.`);
+            problems.push(`Couldn't read the size of the arena image ${image}, so sizes and speeds assume the default of 5 units per yalm.`);
         }
     }
 
@@ -202,6 +203,7 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string, sou
             uses: usesOf(rawItems, rawActions),
             actions,
             arenas,
+            arenaImageSizes,
             arenaSize: typeof arena === 'number' ? [arena, arena] : arena,
             waymarks: js.waymarks,
             actors,
@@ -424,6 +426,67 @@ function namesAs(token: DiagramToken, kind: 'action' | 'status' | 'actor', key: 
 
     // An `attached` value is an actor's key, and a `+strategy` a strategy's ID.
     return named && verb !== 'status' && verb !== 'effect' && verb !== 'strategy' && token.field !== 'attached';
+}
+
+/** The clauses whose values name an element (`"takes": "element"` in `diagram.schema.json`). */
+const ELEMENT_CLAUSES = new Set(['at', 'on', 'to', 'toward', 'hits']);
+
+/**
+ * Whether a token can name an element that a `define` block defines: a subject of a statement about elements, a value
+ * of an element clause, or an element field (`flash`). Statuses, effect presets, AoEs' actions and strategies can't.
+ */
+export function namesElement(token: DiagramToken, definitions: Definition[]): boolean {
+    const verb = token.statement?.verb;
+
+    if (token.kind === 'definition' || isStrategyToken(token, definitions)) return false;
+    if (token.kind === 'field') return true;
+    if (token.kind === 'value') return ELEMENT_CLAUSES.has(token.clause ?? '');
+
+    return verb !== 'status' && verb !== 'effect' && verb !== 'aoe';
+}
+
+/** Where `id` stands in a token's text as a whole ID or an ID's base: in `id`, `id#2` and the ends of `x@id>T1`, not in `boss#id`. */
+function idPattern(id: string): RegExp {
+    return new RegExp(`(?<![\\w#-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'g');
+}
+
+/** Where `id` stands in `token`'s text, by its column in the line. */
+export function idColumnsIn(token: DiagramToken, id: string): number[] {
+    return [...token.text.matchAll(idPattern(id))].map(match => token.start + match.index!);
+}
+
+/**
+ * Where the `.diagram` file `textDocument` names what its `define <kind> <id>` block defines, to rename it: the
+ * block's ID; for an element, each ID or ID base that {@link namesElement} tokens give; for a gradient, each
+ * `url(#<id>)`; for a strategy, each `+strategy`. An arena's are only its block's: the timeline's `<arena>` items name
+ * it. Actions and timeline actors are the timeline's keys, which {@link occurrencesOf} finds.
+ */
+export function definitionOccurrencesOf(textDocument: TextDocument, kind: Definition['kind'], id: string): Range[] {
+    const source = textDocument.getText();
+    const parsed = parse(source);
+    const tokens = tokensOf(source, parsed);
+    const definition = parsed.definitions.find(x => x.kind === kind && x.id === id);
+    const at = (line: number, character: number): Range => ({ start: { line, character }, end: { line, character: character + id.length } });
+    const ranges: Range[] = [];
+    const own = definition == null ? undefined : tokens.find(token => token.kind === 'definition' && token.line === definition.line - 1);
+
+    if (own != null) ranges.push(at(own.line, own.start));
+
+    if (kind === 'strategy') {
+        for (const token of tokens.filter(token => token.kind !== 'definition' && isStrategyToken(token, parsed.definitions) && token.text === id)) {
+            ranges.push(at(token.line, token.start));
+        }
+    } else if (kind === 'gradient') {
+        linesOf(source).forEach((text, line) => {
+            for (const match of text.matchAll(new RegExp(`url\\(#${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`, 'g'))) ranges.push(at(line, match.index! + 'url(#'.length));
+        });
+    } else if (kind !== 'arena' && kind !== 'coordinate-space') {
+        for (const token of tokens.filter(token => namesElement(token, parsed.definitions))) {
+            ranges.push(...idColumnsIn(token, id).map(column => at(token.line, column)));
+        }
+    }
+
+    return ranges;
 }
 
 /** Where the `.diagram` file `textDocument` names the action, status effect or timeline actor `key`: only the key itself, without a sub-ID. */

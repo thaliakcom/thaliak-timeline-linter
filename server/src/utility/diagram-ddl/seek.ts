@@ -74,6 +74,8 @@ export interface CompiledAoe extends Scope {
     at?: XY | string;
     /** Where its front points, in degrees clockwise from north, or an element that it aims at as that stands at {@link show}. */
     toward?: number | string;
+    /** How far it's turned from where its actor faces or its {@link toward} points, in degrees clockwise (`rotate +45`). */
+    rotate?: number;
     /** Where its front points when it's drawn unrotated, in degrees clockwise from north. Absent for north. */
     facing?: number;
     /** What it covers, in plane units, to work out who it hits. A raidwide has none, since it hits everyone. */
@@ -112,13 +114,17 @@ export interface AoeArea {
     parts?: Omit<AoePart, 'renderId'>[];
 }
 
-/** An `<arena>` timeline item. */
+/** An `<arena>` timeline item, with what its `define arena <id>` (over the ID-less `define arena`) says. */
 export interface ArenaChange {
     at: number;
+    /** The ID of its `define arena`. */
+    arena: string;
     image: string;
     margin?: Margin;
-    /** The image's natural size in pixels. Filled in by the data extension. */
+    /** The image's natural size in pixels, from the data extension's `arenaImageSizes`. */
     imageSize?: [number, number];
+    /** Its definition's other fields, such as `filter`, as the arena element's state. */
+    props: Record<string, unknown>;
 }
 
 /** Where a pull really had an actor, for authoring. It's drawn as a ghost in dev builds and the editor. */
@@ -153,6 +159,11 @@ export interface CompiledDiagram {
     chapters: { at: number, id: string, name: string, end?: number }[];
     hints: (Scope & { from: number, to: number, text: string })[];
     statuses: (Scope & { player: string, name: string, from: number, to: number })[];
+    /**
+     * The damage ticks of {@link statuses} whose status has a `tick`: every 3 s from the status's start while it lasts.
+     * Each hits its player and floats the status's name above them, in the label element `labelId`.
+     */
+    ticks: (Scope & { player: string, status: string, at: number, labelId: string })[];
     /** What the viewer needs for each status in {@link statuses}, by name. Filled in by the data extension. */
     statusInfo: Record<string, StatusInfo>;
     /** Resolve effects, each on the element whose geometry it takes, with the parameters its `+effect` gives the preset. */
@@ -246,6 +257,7 @@ export function select(diagram: CompiledDiagram, selection: Selection): Compiled
         keyframes: keep(diagram.keyframes),
         hints: keep(diagram.hints),
         statuses: keep(diagram.statuses),
+        ticks: keep(diagram.ticks),
         effects: keep(diagram.effects),
         casts: keep(diagram.casts),
         skips: [...diagram.skips, ...fastForwards].sort((a, b) => a[0] - b[0])
@@ -384,14 +396,14 @@ function aimAt(diagram: CompiledDiagram, aoe: CompiledAoe, target: string): numb
 
 /**
  * The angle an AoE is drawn at, at `t`, in degrees: where its own `toward` says, or else, if it's attached,
- * where its actor's front points until it hits.
+ * where its actor's front points until it hits. Its `rotate` turns it from there.
  */
 export function aoeRotationAt(diagram: CompiledDiagram, aoe: CompiledAoe, t: number): number {
     const front = aoe.attachedTo != null && aoe.toward == null
         ? rotationAt(diagram, aoe.attachedTo, Math.min(t, aoe.hit)) + (diagram.elements[aoe.attachedTo]?.facing ?? 0)
         : typeof aoe.toward === 'string' ? aimAt(diagram, aoe, aoe.toward) : aoe.toward ?? 0;
 
-    return front - (aoe.facing ?? 0);
+    return front + (aoe.rotate ?? 0) - (aoe.facing ?? 0);
 }
 
 /** Where a part of a composite AoE is at `t`, and its rotation, as {@link aoeAt} and {@link aoeRotationAt} have the AoE's. */

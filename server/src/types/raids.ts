@@ -626,15 +626,16 @@ export interface LoopItem extends Pick<BaseTimelineItem, 'at' | 'description'> {
 }
 
 /**
- * Changes the arena image that diagrams show. It's separate from `<phase>`
+ * Changes the arena that diagrams show. It's separate from `<phase>`
  * because an arena can change in the middle of a mechanic.
  */
 export interface ArenaItem extends Pick<BaseTimelineItem, 'at'> {
     id: '<arena>';
-    /** The image's path. */
-    image: string;
-    /** The image's margin, as `margin` on the `arena` element. */
-    margins?: Margin;
+    /**
+     * The ID of the `define arena <id>` block in the `.diagram` file that says
+     * what the arena looks like (its `image`, `margins`, `filter`, ...).
+     */
+    arena: string;
 }
 
 export type SpecialTimelineItem = PhaseShiftItem | EndPhaseItem | SpecialChildTimelineItem | LoopItem | ArenaItem;

@@ -10,6 +10,7 @@
         { "include": "#define-element" },
         { "include": "#define-action" },
         { "include": "#define-strategy" },
+        { "include": "#define-coordinate-space" },
         { "include": "#define" },
         { "include": "#text-statement" },
         { "include": "#enum-statement" },
@@ -37,7 +38,7 @@
             ]
         },
         "define-arena": {
-            "comment": "`define arena` has no ID of its own.",
+            "comment": "The ID-less `define arena`, which every `define arena <id>` (in `define-kind`) builds on.",
             "begin": "^(define)\\s+(arena)(?=\\s*(?://|$))",
             "beginCaptures": {
                 "1": { "name": "keyword.other.define.thaliak-diagram" },
@@ -47,7 +48,7 @@
             "patterns": [{ "include": "#define-body" }]
         },
         "define-kind": {
-            "begin": "^(define)\\s+(actor|object|puddle|tether)\\s+(\\S+)",
+            "begin": "^(define)\\s+(arena|actor|object|puddle|tether)\\s+(\\S+)",
             "beginCaptures": {
                 "1": { "name": "keyword.other.define.thaliak-diagram" },
                 "2": { "name": "storage.modifier.thaliak-diagram" },
@@ -85,6 +86,16 @@
             },
             "end": "^(?=\\S)",
             "patterns": [{ "include": "#define-body" }]
+        },
+        "define-coordinate-space": {
+            "comment": "How a bare pair reads in the file. It has no body.",
+            "match": "^(define)\\s+(coordinate-space)\\s+(?:(cartesian|polar)|(\\S+))",
+            "captures": {
+                "1": { "name": "keyword.other.define.thaliak-diagram" },
+                "2": { "name": "storage.modifier.thaliak-diagram" },
+                "3": { "name": "constant.language.coordinate-space.thaliak-diagram" },
+                "4": { "name": "invalid.illegal.coordinate-space.thaliak-diagram" }
+            }
         },
         "define": {
             "begin": "^(define)\\s+(\\S+)",

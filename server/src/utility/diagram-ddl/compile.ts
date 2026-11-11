@@ -62,6 +62,11 @@ export function variantIdsOf(source: string): number[] {
     return [...new Set([...source.matchAll(/^.*\+aoe\b.*$/gm)].flatMap(line => [...line[0].replace(/\/\/.*$/, '').matchAll(/\bas\s+(\d+)\b/g)].map(match => Number(match[1]))))];
 }
 
+/** The images that a `.diagram` file's `define arena` blocks name, whose sizes {@link DiagramInput.arenaImageSizes} needs. */
+export function arenaImagesOf(source: string): string[] {
+    return [...new Set(parse(source).definitions.flatMap(d => d.kind === 'arena' && d.fields.image?.[0] != null ? [d.fields.image[0].trim()] : []))];
+}
+
 /**
  * Where an element's front points when it's drawn unrotated, in degrees clockwise from north, as the old renderer's
  * `facing()` has it: a cone opens north, and anything else points from its origin through its centre. A centred
@@ -190,6 +195,8 @@ const RAIDWIDE_BASE = 'diagram-raidwide';
 const CASTER = '$caster';
 /** The element that shows an action's name as it hits. */
 const LABEL_BASE = 'diagram-label';
+/** How often a status with a `tick` damages its player, in ms. */
+const TICK_INTERVAL = 3000;
 /** Large enough for a sweep from the arena's edge to reach the far edge. */
 const RAIDWIDE_SIZE = 420;
 const DASHED = { look: { type: 'none' }, stroke: { style: 'dashed', color: '#fce76e' } };
@@ -308,8 +315,8 @@ export interface RawItem {
     timing?: string;
     flatten?: boolean | string;
     strategies?: Record<string, unknown>;
-    image?: string;
-    margins?: Margin;
+    /** The `define arena <id>` that an `<arena>` item shows. */
+    arena?: string;
     /** Who a `<targetable>` or `<untargetable>` item is about, such as `Omega-M and F`. Without one, everyone. */
     target?: string;
 }
@@ -344,7 +351,10 @@ export interface DiagramInput {
     ghosts?: GhostFile;
     uses: Use[];
     actions: Record<string, ActionFacts>;
-    arenas: ArenaChange[];
+    /** The timeline's `<arena>` items, from {@link arenasOf}. */
+    arenas: ArenaItem[];
+    /** The natural size in pixels of each arena image that the `define arena` blocks name, by its path. */
+    arenaImageSizes?: Record<string, [number, number]>;
     /** The fight's arena size in yalms. */
     arenaSize?: [number, number];
     waymarks?: Record<string, Record<string, unknown>>;
@@ -369,6 +379,8 @@ export interface DiagramInput {
     tethers?: Record<string, string>;
     /** Game data of the actions that `+aoe ... as <game action ID>` draws instead, by those IDs (see {@link variantIdsOf}). */
     variants?: Record<number, ActionFacts>;
+    /** The keys of the fight's statuses that have a `tick`, which hit their player every 3 s while a `+status` lasts. */
+    ticking?: string[];
 }
 
 /** What draws an AoE: one element of a type and size in yalms, or several rectangles (sizes and offsets in yalms). */
@@ -535,11 +547,27 @@ function hiddenRanges(boss: string, changes: readonly TargetabilityChange[]): [n
     return ranges;
 }
 
+/** An `<arena>` timeline item: from `at` on, diagrams show the `define arena <id>` that `arena` names. */
+export interface ArenaItem {
+    at: number;
+    arena: string;
+}
+
 /** Lists the `<arena>` items of a timeline, in time order. */
-export function arenasOf(items: RawItem[]): ArenaChange[] {
-    return items.flatMap(item => item.id === '<arena>' && item.image != null
-        ? [{ at: item.at, image: item.image, ...(item.margins != null ? { margin: item.margins } : {}) }]
-        : []).sort((a, b) => a.at - b.at);
+export function arenasOf(items: RawItem[]): ArenaItem[] {
+    return items.flatMap(item => item.id === '<arena>' && item.arena != null ? [{ at: item.at, arena: item.arena }] : []).sort((a, b) => a.at - b.at);
+}
+
+/**
+ * Reads the `margins` of a `define arena <id>`: one to four numbers separated by spaces, as in `30 35 42 33`, which
+ * expand like CSS `margin`. Returns why it can't instead.
+ */
+function readArenaMargins(text: string): Margin | string {
+    const values = text.trim().split(/\s+/).map(Number);
+
+    if (text.trim() === '' || values.length > 4 || values.some(value => !Number.isFinite(value))) return '"margins" takes one to four numbers separated by spaces, such as "margins: 30 35 42 33"';
+
+    return values.length === 1 ? values[0]! : values as unknown as Margin;
 }
 
 /** Expands `[a, b]`, `[1..3]`, `[*]` and `<group>` into every combination, in order. A `*` stays in the result. */
@@ -560,10 +588,11 @@ export function expandTemplate(token: string): string[] {
     return options.flatMap(option => expandTemplate(token.slice(0, open) + option + token.slice(close + 1)));
 }
 
-/** Parses `(a, b)` into numbers, a bare number into a number, and leaves anything else as a string. */
-function literal(value: string): number | string | number[] {
+/** Parses `(a, b)` into numbers, a bare number into a number, `true` and `false` into booleans, and leaves anything else as a string. */
+function literal(value: string): number | string | number[] | boolean {
     if (/^\(.*\)$/.test(value)) return value.slice(1, -1).split(',').map(Number);
     if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
+    if (value === 'true' || value === 'false') return value === 'true';
     if (/^".*"$/.test(value)) return value.slice(1, -1);
     return value;
 }
@@ -659,8 +688,13 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
     const elementKinds: Record<string, Definition['kind']> = {};
     const gradients: Record<string, string> = {};
     const strategies: CompiledDiagram['strategies'] = [];
+    /** Each `define arena <id>`'s own fields, with its line, by its ID. The ID-less `define arena` is in `elementDefs`. */
+    const arenaDefs: Record<string, { line: number, values: Record<string, unknown> }> = {};
 
     for (const definition of definitions) {
+        // The compiler reads it on its own, since it decides how positions read.
+        if (definition.kind === 'coordinate-space') continue;
+
         // A definition without a body does nothing: what it names stays as it would be without it.
         if (Object.keys(definition.fields).length === 0 && definition.body.length === 0) {
             error(definition.line, `${definition.kind === 'arena' ? '"define arena"' : `"${definition.id}"`} is empty, which does nothing: give it fields or remove it`);
@@ -720,6 +754,15 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
             // The parser reported the quotes already, and the value would only be reported again for them.
             if (lines.some(line => line.includes('"'))) continue;
 
+            if (key === 'margins' && definition.kind === 'arena') {
+                const margins = readArenaMargins(lines.join(' '));
+
+                if (typeof margins === 'string') error(definition.line, `"define arena ${definition.id}": ${margins}`);
+                else values.margins = margins;
+
+                continue;
+            }
+
             try {
                 values[key] = readFieldValue(key, lines.join(' '));
             } catch (e) {
@@ -768,6 +811,10 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
             }
 
             actionDefs[definition.id] = values;
+        } else if (definition.kind === 'arena' && definition.id !== 'arena') {
+            if ('type' in values) error(definition.line, `"define arena ${definition.id}" can't have a "type": an arena is an image`);
+
+            arenaDefs[definition.id] = { line: definition.line, values };
         } else {
             if ('bnpc' in values) error(definition.line, `"${definition.id}" can't have a "bnpc": ${BNPC_INSTEAD}`);
 
@@ -777,7 +824,7 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
         }
     }
 
-    return { actionDefs, elementDefs, elementKinds, gradients, strategies };
+    return { actionDefs, elementDefs, elementKinds, gradients, strategies, arenaDefs };
 }
 
 /**
@@ -819,7 +866,7 @@ function readElementType(definition: Definition, values: Record<string, unknown>
 
 /** Compiles a `.diagram` file. Everything wrong with it is returned as a diagnostic, and the result is then incomplete. */
 export function compileDiagram(source: string, input: DiagramInput): { diagram: CompiledDiagram, diagnostics: Diagnostic[] } {
-    const { actions, arenas } = input;
+    const { actions } = input;
     const parsed = parse(source);
     const diagnostics: Diagnostic[] = [...parsed.diagnostics];
     const error = (line: number, message: string) => {
@@ -828,8 +875,54 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     /** The headmarker looks this diagram can use, and the tether looks it can use without a `define tether`. */
     const headmarkerLooks = new Set<string>(input.headmarkers == null ? DDL_MARKER_LOOKS.headmarkers : [...Object.values(input.headmarkers), ...UNMAPPED_HEADMARKERS, 'unknown']);
     const tetherLooks = new Set<string>([...Object.values(input.tethers ?? {}), 'unknown']);
-    const { actionDefs, elementDefs, elementKinds, gradients, strategies } = readDefinitions(parsed.definitions, actions, headmarkerLooks, error);
+    const { actionDefs, elementDefs, elementKinds, gradients, strategies, arenaDefs } = readDefinitions(parsed.definitions, actions, headmarkerLooks, error);
     const definitionLine = (kind: Definition['kind'], id: string) => parsed.definitions.find(d => d.kind === kind && d.id === id)?.line ?? 0;
+    // Every arena change carries every key that any arena sets, so that one arena's `filter` doesn't stay on the next.
+    const arenaKeys = new Set(Object.values(arenaDefs).flatMap(def => Object.keys(def.values)).filter(key => key !== 'image' && key !== 'margins'));
+    const arenas: ArenaChange[] = input.arenas.flatMap(item => {
+        const def = arenaDefs[item.arena];
+
+        if (def == null) {
+            error(0, `the <arena> item at ${item.at} shows "${item.arena}", which has no "define arena ${item.arena}"`);
+            return [];
+        }
+
+        const merged = { ...elementDefs.arena, ...def.values };
+        const image = merged.image;
+
+        if (typeof image !== 'string') {
+            error(def.line, `"define arena ${item.arena}" needs an "image", or the ID-less "define arena" one`);
+            return [];
+        }
+
+        const props = Object.fromEntries([...arenaKeys].map(key => [key, merged[key] ?? (key === 'filter' ? '' : undefined)]).filter(([, value]) => value !== undefined));
+        const imageSize = input.arenaImageSizes?.[image];
+
+        return [{ at: item.at, arena: item.arena, image, props, ...(merged.margins != null ? { margin: merged.margins as Margin } : {}), ...(imageSize != null ? { imageSize } : {}) }];
+    });
+    const spaces = parsed.definitions.filter(d => d.kind === 'coordinate-space');
+
+    for (const definition of spaces) {
+        if (definition.id !== 'cartesian' && definition.id !== 'polar') error(definition.line, `"define coordinate-space ${definition.id}": the coordinate space is cartesian or polar`);
+        if (Object.keys(definition.fields).length > 0 || definition.body.length > 0) error(definition.line, '"define coordinate-space" takes no fields');
+    }
+
+    if (spaces.length > 1) error(spaces[1]!.line, 'a file has only one "define coordinate-space"');
+
+    /** How a bare `(a, b)` reads: as `(distance, angle)` by default, or as plane `(x, y)`. */
+    const space = spaces[0]?.id === 'cartesian' ? 'cartesian' : 'polar';
+    /**
+     * The plane XY of `cart(x, y)` (as it is), `polar(distance, angle)`, or a bare `(a, b)` as {@link space} says, or
+     * `undefined` if `value` is none of these.
+     */
+    const planeOf = (value: string): XY | undefined => {
+        const form = /^(cart|polar)(\(.*\))$/.exec(value);
+        const pair = literal(form?.[2] ?? value);
+
+        if (!Array.isArray(pair)) return undefined;
+
+        return (form?.[1] ?? (space === 'cartesian' ? 'cart' : 'polar')) === 'cart' ? [pair[0]!, pair[1]!] : toXY(pair);
+    };
 
     for (const definition of parsed.definitions) {
         const attached = actionDefs[definition.id]?.attached;
@@ -1020,10 +1113,29 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
     const clauseOf = (s: Statement, key: string) => s.clauses.find(c => c.key === key)?.values;
 
-    /** Reads the value of an `at` or `to` clause. A placeholder such as `clocks(63)` gets the spot of the subject, or of its sub-ID in `fist#T1`. */
-    const positionOf = (value: string, id: string, line: number): number | string | number[] => {
+    /** The plane XY of a statement's `offset` clause ({@link planeOf}), or `[0, 0]` without one. */
+    const offsetOf = (s: Statement, id: string, index: number, ids: string[], within: Scope): XY => {
+        const offset = clauseOf(s, 'offset');
+
+        if (offset == null) return [0, 0];
+
+        const value = valueFor(offset, index, ids, s, within)!;
+        const xy = planeOf(value);
+
+        if (xy == null) error(s.line, `"offset ${value}" of "${id}" is a pair, such as (10, 90), cart(10, -5) or polar(10, 90)`);
+
+        return xy ?? [0, 0];
+    };
+
+    /**
+     * Reads the value of an `at` or `to` clause: a spot in plane XY ({@link planeOf}), or the element it names. A
+     * placeholder such as `clocks(63)` gets the spot of the subject, or of its sub-ID in `fist#T1`.
+     */
+    const positionOf = (value: string, id: string, line: number): XY | string => {
         try {
-            return callPlaceholder(value, subIdOf(id))?.[0] ?? literal(value);
+            const spot = callPlaceholder(value, subIdOf(id))?.[0];
+
+            return spot != null ? toXY(spot) : planeOf(value) ?? String(literal(value));
         } catch (e) {
             error(line, `"${id}": ${e instanceof Error ? e.message : e}`);
             return [0, 0];
@@ -1036,7 +1148,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
         if (arena?.imageSize == null || input.arenaSize == null) return DEFAULT_UNITS_PER_YALM;
 
-        const box = (elementDefs.arena?.size ?? DEFAULT_ARENA_BOX) as number | [number, number];
+        const box = (arena.props.size ?? elementDefs.arena?.size ?? DEFAULT_ARENA_BOX) as number | [number, number];
         const boxSize: XY = typeof box === 'number' ? [box, box] : box;
         return planeUnitsPerYalm(arena.imageSize, expandMargin(arena.margin ?? 0), boxSize, [1, 1], input.arenaSize);
     };
@@ -1089,16 +1201,15 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         const to = clauseOf(s, 'to');
 
         if (to != null) {
-            const raw = positionOf(valueFor(to, index, ids, s, within)!, id, s.line);
-            const target: XY | string = Array.isArray(raw) ? toXY(raw) : String(raw);
+            const target = positionOf(valueFor(to, index, ids, s, within)!, id, s.line);
             const isPlayer = PLAYERS.includes(id);
 
             if (!isPlayer && overMs == null) error(s.line, `"${id}" isn't a player, so its ${s.verb} needs "over"`);
-            if (typeof target === 'string' && isPlayer && overMs == null) error(s.line, `"${id}" moving to an element needs "over"`);
-
             const from = lastDestination(element, within);
+            // A player runs to an element as far as where that was last placed or sent, and then stays on it as it moves.
+            const spot = typeof target === 'string' ? lastDestination(elements.get(target) ?? element, within) : target;
             const [unitsX, unitsY] = unitsPerYalm(s.at);
-            const run = typeof target === 'string' ? 0 : Math.hypot((target[0] - from[0]) / unitsX, (target[1] - from[1]) / unitsY) / RUN_SPEED;
+            const run = Math.hypot((spot[0] - from[0]) / unitsX, (spot[1] - from[1]) / unitsY) / RUN_SPEED;
             // Speeding up and slowing down costs one ramp, or if it never reaches run speed, as long as the distance takes that way.
             const time = overMs ?? (run >= MOTION_RAMP ? run + MOTION_RAMP : 2 * Math.sqrt(run * MOTION_RAMP));
             let start = s.verb === 'arrive' ? s.at - time : s.at;
@@ -1250,6 +1361,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     const openHints = new Map<string, CompiledDiagram['hints'][number]>();
     /** The line of each hint's `+hint`, for its errors. */
     const hintLines = new Map<CompiledDiagram['hints'][number], number>();
+    /** The line of each status's `+status`, for the error about unknown elements. */
+    const statusLines = new Map<CompiledDiagram['statuses'][number], number>();
     /** Each `+headmarker`'s spawn, with its element and line, for the error about those that are never removed. */
     const headmarkerSpawns: { id: string, spawn: Spawn, line: number }[] = [];
     const lastKeyframes = new Map<string, number>();
@@ -1352,7 +1465,11 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     } else {
                         if (on == null) error(s.line, `+status "${name}" has no "on"`);
 
-                        for (const player of on ?? []) statuses.push({ ...within, player, name, from: s.at, to: Infinity });
+                        for (const player of on ?? []) {
+                            const status = { ...within, player, name, from: s.at, to: Infinity };
+                            statuses.push(status);
+                            statusLines.set(status, s.line);
+                        }
                     }
                 }
                 break;
@@ -1368,7 +1485,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     const base = baseOf(id);
                     const kind = kindOf(base, s.verb === 'tether');
 
-                    if (s.verb === 'actor' && s.sign === '+' && input.actors?.[base] == null && !PLAYERS.includes(id)) {
+                    // A player's copy (`T1#clone`) is drawn as that player's job icon.
+                    if (s.verb === 'actor' && s.sign === '+' && input.actors?.[base] == null && !PLAYERS.includes(base)) {
                         error(s.line, `"${base}" isn't an actor of the timeline`);
                     }
 
@@ -1425,15 +1543,11 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
                         if (clause.key === 'at') {
                             const raw = positionOf(value, id, s.line);
-                            const offset = clauseOf(s, 'offset');
-                            const xy = offset == null ? [0, 0] : literal(valueFor(offset, index, ids, s, within)!) as number[];
                             element.poses.push(Array.isArray(raw)
-                                ? { ...within, start: s.at, end: s.at, kind: 'fixed', xy: toXY(raw) }
-                                : { ...within, start: s.at, end: s.at, kind: 'snap', target: String(raw), snapAt: s.at, offset: xy as XY });
+                                ? { ...within, start: s.at, end: s.at, kind: 'fixed', xy: raw }
+                                : { ...within, start: s.at, end: s.at, kind: 'snap', target: raw, snapAt: s.at, offset: offsetOf(s, id, index, ids, within) });
                         } else if (clause.key === 'on') {
-                            const offset = clauseOf(s, 'offset');
-                            const xy = offset == null ? [0, 0] : literal(valueFor(offset, index, ids, s, within)!) as number[];
-                            element.poses.push({ ...within, start: s.at, end: s.at, kind: 'follow', target: value, offset: xy as XY });
+                            element.poses.push({ ...within, start: s.at, end: s.at, kind: 'follow', target: value, offset: offsetOf(s, id, index, ids, within) });
                         } else if (clause.key === 'as') {
                             const text = literal(value);
 
@@ -1500,14 +1614,23 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     if (on != null) fields.on = valueFor(on, index, ids, s, within);
 
                     if (at != null) {
-                        const raw = positionOf(valueFor(at, index, ids, s, within)!, id, s.line);
-                        fields.at =Array.isArray(raw) ? toXY(raw) : String(raw);
+                        fields.at = positionOf(valueFor(at, index, ids, s, within)!, id, s.line);
                     }
 
                     if (toward != null) {
                         // An angle, or an element to aim at as it stands when the telegraph appears.
                         const value = literal(valueFor(toward, index, ids, s, within)!);
                         fields.toward = typeof value === 'number' ? value : String(value);
+                    }
+
+                    const rotate = clauseOf(s, 'rotate');
+
+                    if (rotate != null) {
+                        // Turns it from where its actor faces or its `toward` points, so the amount needs a sign, as in a move.
+                        const by = valueFor(rotate, index, ids, s, within)!;
+
+                        if (!/^[+-]\d+(\.\d+)?$/.test(by)) error(s.line, `"rotate ${by}" turns "${id}" by ${by}° from where it would point; write "rotate +${by.replace(/^[+-]/, '')}" or "rotate -${by.replace(/^[+-]/, '')}", or "toward ${by}" to point it at ${by}° (0 is north, 180 is south)`);
+                        else fields.rotate = Number(by);
                     }
 
                     // Unlike the other clauses, this one lists who it hits rather than pairing up with the subjects.
@@ -1574,7 +1697,10 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                     addToward(element, s, index, ids, within, overMs);
 
                     for (const clause of s.clauses) {
-                        if (clause.key !== 'toward' && clause.key !== 'over') {
+                        // Filters take several functions, which a clause can't hold, so they stay with the definition.
+                        if (clause.key === 'filter') {
+                            error(s.line, `"filter" can't be set; give "${id}" a filter in its define block instead`);
+                        } else if (clause.key !== 'toward' && clause.key !== 'over') {
                             element.sets.push({ ...within, t: s.at, over: overMs, key: clause.key, value: literal(valueFor(clause.values, index, ids, s, within)!) });
                         }
                     }
@@ -1796,7 +1922,11 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         run(statement, scopes.get(statement) ?? {}, undefined, use);
     }
 
-    if (arenas.length > 0) requireBase('arena', 0);
+    // The viewer needs a definition of the arena to draw it, which the ID-less `define arena` gives if there is one.
+    if (arenas.length > 0) {
+        if (elementDefs.arena != null) requireBase('arena', 0);
+        else definitions.arena = { type: 'image' };
+    }
 
     addNameLabels([...elements.values()], base => elementDef(base)?.image === BOSS_IMAGE ? input.actors?.[base] : undefined);
 
@@ -1963,6 +2093,21 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
 
     for (const status of statuses) {
         if (status.to === Infinity) status.to = end;
+        if (!PLAYERS.includes(status.player) && !elements.has(status.player)) error(statusLines.get(status) ?? 0, `+status "${status.name}" is on unknown "${status.player}"`);
+    }
+
+    // A status with a `tick` (named with or without its `:icon`) hits its player every 3 s while it lasts.
+    const ticking = new Set(input.ticking ?? []);
+    const ticks: CompiledDiagram['ticks'] = [];
+
+    for (const status of statuses) {
+        const colon = status.name.lastIndexOf(':');
+
+        if (!ticking.has(colon < 0 ? status.name : status.name.slice(0, colon))) continue;
+
+        for (let at = status.from + TICK_INTERVAL; at < status.to; at += TICK_INTERVAL) {
+            ticks.push({ ...scopeOf(status), player: status.player, status: status.name, at, labelId: `${LABEL_BASE}#tick-${ticks.length}` });
+        }
     }
 
     keyframes.sort((a, b) => a.at - b.at);
@@ -2043,6 +2188,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         chapters: uses.filter(use => use.parent == null && actions[use.action]?.emphasis === 'more').map(use => ({ at: use.at, id: use.action, name: name(use.action), ...(use.lastChild != null ? { end: use.lastChild } : {}) })),
         hints,
         statuses,
+        ticks,
         statusInfo: {},
         effects: effects.sort((a, b) => a.at - b.at),
         mechanics: uses.map(use => ({ at: use.at, id: use.action, name: name(use.action), ...(use.parent != null ? { parent: use.parent } : {}) })),

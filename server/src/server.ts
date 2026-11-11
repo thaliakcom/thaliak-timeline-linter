@@ -45,7 +45,7 @@ import { configureIronworks, type IronworksOptions } from './ironworks';
 import { diagramOf, isDiagramUri, statusKeysOf } from './diagram-context';
 import { lintDiagram } from './diagram-linter';
 import { lintGameData } from './game-data-rules';
-import { diagramCompletionProvider, diagramDefinitionProvider, diagramDocumentSymbolProvider, diagramHoverProvider, diagramInlayHintProvider, diagramOutlineProvider, diagramReferenceProvider, diagramStatusIconProvider } from './diagram-providers';
+import { diagramCompletionProvider, diagramDefinitionProvider, diagramDocumentSymbolProvider, diagramHoverProvider, diagramInlayHintProvider, diagramOutlineProvider, diagramPrepareRenameProvider, diagramReferenceProvider, diagramRenameProvider, diagramStatusIconProvider } from './diagram-providers';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -292,8 +292,8 @@ connection.onDefinition(byFileType(textDocumentUri, diagramDefinitionProvider(do
 connection.onReferences(byFileType(textDocumentUri, diagramReferenceProvider(documents), referenceProvider(documents, documentCache, globalSettings)));
 // Timelines get theirs from the YAML extension.
 connection.onDocumentSymbol(byFileType(textDocumentUri, diagramDocumentSymbolProvider(documents), () => null));
-connection.onRenameRequest(renameProvider(documents, documentCache, globalSettings));
-connection.onPrepareRename(prepareRenameProvider(documents, documentCache, globalSettings));
+connection.onRenameRequest(byFileType(textDocumentUri, diagramRenameProvider(documents), renameProvider(documents, documentCache, globalSettings)));
+connection.onPrepareRename(byFileType(textDocumentUri, diagramPrepareRenameProvider(documents), prepareRenameProvider(documents, documentCache, globalSettings)));
 connection.onCodeAction(codeActionProvider(documents, documentCache, globalSettings));
 connection.onDocumentColor(documentColorProvider(documents, documentCache, globalSettings));
 connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));

@@ -13,7 +13,7 @@ export const SPECIAL_TIMELINE_IDS: Array<{ id: string, description: string }> = 
     { id: '<endphase>', description: 'Indicates that a phase previously started with <phase> ends. Only use this kind of item if the timeline items immediately following this item should not be part of any phase.' },
     { id: '<addstatus>', description: 'Indicates that status effects are inflicted on players. Only use this kind of item if the statuses are not inflicted by an enemy action.' },
     { id: '<removestatus>', description: 'Indicates that status effects fall off from players. Only use this kind of item if the statuses do not have a fixed duration and instead fall off as a result of some other condition. Do not use this kind of item if the status is consumed by some other enemy action.' },
-    { id: '<arena>', description: 'Sets the arena image for diagrams from this time on. Only diagrams see this item.' },
+    { id: '<arena>', description: 'Shows the arena of `arena: <id>` (a `define arena <id>` of the .diagram file) in diagrams from this time on. Only diagrams see this item.' },
     { id: '<loop>', description: 'Indicates that all mechanics or a subset of mechanics up until now will loop until the boss enrages or a specific condition is met.' }
 ];
 
@@ -413,6 +413,31 @@ export function getActorValues(document: yaml.Document): { key: string, range: y
     }
 
     return values;
+}
+
+/** The IDs of the `define arena <id>` blocks that the timeline's `<arena>` items name in their `arena` value, with their ranges. */
+export function getArenaValues(document: yaml.Document): { key: string, range: yaml.Range }[] {
+    const values: { key: string, range: yaml.Range }[] = [];
+
+    for (const item of getIfType(document, 'timeline', yaml.isSeq)?.items ?? []) {
+        const node = yaml.isMap(item) && item.get('id') === '<arena>' ? item.get('arena', true) : null;
+
+        if (yaml.isScalar(node) && typeof node.value === 'string' && node.range != null) {
+            const start = node.range[0] + (node.type === yaml.Scalar.QUOTE_DOUBLE || node.type === yaml.Scalar.QUOTE_SINGLE ? 1 : 0);
+
+            values.push({ key: node.value, range: [start, start + node.value.length, start + node.value.length] });
+        }
+    }
+
+    return values;
+}
+
+/** The arena ID at `position`, if it's the `arena` value of an `<arena>` item, as the symbol `ar:<id>`. */
+export function getArenaAt(document: yaml.Document, textDocument: TextDocument, position: Position): SymbolRange | null {
+    const offset = textDocument.offsetAt(position);
+    const value = getArenaValues(document).find(x => offset >= x.range[0] && offset <= x.range[1]);
+
+    return value != null ? { text: `ar:${value.key}`, range: getRange(textDocument, value.range) } : null;
 }
 
 /** The actor key at `position`, if it's one of an action's `actor` values, as the symbol `ac:<key>`. */
