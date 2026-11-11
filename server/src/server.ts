@@ -185,6 +185,16 @@ documents.onDidOpen(e => {
     }
 });
 
+/**
+ * Has the icons drawn anew: the blank inlay hints that reserve their room, and the client's icons over them. Both come
+ * from the enums and the timeline, which can reach the server after the file that shows the icons.
+ */
+function refreshIcons(): void {
+    connection.languages.inlayHint.refresh();
+    connection.sendNotification('thaliak/iconsChanged');
+}
+
+// Also fires as a document opens.
 documents.onDidChangeContent(e => {
     documentCache.get(e.document);
 
@@ -192,9 +202,12 @@ documents.onDidChangeContent(e => {
         if (documentCache.getOpenDocument() != null) {
             connection.languages.diagnostics.refresh();
         }
+
+        refreshIcons();
     } else if (e.document.uri.endsWith('.yaml') && documents.get(e.document.uri.replace(/\.yaml$/, '.diagram')) != null) {
-        // A `.diagram` file's diagnostics depend on its timeline.
+        // A `.diagram` file's diagnostics and icons depend on its timeline.
         connection.languages.diagnostics.refresh();
+        refreshIcons();
     }
 });
 

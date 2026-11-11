@@ -258,6 +258,8 @@ export function registerOutlineView(context: vscode.ExtensionContext, client: La
                 view.refresh();
             }
         }));
+        // The enums or the timeline that the icons come from arrived or changed. Debounced, as the enums come in a burst.
+        context.subscriptions.push(client.onNotification('thaliak/iconsChanged', () => refresh()));
 
         view.refresh();
     });
