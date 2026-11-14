@@ -5,10 +5,10 @@ import { planeUnitsPerYalm } from '../diagram-sizing';
 import { BOSS_IMAGE, DEFAULT_ACTOR_GRAPHICS } from '../diagram-defaults';
 import { AnimationDefinition, ANIMATIONS, DDL_MARKER_LOOKS, ParameterDefinition, ParameterKey, PARAMETERS } from '../diagram-enums';
 import { expandMargin } from '../margin';
-import { Definition, Diagnostic, parse, signProblem, Statement, tokenize } from './parse';
+import { armsApply, Definition, Diagnostic, parse, ParseResult, Section, signProblem, Statement, tokenize } from './parse';
 import { callPlaceholder, PLAYER_GROUPS, resolveWaymarks } from './placeholders';
 import type { Margin } from '../../types/graphing';
-import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, definitionKey, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, Spawn, XY } from './seek';
+import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, definitionKey, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, Selection, Spawn, XY } from './seek';
 
 /** Run speed in yalms per ms. */
 const RUN_SPEED = 6 / 1000;
@@ -202,8 +202,6 @@ const RAIDWIDE_SIZE = 420;
 const DASHED = { look: { type: 'none' }, stroke: { style: 'dashed', color: '#fce76e' } };
 /** Definition keys that describe a placement rather than the drawn element. */
 const NON_VISUAL_KEYS = new Set(['attached', 'enterHooks', 'exitHooks', 'tracks', 'headmarker', 'lead']);
-/** The `define action` keys that were removed: an action's hit shows only its resolve effect. */
-const REMOVED_KEYS = ['flash', 'flashLook', 'hold', 'hidden'];
 /** The element kinds that `define` declares, by the verb that places them. */
 const KIND_OF_VERB: Record<string, Definition['kind']> = { actor: 'actor', object: 'object', puddle: 'puddle', tether: 'tether' };
 /** The element types each kind can have, as written; `type: graphic` is the viewer's `marker`. A kind with one type implies it. */
@@ -226,14 +224,6 @@ const FLAT_HEADMARKERS: readonly string[] = ['flare', 'line-stack', 'rotate-ccw'
 const UNMAPPED_HEADMARKERS: readonly string[] = ['target-red'];
 /** The element that draws an AoE whose omen look is a built-in drawing (`tower`, `exaflare`, `circle-kb`) over its circle. */
 const AOE_GRAPHIC_BASE = 'aoe-graphic';
-/** The `define action` keys that are now facts of the timeline action, and where each one went. */
-const MOVED_KEYS: Record<string, string> = {
-    telegraph: 'the element comes from the timeline action\'s "shape"',
-    type: 'the element comes from the timeline action\'s "shape"',
-    angle: 'set "angle" on the timeline action',
-    size: 'the size comes from game data, and from "angle", "inner", "grid" and "spacing" on the timeline action',
-    use: 'use "attached: true", which attaches the AoE to the timeline action\'s "actor"'
-};
 /** How every AoE element looks, unless its action's definition or its omen says otherwise. */
 const AOE_LOOK = { opacity: 0.85, shadow: false, enter: 'scale' };
 /** The built-in elements that draw AoEs, by the element type they draw. */
@@ -258,8 +248,6 @@ const LINE_CAST_TYPES = [4, 8, 12];
 const PLANNED_EFFECTS: readonly string[] = ['laser'];
 /** What a {@link PLANNED_EFFECTS} effect is reported with. */
 const plannedEffectMessage = (name: string) => `effect "${name}" isn't implemented yet, so it plays nothing`;
-/** Why an actor can't name its BNpcBase with `bnpc` any more. */
-const BNPC_INSTEAD = 'name the actor by its key in the timeline\'s "actors", whose "id" gives its hitbox';
 /** How far out the ring of {@link BOSS_IMAGE} runs, as a fraction of the icon's half-width: its centre line, at 55.5 of 62. */
 const BOSS_RING = 55.5 / 62;
 const PLAYERS: string[] = PLAYER_GROUPS['players']!;
@@ -605,8 +593,7 @@ function hasTelegraph(action: ActionFacts): boolean {
 /** Returns whether two scopes can both apply under one selection. */
 function compatible(a: Scope, b: Scope): boolean {
     if (a.strategy != null && b.strategy != null && a.strategy !== b.strategy) return false;
-    if (a.branch != null && b.branch != null && a.branch[0] === b.branch[0] && a.branch[1] !== b.branch[1]) return false;
-    return true;
+    return Object.entries(a.branches ?? {}).every(([at, name]) => b.branches?.[Number(at)] == null || b.branches[Number(at)] === name);
 }
 
 /**
@@ -643,12 +630,12 @@ function addNameLabels(elements: CompiledElement[], actorOf: (base: string) => {
 
 /** Identifies a scope, for grouping items by it. */
 function scopeKey(scope: Scope): string {
-    return `${scope.strategy ?? ''}|${scope.branch?.join(':') ?? ''}`;
+    return `${scope.strategy ?? ''}|${scope.branches != null ? JSON.stringify(scope.branches) : ''}`;
 }
 
 /** Only the scope's set keys, so that unscoped items stay small in the JSON. */
 function scopeOf(scope: Scope): Scope {
-    return { ...(scope.strategy != null ? { strategy: scope.strategy } : {}), ...(scope.branch != null ? { branch: scope.branch } : {}) };
+    return { ...(scope.strategy != null ? { strategy: scope.strategy } : {}), ...(scope.branches != null ? { branches: scope.branches } : {}) };
 }
 
 /** An action's `headmarker: <look> at -<lead> [for <duration>] [size <size>]`, in ms. */
@@ -695,8 +682,9 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
         // The compiler reads it on its own, since it decides how positions read.
         if (definition.kind === 'coordinate-space') continue;
 
-        // A definition without a body does nothing: what it names stays as it would be without it.
-        if (Object.keys(definition.fields).length === 0 && definition.body.length === 0) {
+        // A definition without a body does nothing: what it names stays as it would be without it. A strategy's
+        // definition declares the strategy, which it does without a body too.
+        if (Object.keys(definition.fields).length === 0 && definition.body.length === 0 && definition.kind !== 'strategy') {
             error(definition.line, `${definition.kind === 'arena' ? '"define arena"' : `"${definition.id}"`} is empty, which does nothing: give it fields or remove it`);
             continue;
         }
@@ -710,8 +698,6 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
 
         if (definition.kind === 'strategy') {
             const covers = (definition.fields.covers ?? []).flatMap(line => line.split(',').map(key => key.trim())).filter(key => key !== '');
-
-            if (covers.length === 0) error(definition.line, `strategy "${definition.id}" covers nothing`);
 
             strategies.push({ id: definition.id, name: name ?? definition.id, covers });
             continue;
@@ -745,19 +731,6 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
                 continue;
             }
 
-            if ((key === 'enter' || key === 'exit') && lines.some(line => /^[+-]/.test(line))) {
-                error(definition.line, `"${definition.id}": statements go under "on:${key}" now; "${key}" holds only an animation`);
-                const animations = lines.filter(line => line !== '' && !/^[+-]/.test(line));
-
-                try {
-                    if (animations.length > 0) values[key] = readFieldValue(key, animations.join(' '));
-                } catch (e) {
-                    error(definition.line, `"${key}" of "${definition.id}" can't be read: ${e instanceof Error ? e.message : e}`);
-                }
-
-                continue;
-            }
-
             // The parser reported the quotes already, and the value would only be reported again for them.
             if (lines.some(line => line.includes('"'))) continue;
 
@@ -781,15 +754,7 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
             if (actions[definition.id] == null) error(definition.line, `"${definition.id}" isn't an action of the timeline`);
             if ('look' in values) error(definition.line, `"${definition.id}" can't have a "look": AoE looks come from omens.yaml`);
 
-            for (const field of REMOVED_KEYS) {
-                if (field in values) error(definition.line, `"${definition.id}" can't have "${field}": it was removed; an action's hit shows only its resolve effect (+effect in on:exit)`);
-            }
-
             if ('attached' in values && typeof values.attached !== 'boolean' && typeof values.attached !== 'string') error(definition.line, `"attached" of "${definition.id}" is true, false or an actor's key`);
-
-            for (const [key, instead] of Object.entries(MOVED_KEYS)) {
-                if (key in values) error(definition.line, `"${definition.id}" can't have a "${key}": ${instead}`);
-            }
 
             if ('lead' in values) {
                 const lead = typeof values.lead === 'number' ? values.lead : typeof values.lead === 'string' && /^\d+(\.\d+)?m?s$/.test(values.lead) ? duration(values.lead) : NaN;
@@ -823,8 +788,6 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
 
             arenaDefs[definition.id] = { line: definition.line, values };
         } else {
-            if ('bnpc' in values) error(definition.line, `"${definition.id}" can't have a "bnpc": ${BNPC_INSTEAD}`);
-
             readElementType(definition, values, error);
             elementDefs[definition.id] = values;
             elementKinds[definition.id] = definition.kind;
@@ -843,12 +806,10 @@ function readElementType(definition: Definition, values: Record<string, unknown>
     const type = values.type as string | undefined;
     const name = definition.kind === 'arena' ? '"define arena"' : `"${definition.id}"`;
 
-    if ('duration' in values && definition.kind !== 'puddle' && definition.kind !== 'element') error(definition.line, `${name} can't have a "duration": only puddles disappear by themselves`);
+    if ('duration' in values && definition.kind !== 'puddle') error(definition.line, `${name} can't have a "duration": only puddles disappear by themselves`);
     if (allowed == null) return;
 
-    if (type === 'marker') {
-        error(definition.line, `${name}: "type: marker" is now "type: graphic"`);
-    } else if (type != null && !allowed.includes(type)) {
+    if (type != null && !allowed.includes(type)) {
         error(definition.line, `${name} is a ${definition.kind}, whose type is ${allowed.join(' or ')}`);
     } else if (type == null && allowed.length === 1) {
         values.type = allowed[0];
@@ -876,10 +837,264 @@ function readElementType(definition: Definition, values: Record<string, unknown>
  * `placements` lists, for each subject a `place` statement placed, its statement's 1-based line, its ID and the time of
  * the timeline use it binds to, for the linter's hints. Hooks' placements aren't in it.
  */
-export function compileDiagram(source: string, input: DiagramInput): { diagram: CompiledDiagram, diagnostics: Diagnostic[], placements: { line: number, id: string, at: number }[] } {
-    const { actions } = input;
+export function compileDiagram(source: string, input: DiagramInput): CompileResult {
     const parsed = parse(source);
-    const diagnostics: Diagnostic[] = [...parsed.diagnostics];
+    const strategyIds = parsed.definitions.filter(definition => definition.kind === 'strategy').map(definition => definition.id);
+    const unknown: Diagnostic[] = parsed.sections.flatMap(section => section.arms.flatMap(arm => arm.kind === 'strategy' && !arm.else
+        ? arm.names.filter(name => !strategyIds.includes(name)).map(name => ({ line: arm.line, message: `unknown strategy "${name}"` }))
+        : []));
+    const worlds = worldsOf(parsed.sections, strategyIds);
+    const merged = mergeWorlds(worlds, parsed.sections, worlds.map(world => compileWorld(parsed, input, world, strategyIds)));
+
+    return { ...merged, diagnostics: [...parsed.diagnostics, ...unknown, ...merged.diagnostics] };
+}
+
+/** What {@link compileDiagram} returns. */
+export interface CompileResult {
+    diagram: CompiledDiagram;
+    diagnostics: Diagnostic[];
+    placements: { line: number, id: string, at: number }[];
+}
+
+/**
+ * Every combination of a strategy (if the file defines any) and an option of each branch group that plays with it: a
+ * group inside an arm of another strategy or option has no choice there. Each is compiled on its own (see
+ * {@link compileWorld}), so that what a line does follows from the lines that hold with it, and nothing else.
+ */
+export function worldsOf(sections: readonly Section[], strategies: readonly string[]): Selection[] {
+    const worlds: Selection[] = [];
+    // In the order of their `if` lines, so that a group's enclosing options are chosen before it.
+    const groups = sections.filter(section => section.kind === 'branch');
+    const visit = (i: number, world: Selection) => {
+        const group = groups[i];
+
+        if (group == null) {
+            worlds.push(world);
+        } else if (!armsApply(group.within, world, strategies)) {
+            visit(i + 1, world);
+        } else {
+            for (const arm of group.arms) {
+                if (arm.kind === 'branch') visit(i + 1, { ...world, branches: { ...world.branches, [group.at]: arm.name } });
+            }
+        }
+    };
+
+    for (const strategy of strategies.length > 0 ? strategies : [undefined]) visit(0, { ...(strategy != null ? { strategy } : {}), branches: {} });
+
+    return worlds;
+}
+
+/**
+ * The compiled worlds of {@link worldsOf} as one diagram. Every item that comes out of a world's compile is kept once
+ * for each set of worlds that the narrowest scopes can describe: the strategy and options it depends on, and no more.
+ * One that every world has is unscoped. So `select` under a world gives exactly that world's own compile.
+ */
+function mergeWorlds(worlds: readonly Selection[], sections: readonly Section[], results: readonly CompileResult[]): CompileResult {
+    const scopes = scopesOf(worlds, sections);
+    const first = results[0]!.diagram;
+    const elementIds = [...new Set(results.flatMap(result => Object.keys(result.diagram.elements)))];
+    const elements: CompiledDiagram['elements'] = {};
+
+    for (const id of elementIds) {
+        const own = results.map(result => result.diagram.elements[id]);
+        const base = own.find(element => element != null)!;
+        const merge = <T extends object>(list: (element: CompiledElement) => T[] | undefined) => mergeList(own.map(element => element != null ? list(element) : undefined), scopes);
+        const teleports = merge(element => element.teleports);
+        const follows = merge(element => element.follows);
+
+        elements[id] = {
+            ...base,
+            spawns: merge(element => element.spawns),
+            poses: merge(element => element.poses),
+            turns: merge(element => element.turns),
+            sets: merge(element => element.sets),
+            ...(teleports.length > 0 ? { teleports } : {}),
+            ...(follows.length > 0 ? { follows } : {})
+        };
+    }
+
+    const lists = <T extends object>(list: (diagram: CompiledDiagram) => T[]) => mergeList(results.map(result => list(result.diagram)), scopes);
+    // A strategy's dialog and thumbnail come from its own world.
+    const ownWorld = (key: string) => {
+        const strategy = first.strategies.find(item => item.covers.includes(key))?.id;
+        return results.find((result, i) => (strategy == null || worlds[i]!.strategy === strategy) && result.diagram.thumbnails[key] != null) ?? results[0]!;
+    };
+    const keys = [...new Set(results.flatMap(result => [...Object.keys(result.diagram.clips), ...Object.keys(result.diagram.thumbnails)]))];
+    const clips: CompiledDiagram['clips'] = {};
+    const thumbnails: CompiledDiagram['thumbnails'] = {};
+
+    for (const key of keys) {
+        const { clips: ownClips, thumbnails: ownThumbnails } = ownWorld(key).diagram;
+
+        if (ownClips[key] != null) clips[key] = ownClips[key]!;
+        if (ownThumbnails[key] != null) thumbnails[key] = ownThumbnails[key]!;
+    }
+
+    const placements = new Map(results.flatMap(result => result.placements.map(placement => [JSON.stringify(placement), placement] as const)));
+    const diagnostics = mergeList(results.map(result => result.diagnostics), scopes, (diagnostic, scope) => Object.keys(scope).length > 0 ? { ...diagnostic, scope } : diagnostic);
+
+    return {
+        diagram: {
+            ...first,
+            definitions: Object.assign({}, ...results.map(result => result.diagram.definitions)),
+            elements,
+            order: [...new Set(results.flatMap(result => result.diagram.order))],
+            aoes: lists(diagram => diagram.aoes),
+            keyframes: lists(diagram => diagram.keyframes),
+            hints: lists(diagram => diagram.hints),
+            statuses: lists(diagram => diagram.statuses),
+            ticks: lists(diagram => diagram.ticks),
+            effects: lists(diagram => diagram.effects),
+            casts: lists(diagram => diagram.casts),
+            branches: lists(diagram => diagram.branches),
+            clips,
+            thumbnails
+        },
+        diagnostics,
+        placements: [...placements.values()]
+    };
+}
+
+/**
+ * The narrowest scopes that together hold in exactly a set of worlds (by index), without overlapping: the worlds'
+ * own scopes, merged where they differ in one strategy or branch group only and together cover every world of what
+ * they share. Every world at once is `[{}]`. Remembers each set's scopes, since many items share them.
+ *
+ * A scope keeps what its branch groups play under: the strategy of a group inside a strategy's arm, and the option of
+ * a group that another one is inside of. `select` takes a group's first option unless another is chosen, so without
+ * them, an option would also hold where its group doesn't play at all.
+ */
+function scopesOf(worlds: readonly Selection[], sections: readonly Section[]): (present: ReadonlySet<number>) => Scope[] {
+    const cache = new Map<string, Scope[]>();
+    const groups = new Map(sections.filter(section => section.kind === 'branch').map(section => [section.at, section]));
+    /** Whether `scope` still needs `dimension` for one of its other branch groups. */
+    const needed = (scope: Scope, dimension: number | 'strategy') => Object.keys(scope.branches ?? {}).map(Number).some(at => at !== dimension
+        && groups.get(at)?.within.some(arm => dimension === 'strategy' ? arm.kind === 'strategy' : arm.kind === 'branch' && arm.group === dimension));
+    const holds = (world: Selection, scope: Scope) => (scope.strategy == null || world.strategy === scope.strategy)
+        && Object.entries(scope.branches ?? {}).every(([at, name]) => world.branches[Number(at)] === name);
+    const without = (scope: Scope, dimension: number | 'strategy'): Scope => {
+        if (dimension === 'strategy') return scopeOf({ ...scope, strategy: undefined });
+
+        const { [dimension]: _, ...branches } = scope.branches ?? {};
+        return scopeOf({ ...scope, branches: Object.keys(branches).length > 0 ? branches : undefined });
+    };
+    const dimensionsOf = (scope: Scope): (number | 'strategy')[] => [...(scope.strategy != null ? ['strategy' as const] : []), ...Object.keys(scope.branches ?? {}).map(Number)];
+
+    return present => {
+        const key = [...present].sort((a, b) => a - b).join(',');
+        const known = cache.get(key);
+
+        if (known != null) return known;
+
+        let cells = [...present].map(i => ({ scope: scopeOf({ strategy: worlds[i]!.strategy, branches: Object.keys(worlds[i]!.branches).length > 0 ? worlds[i]!.branches : undefined }), members: new Set([i]) }));
+        let changed = true;
+
+        while (changed) {
+            changed = false;
+
+            for (const dimension of new Set(cells.flatMap(cell => dimensionsOf(cell.scope)))) {
+                const groups = new Map<string, typeof cells>();
+
+                for (const cell of cells.filter(cell => dimensionsOf(cell.scope).includes(dimension) && !needed(cell.scope, dimension))) {
+                    const key = scopeKey(without(cell.scope, dimension));
+                    groups.set(key, [...groups.get(key) ?? [], cell]);
+                }
+
+                for (const group of groups.values()) {
+                    const wider = without(group[0]!.scope, dimension);
+                    const covered = worlds.flatMap((world, i) => holds(world, wider) ? [i] : []);
+                    const members = new Set(group.flatMap(cell => [...cell.members]));
+
+                    if (covered.length === members.size && covered.every(i => members.has(i))) {
+                        cells = [...cells.filter(cell => !group.includes(cell)), { scope: wider, members }];
+                        changed = true;
+                    }
+                }
+
+                if (changed) break;
+            }
+        }
+
+        const scopes = cells.map(cell => cell.scope);
+        cache.set(key, scopes);
+        return scopes;
+    };
+}
+
+/**
+ * The items of the worlds' lists (`undefined` for a world that lacks the list's owner), each once per scope of
+ * {@link scopesOf} for the worlds that have it, tagged by `tag` (by default, with the scope's keys). Identical items of
+ * a world count separately. The order keeps each world's own order, which decides ties such as two poses at one time.
+ */
+function mergeList<T extends object, R = T & Scope>(lists: readonly (readonly T[] | undefined)[], scopes: (present: ReadonlySet<number>) => Scope[], tag: (item: T, scope: Scope) => R = (item, scope) => ({ ...item, ...scope }) as R): R[] {
+    const nodes = new Map<string, { item: T, worlds: Set<number>, index: number, after: Set<string>, waiting: number }>();
+
+    lists.forEach((list, world) => {
+        const counts = new Map<string, number>();
+        let previous: string | undefined;
+
+        for (const item of list ?? []) {
+            const json = JSON.stringify(item);
+            const count = counts.get(json) ?? 0;
+            const key = `${count}:${json}`;
+            let node = nodes.get(key);
+
+            counts.set(json, count + 1);
+
+            if (node == null) {
+                node = { item, worlds: new Set(), index: nodes.size, after: new Set(), waiting: 0 };
+                nodes.set(key, node);
+            }
+
+            node.worlds.add(world);
+
+            if (previous != null && !nodes.get(previous)!.after.has(key)) {
+                nodes.get(previous)!.after.add(key);
+                node.waiting++;
+            }
+
+            previous = key;
+        }
+    });
+
+    // Each world's order, merged: of the items whose predecessors are all out, the one seen first goes next.
+    const ready = [...nodes.entries()].filter(([, node]) => node.waiting === 0).map(([key]) => key);
+    const ordered: string[] = [];
+    const byIndex = (a: string, b: string) => nodes.get(a)!.index - nodes.get(b)!.index;
+
+    ready.sort(byIndex);
+
+    while (ready.length > 0) {
+        const key = ready.shift()!;
+        ordered.push(key);
+
+        for (const next of nodes.get(key)!.after) {
+            if (--nodes.get(next)!.waiting === 0) {
+                const at = ready.findIndex(other => byIndex(next, other) < 0);
+                ready.splice(at === -1 ? ready.length : at, 0, next);
+            }
+        }
+    }
+
+    // Worlds that order the same items differently leave a cycle, whose items go last, in the order they were seen.
+    if (ordered.length < nodes.size) {
+        const done = new Set(ordered);
+        ordered.push(...[...nodes.keys()].filter(key => !done.has(key)).sort(byIndex));
+    }
+
+    return ordered.flatMap(key => {
+        const node = nodes.get(key)!;
+        return scopes(node.worlds).map(scope => tag(node.item, scope));
+    });
+}
+
+/**
+ * Compiles one world of {@link worldsOf}: only the statements whose arms hold in it. Its items have no scope. Exported
+ * for the tests, which check that the merged diagram plays each world as this compiles it.
+ */
+export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Selection, strategyIds: readonly string[]): CompileResult {
+    const { actions } = input;
+    const diagnostics: Diagnostic[] = [];
     const placements: { line: number, id: string, at: number }[] = [];
     const error = (line: number, message: string) => {
         diagnostics.push({ line, message });
@@ -956,15 +1171,11 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
         return undefined;
     };
 
-    // Skips, branches and strategies come first, since they decide which statements and uses count at all.
+    // Skips come first, since they decide which uses count at all. The parser keeps them out of `if` sections, so every
+    // world has the same, and they run to the next statement of the whole file.
     const skips: [number, number][] = [];
-    const branches: CompiledDiagram['branches'] = [];
-    const scopes = new Map<Statement, Scope>();
-    const lastInScope = new Map<string, number>();
-    let scope: Scope = {};
-    let openGroup: CompiledDiagram['branches'][number] | null = null;
-    let openOption: CompiledDiagram['branches'][number]['options'][number] | null = null;
     const body: Statement[] = [];
+    // Every world ends at the same time, that of the file's last statement.
     const lastTime = parsed.statements.reduce((max, s) => Math.max(max, s.at), 0);
     // Past the last use, so that a skip to the end also covers it.
     const end = Math.max(lastTime, ...input.uses.map(use => use.at)) + 1;
@@ -975,56 +1186,13 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
             return;
         }
 
-        if (s.verb === 'strategy') {
-            if (s.sign === '-') {
-                scope = { ...scope, strategy: undefined };
-            } else {
-                if (!strategies.some(strategy => strategy.id === s.text)) error(s.line, `unknown strategy "${s.text}"`);
-
-                scope = { ...scope, strategy: s.text };
-            }
-
-            return;
-        }
-
-        if (s.verb === 'branch') {
-            if (s.sign === '-') {
-                if (openGroup == null) {
-                    error(s.line, '-branch without a +branch');
-                } else {
-                    openGroup.end = s.at;
-                }
-
-                openGroup = null;
-                openOption = null;
-                scope = { ...scope, branch: undefined };
-            } else {
-                if (openGroup == null) {
-                    openGroup = { at: s.at, end: s.at, options: [] };
-                    branches.push(openGroup);
-                }
-
-                openOption = { name: s.text, last: s.at };
-                openGroup.options.push(openOption);
-                scope = { ...scope, branch: [openGroup.at, s.text] };
-            }
-
-            return;
-        }
-
-        const key = scopeKey(scope);
-        const previous = lastInScope.get(key) ?? (scope.branch != null || scope.strategy != null ? -Infinity : lastInScope.get('|') ?? -Infinity);
-
-        // Time restarts in each branch and strategy block, so order only holds within one.
-        if (s.at < previous) error(s.line, `${s.at} is out of sequence`);
-
-        lastInScope.set(key, s.at);
-
-        if (openOption != null) openOption.last = Math.max(openOption.last, s.at);
-
-        scopes.set(s, scopeOf(scope));
-        body.push(s);
+        if (armsApply(s.arms, world, strategyIds)) body.push(s);
     });
+
+    // The branch groups that play in this world: each shows its buttons until the timeline goes on after its `endif`.
+    const branches: CompiledDiagram['branches'] = parsed.sections
+        .filter(section => section.kind === 'branch' && armsApply(section.within, world, strategyIds))
+        .map(section => ({ at: section.at, end: section.end ?? end, options: section.arms.flatMap(arm => arm.kind === 'branch' ? [{ name: arm.name }] : []) }));
 
     const inSkip = (t: number) => skips.some(([from, to]) => t >= from && t < to);
     const uses = input.uses.filter(use => !inSkip(use.at)).sort((a, b) => a.at - b.at);
@@ -1507,8 +1675,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                         return;
                     }
 
-                    // The removed `define element` is reported where it's defined, and may be placed by any verb.
-                    if (kind != null && kind !== 'element' && kind !== (KIND_OF_VERB[s.verb] ?? s.verb) && !PLAYERS.includes(id)) {
+                    if (kind != null && kind !== (KIND_OF_VERB[s.verb] ?? s.verb) && !PLAYERS.includes(id)) {
                         error(s.line, `"${base}" is ${kind === 'arena' ? 'the arena' : `defined as a ${kind}`}, so it can't be placed with "${s.sign}${s.verb}"`);
                     }
 
@@ -1568,8 +1735,6 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                             }
 
                             element.props.text = text;
-                        } else if (clause.key === 'bnpc') {
-                            error(s.line, `"${id}" can't have a "bnpc": ${BNPC_INSTEAD}`);
                         } else if (s.verb === 'headmarker' && clause.key === 'size' && !(Number(literal(value)) > 0)) {
                             // A headmarker's size overrides its look's own (its marker class's) and is in plane units.
                             error(s.line, `"size" of headmarker "${id}" takes a number above 0, in plane units`);
@@ -1934,7 +2099,7 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
     ].sort((a, b) => a.statement.at - b.statement.at);
 
     for (const { statement, use } of timed) {
-        run(statement, scopes.get(statement) ?? {}, undefined, use);
+        run(statement, {}, undefined, use);
     }
 
     // The viewer needs a definition of the arena to draw it, which the ID-less `define arena` gives if there is one.
@@ -2139,7 +2304,8 @@ export function compileDiagram(source: string, input: DiagramInput): { diagram: 
                 continue;
             }
 
-            if (thumbnails[key] == null) error(0, `covered strategy "${key}" has no thumbnail`);
+            // Only the strategy's own world has its thumbnail, which may be inside its arm.
+            if (thumbnails[key] == null && (world.strategy == null || world.strategy === strategy.id)) error(0, `covered strategy "${key}" has no thumbnail`);
 
             clips[key] = { from: use.at, to: use.lastChild ?? keyframes.find(k => k.at > use.at)?.at ?? end };
         }

@@ -5,7 +5,7 @@ import { baseOf, diagramInputOf, DefinitionField, fieldsOf, hasBalancedBrackets,
 import { fixableDiagnostics, LinterOptions } from './server';
 import { DiagramField, DiagramSchema, DiagramValueType, fieldsOfKind, typesOfBlock } from './types/diagram-schema';
 import { compileDiagram, readFieldValue } from './utility/diagram-ddl/compile';
-import { Definition, parse, ParseResult, Statement } from './utility/diagram-ddl/parse';
+import { Definition, parse, ParseResult, scopeNote, Statement } from './utility/diagram-ddl/parse';
 
 /** The element IDs that mean something by themselves, and so can't be defined. */
 const RESERVED_ELEMENTS = new Set(['players', 'DPS', 'tanks', 'healers', 'supports', 'T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2', 'cast', 'hint', 'marker-a', 'marker-1', 'marker-b', 'marker-2', 'marker-c', 'marker-3', 'marker-d', 'marker-4']);
@@ -355,9 +355,11 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
         }).join('\n');
 
         try {
-            const { diagnostics, placements } = compileDiagram(complete, input);
+            const { diagram, diagnostics, placements } = compileDiagram(complete, input);
+            const strategyName = (id: string) => diagram.strategies.find(strategy => strategy.id === id)?.name ?? id;
 
-            diagnostics.forEach(({ line, message }) => report(line, message));
+            // One that comes up under some strategies or branch options only says which.
+            diagnostics.forEach(diagnostic => report(diagnostic.line, `${diagnostic.message}${scopeNote(diagnostic, strategyName)}`));
             lastPlacements.set(textDocument.uri, { version: textDocument.version, placements });
         } catch (e) {
             // Half-typed lines can break what the compiler assumes the parser has checked.

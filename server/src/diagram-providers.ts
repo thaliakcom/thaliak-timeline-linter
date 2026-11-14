@@ -169,6 +169,30 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             const shape = definition.kind === 'action' ? timeline?.js.actions?.[baseOf(definition.id)]?.shape : undefined;
             const fields = fieldsOf(definition, lines);
             const types = typesOfBlock(definition.kind, fields.find(x => x.key === 'type')?.value, typeof shape === 'string' ? shape : undefined);
+
+            /** Completes a hook statement, `text` being what's written of it. */
+            const hookCompletion = (text: string): CompletionItem[] => {
+                const hook = /^([+-]?)([a-z][a-z-]*):\s*(.*)$/.exec(text);
+
+                // Before a colon, it's the verb.
+                if (hook == null) {
+                    return keyword(HOOK_VERBS, label => schema?.verbs[label]?.description);
+                }
+
+                // After a hook's colon come its arguments, and an effect only plays on what the block draws.
+                [, sign, verb, args] = hook as unknown as [string, string, string, string];
+                effectTypes = types;
+
+                // In an action's hook, a statement may leave out its subject to move the caster, and start with a clause.
+                if (definition.kind === 'action' && SUBJECTLESS_HOOK.test(text)) {
+                    args = `$caster ${args}`;
+                } else if (definition.kind === 'action' && args === '' && MOVES.has(verb)) {
+                    return [...argumentsCompletion(), ...keyword(verbsOfSchema[verb]?.clauses ?? [], label => schema?.clauses[label]?.description)];
+                }
+
+                return argumentsCompletion();
+            };
+
             // A line indented deeper than the keys continues the field above it, which for a hook is one more statement.
             const continued = fields.find(x => x.line === line && x.valueStart === x.start);
 
@@ -214,29 +238,15 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
                     return member(Object.keys(values), undefined, label => values[label]);
                 }
             }
+        }
 
-            /** Completes a hook statement, `text` being what's written of it. */
-            function hookCompletion(text: string): CompletionItem[] {
-                const hook = /^([+-]?)([a-z][a-z-]*):\s*(.*)$/.exec(text);
+        // An `if` or `elif` line: its kind, then for a strategy section, the strategies it holds for.
+        const sectionLine = /^\s*(if|elif)\s+(\S*)(\s[^:]*)?$/.exec(before);
 
-                // Before a colon, it's the verb.
-                if (hook == null) {
-                    return keyword(HOOK_VERBS, label => schema?.verbs[label]?.description);
-                }
+        if (sectionLine != null) {
+            if (sectionLine[3] == null) return keyword(['strategy', 'branch']);
 
-                // After a hook's colon come its arguments, and an effect only plays on what the block draws.
-                [, sign, verb, args] = hook as unknown as [string, string, string, string];
-                effectTypes = types;
-
-                // In an action's hook, a statement may leave out its subject to move the caster, and start with a clause.
-                if (definition!.kind === 'action' && SUBJECTLESS_HOOK.test(text)) {
-                    args = `$caster ${args}`;
-                } else if (definition!.kind === 'action' && args === '' && MOVES.has(verb)) {
-                    return [...argumentsCompletion(), ...keyword(verbsOfSchema[verb]?.clauses ?? [], label => schema?.clauses[label]?.description)];
-                }
-
-                return argumentsCompletion();
-            }
+            return sectionLine[2] === 'strategy' ? member(strategies) : [];
         }
 
         const rest = before.replace(/^\s*(?:\d+\s+)?/, '');
@@ -248,17 +258,21 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             const active = parsed.statements.findLast(statement => statement.line - 1 < line);
             const isContinuation = /^\s/.test(before) && active != null && !isBareVerb(`${active.sign}${active.verb}`) && !/^\d/.test(before.trim());
             const isOneWord = !/\s/.test(rest);
+            // `if`, `elif`, `else:` and `endif` stand on their own line, without a timestamp.
+            const sections = /^\s*[a-z]*$/.test(before)
+                ? items(['if', 'elif', 'else', 'endif'], CompletionItemKind.Keyword, label => edit(label === 'else' ? 'else:' : label === 'endif' ? label : `${label} `), 'y', label => schema?.sections?.[label]?.description)
+                : [];
             const verbs = isOneWord ? items(Object.keys(verbsOfSchema), CompletionItemKind.Keyword, label => edit(isBareVerb(label) ? label : `${label}: `), 'z', label => verbsOfSchema[label]?.description) : [];
 
             if (!isContinuation) {
-                return [...verbs, ...(before === '' || /^define?$/.test(before) || /^[a-z]+$/.test(before) ? keyword(['define'], () => schema?.define.description) : [])];
+                return [...verbs, ...sections, ...(before === '' || /^define?$/.test(before) || /^[a-z]+$/.test(before) ? keyword(['define'], () => schema?.define.description) : [])];
             }
 
             sign = active!.sign;
             verb = active!.verb;
             args = rest;
 
-            return [...verbs, ...argumentsCompletion()];
+            return [...verbs, ...sections, ...argumentsCompletion()];
         }
 
         return argumentsCompletion();
@@ -305,8 +319,6 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
 
                     return member(effects, undefined, label => schema?.animations.exit[label] ?? schema?.looks.markers[label]);
                 }
-                case 'strategy':
-                    return member(strategies);
                 case 'thumbnail':
                     return member(timeline != null ? getStrategyKeys(timeline.document) : []);
                 case 'actor':
@@ -395,7 +407,7 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
                 return schema.animations.exit[id] != null ? `**${id}**\n\n${schema.animations.exit[id]}` : null;
             }
 
-            if (verb === 'strategy') {
+            if (kind === 'strategy') {
                 return definedAs(id, true);
             }
 
@@ -417,7 +429,7 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
             const definition = parsed.definitions.find(x => x.line - 1 === line);
 
             if (word === 'define') return hover(`**define**\n\n${schema.define.description}`);
-            if (definition != null && word === definition.kind && definition.kind !== 'element') return hover(`**define ${word}**\n\n${schema.define[definition.kind].description}`);
+            if (definition != null && word === definition.kind) return hover(`**define ${word}**\n\n${schema.define[definition.kind].description}`);
 
             return definition?.kind === 'action' && isAction(definition.id) ? hover(await actionTooltip(context, definition.id)) : null;
         }
@@ -466,6 +478,13 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
         // The time at the start of a line.
         if (start === 0 && /^\d+$/.test(word)) {
             return hover(`**${formatTime(Number(word))}**`);
+        }
+
+        // The keyword of an `if`, `elif`, `else` or `endif` line.
+        const section = /^\s*(if|elif|else|endif)\b/.exec(text);
+
+        if (section != null && word === section[1] && start === section[0].length - word.length) {
+            return hover(schema.sections?.[word] != null ? `**${word}**\n\n${schema.sections[word]!.description}` : null);
         }
 
         // A verb: the line's first word after its time, or the start of a statement under `on:enter` or `on:exit`.
@@ -721,7 +740,7 @@ export function diagramReferenceProvider(documents: TextDocuments<TextDocument>)
 }
 
 /** The kinds of `define` block whose ID is an element's, which statements and element clauses refer to. */
-const ELEMENT_KINDS: readonly Definition['kind'][] = ['actor', 'object', 'puddle', 'tether', 'element'];
+const ELEMENT_KINDS: readonly Definition['kind'][] = ['actor', 'object', 'puddle', 'tether'];
 
 /**
  * What a rename at `position` of a `.diagram` file renames: the ID of a `define` block, at the block or where an ID

@@ -273,8 +273,11 @@ export interface DiagramToken {
     line: number;
     start: number;
     end: number;
-    /** What it is: a statement's subject, a value of a clause, the ID of a `define` block, or the value of `flash`. */
-    kind: 'subject' | 'value' | 'definition' | 'field';
+    /**
+     * What it is: a statement's subject, a value of a clause, the ID of a `define` block, the value of `flash`, or a
+     * strategy that an `if strategy` or `elif strategy` line names.
+     */
+    kind: 'subject' | 'value' | 'definition' | 'field' | 'strategy';
     /** The statement it's part of, unless it's in a `define` block's own lines. */
     statement?: Statement;
     /** The clause it's a value of. */
@@ -283,9 +286,9 @@ export interface DiagramToken {
     field?: string;
 }
 
-/** Whether a token names a strategy (`define strategy` or `+strategy:`), whose IDs are apart from those of elements. */
+/** Whether a token names a strategy (`define strategy` or `if strategy`), whose IDs are apart from those of elements. */
 export function isStrategyToken(token: DiagramToken, definitions: Definition[]): boolean {
-    return token.statement?.verb === 'strategy'
+    return token.kind === 'strategy'
         || token.kind === 'definition' && definitions.some(definition => definition.kind === 'strategy' && definition.line - 1 === token.line);
 }
 
@@ -299,14 +302,6 @@ export const SUBJECTLESS_HOOK = /^[+-]?[a-z][a-z-]*:\s+(?:to|toward|rotate|over)
 
 /** Finds a statement's words in `raw`, its line. A `subjectless` one starts with a clause. */
 function* statementTokens(statement: Statement, raw: string, line: number, subjectless: boolean = false): Generator<DiagramToken> {
-    // `+strategy: <ID>` takes free text, which is the ID of a `define strategy`.
-    if (statement.verb === 'strategy' && statement.sign === '+' && statement.text !== '') {
-        const start = raw.indexOf(statement.text, LINE_PREFIX.exec(raw)![0].length);
-
-        yield { text: statement.text, line, start, end: start + statement.text.length, kind: 'subject', statement };
-        return;
-    }
-
     if (statement.subjects.length === 0) {
         return;
     }
@@ -341,6 +336,20 @@ export function tokensOf(source: string, parsed: ParseResult = parse(source)): D
 
     for (const statement of parsed.statements) {
         tokens.push(...statementTokens(statement, lines[statement.line - 1]!, statement.line - 1));
+    }
+
+    // The strategies of each `if strategy a, b:` and `elif strategy …:` line, after its `strategy`.
+    for (const arm of parsed.sections.flatMap(section => section.arms)) {
+        if (arm.kind !== 'strategy' || arm.else) continue;
+
+        const raw = lines[arm.line - 1]!;
+        let offset = /^\s*(?:if|elif)\s+strategy\b/.exec(raw)?.[0].length ?? 0;
+
+        for (const name of arm.names) {
+            const start = raw.indexOf(name, offset);
+            offset = start + name.length;
+            tokens.push({ text: name, line: arm.line - 1, start, end: offset, kind: 'strategy' });
+        }
     }
 
     for (const definition of parsed.definitions) {
@@ -421,11 +430,11 @@ function namesAs(token: DiagramToken, kind: 'action' | 'status' | 'actor', key: 
 
     if (kind === 'actor') {
         // A `place`'s subject is an action, and a `flash` an element of the diagram.
-        return named && verb != null && verb !== 'status' && verb !== 'effect' && verb !== 'strategy' && !(verb === 'place' && token.kind === 'subject');
+        return named && verb != null && verb !== 'status' && verb !== 'effect' && !(verb === 'place' && token.kind === 'subject');
     }
 
-    // An `attached` value is an actor's key, and a `+strategy` a strategy's ID.
-    return named && verb !== 'status' && verb !== 'effect' && verb !== 'strategy' && token.field !== 'attached';
+    // An `attached` value is an actor's key, and an `if strategy`'s a strategy's ID.
+    return named && verb !== 'status' && verb !== 'effect' && token.kind !== 'strategy' && token.field !== 'attached';
 }
 
 /** The clauses whose values name an element (`"takes": "element"` in `diagram.schema.json`). */
@@ -458,7 +467,7 @@ export function idColumnsIn(token: DiagramToken, id: string): number[] {
 /**
  * Where the `.diagram` file `textDocument` names what its `define <kind> <id>` block defines, to rename it: the
  * block's ID; for an element, each ID or ID base that {@link namesElement} tokens give; for a gradient, each
- * `url(#<id>)`; for a strategy, each `+strategy`. An arena's are only its block's: the timeline's `<arena>` items name
+ * `url(#<id>)`; for a strategy, each `if strategy` or `elif strategy` that names it. An arena's are only its block's: the timeline's `<arena>` items name
  * it. Actions and timeline actors are the timeline's keys, which {@link occurrencesOf} finds.
  */
 export function definitionOccurrencesOf(textDocument: TextDocument, kind: Definition['kind'], id: string): Range[] {

@@ -7,11 +7,11 @@ export type XY = [number, number];
 /** How long a motion speeds up at its start and slows down at its end, in ms, if it lasts long enough. */
 export const MOTION_RAMP = 150;
 
-/** The strategy and branch a compiled item belongs to. Unscoped items always apply. */
+/** The strategy and branch options a compiled item belongs to, all of which must be chosen for it to apply. Unscoped items always apply. */
 export interface Scope {
     strategy?: string;
-    /** The branch group's start time, and the chosen option's name. */
-    branch?: [at: number, name: string];
+    /** The option's name, per branch group's start time. */
+    branches?: Record<number, string>;
 }
 
 export type Pose = Scope & { start: number, end: number } & (
@@ -42,7 +42,7 @@ export interface CompiledElement {
     /** Where its front points when it's drawn unrotated, in degrees clockwise from north. Absent for north. */
     facing?: number;
     /** When it follows something (`+follow`), which decides its position and rotation then. `line` is the `+follow`'s. */
-    follows?: { from: number, to: number, target: string, line: number }[];
+    follows?: (Scope & { from: number, to: number, target: string, line: number })[];
     /** Each `teleport`: it turns from `start`, then slides from `slide` to `arrive`, fading out and back in on the way. */
     teleports?: Teleport[];
 }
@@ -173,7 +173,8 @@ export interface CompiledDiagram {
     /** Cast bars, each drawn above the element that casts it. */
     casts: (Scope & { caster: string, from: number, to: number, text: string })[];
     strategies: { id: string, name: string, covers: string[] }[];
-    branches: { at: number, end: number, options: { name: string, last: number }[] }[];
+    /** The branch groups: buttons show from `at` until `end`, the first timestamp after the group's `endif`. */
+    branches: (Scope & { at: number, end: number, options: { name: string }[] })[];
     /** Per strategy key, the part of the timeline its dialog plays. */
     clips: Record<string, { from: number, to: number }>;
     /** Per strategy key, the frame that its thumbnail shows. */
@@ -196,23 +197,13 @@ export interface Selection {
 }
 
 /** Returns whether an item applies under a selection. An unset choice takes the first option of its kind. */
-function applies(scope: Scope, diagram: CompiledDiagram, selection: Selection): boolean {
+export function applies(scope: Scope, diagram: CompiledDiagram, selection: Selection): boolean {
     if (scope.strategy != null && scope.strategy !== (selection.strategy ?? diagram.strategies[0]?.id)) return false;
 
-    if (scope.branch != null) {
-        const [at, name] = scope.branch;
-        const chosen = selection.branches[at] ?? diagram.branches.find(branch => branch.at === at)?.options[0]?.name;
-
-        if (name !== chosen) return false;
-    }
-
-    return true;
+    return Object.entries(scope.branches ?? {}).every(([at, name]) =>
+        name === (selection.branches[Number(at)] ?? diagram.branches.find(branch => branch.at === Number(at))?.options[0]?.name));
 }
 
-/**
- * The diagram as it plays under a selection, with only the items that apply. A branch shorter
- * than its group fast-forwards, which is another skip here. The other functions take this.
- */
 /** Where a ghost is at `t`, between its samples, or `null` before its first, after its last and while it's hidden. */
 export function ghostAt(track: GhostTrack, t: number): XY | null {
     if (track.hidden?.some(([from, to]) => t >= from && t < to)) return null;
@@ -229,6 +220,7 @@ export function ghostAt(track: GhostTrack, t: number): XY | null {
     return [fromX + (toX - fromX) * progress, fromY + (toY - fromY) * progress];
 }
 
+/** The diagram as it plays under a selection, with only the items that apply. The other functions take this. */
 export function select(diagram: CompiledDiagram, selection: Selection): CompiledDiagram {
     const keep = <T extends Scope>(items: T[]) => items.filter(item => applies(item, diagram, selection));
     const elements: CompiledDiagram['elements'] = {};
@@ -240,15 +232,10 @@ export function select(diagram: CompiledDiagram, selection: Selection): Compiled
             poses: keep(element.poses),
             turns: keep(element.turns),
             sets: keep(element.sets),
-            ...(element.teleports != null ? { teleports: keep(element.teleports) } : {})
+            ...(element.teleports != null ? { teleports: keep(element.teleports) } : {}),
+            ...(element.follows != null ? { follows: keep(element.follows) } : {})
         };
     }
-
-    const fastForwards = diagram.branches.flatMap((branch): [number, number][] => {
-        const chosen = selection.branches[branch.at] ?? branch.options[0]?.name;
-        const last = branch.options.find(option => option.name === chosen)?.last ?? branch.end;
-        return last < branch.end ? [[last, branch.end]] : [];
-    });
 
     return {
         ...diagram,
@@ -260,7 +247,7 @@ export function select(diagram: CompiledDiagram, selection: Selection): Compiled
         ticks: keep(diagram.ticks),
         effects: keep(diagram.effects),
         casts: keep(diagram.casts),
-        skips: [...diagram.skips, ...fastForwards].sort((a, b) => a[0] - b[0])
+        branches: keep(diagram.branches)
     };
 }
 

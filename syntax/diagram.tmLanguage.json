@@ -7,11 +7,13 @@
         { "include": "#define-gradient" },
         { "include": "#define-arena" },
         { "include": "#define-kind" },
-        { "include": "#define-element" },
         { "include": "#define-action" },
         { "include": "#define-strategy" },
         { "include": "#define-coordinate-space" },
         { "include": "#define" },
+        { "include": "#section-strategy" },
+        { "include": "#section-branch" },
+        { "include": "#section-end" },
         { "include": "#text-statement" },
         { "include": "#enum-statement" },
         { "include": "#statement" },
@@ -53,16 +55,6 @@
                 "1": { "name": "keyword.other.define.thaliak-diagram" },
                 "2": { "name": "storage.modifier.thaliak-diagram" },
                 "3": { "name": "entity.name.type.$2.thaliak-diagram" }
-            },
-            "end": "^(?=\\S)",
-            "patterns": [{ "include": "#define-body" }]
-        },
-        "define-element": {
-            "begin": "^(define)\\s+(element)\\s+(\\S+)",
-            "beginCaptures": {
-                "1": { "name": "keyword.other.define.thaliak-diagram" },
-                "2": { "name": "storage.modifier.thaliak-diagram" },
-                "3": { "name": "entity.name.type.element.thaliak-diagram" }
             },
             "end": "^(?=\\S)",
             "patterns": [{ "include": "#define-body" }]
@@ -178,8 +170,42 @@
             "match": "^\\d+(?=\\s*(?://|$))",
             "name": "constant.numeric.time.thaliak-diagram"
         },
+        "section-strategy": {
+            "comment": "`if strategy lpdu, naur:` and `elif strategy …:`: the strategies are `define strategy` IDs.",
+            "begin": "^\\s*(if|elif)\\s+(strategy)\\b",
+            "beginCaptures": {
+                "1": { "name": "keyword.control.conditional.thaliak-diagram" },
+                "2": { "name": "storage.modifier.thaliak-diagram" }
+            },
+            "end": "$",
+            "patterns": [
+                { "include": "#comment" },
+                { "match": "[^\\s,:/]+", "name": "entity.name.type.strategy.thaliak-diagram" },
+                { "match": ",", "name": "punctuation.separator.comma.thaliak-diagram" },
+                { "match": ":", "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
+            ]
+        },
+        "section-branch": {
+            "comment": "`if branch <name>:` and `elif branch <name>:`: the option's name is free text.",
+            "match": "^\\s*(if|elif)\\s+(branch)\\b\\s*((?:(?!//)[^:])*)(:)",
+            "captures": {
+                "1": { "name": "keyword.control.conditional.thaliak-diagram" },
+                "2": { "name": "storage.modifier.thaliak-diagram" },
+                "3": { "name": "string.unquoted.plain.thaliak-diagram" },
+                "4": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
+            }
+        },
+        "section-end": {
+            "comment": "`else:` and `endif`.",
+            "match": "^\\s*(?:(else)\\s*(:)|(endif))(?=\\s*(?://|$))",
+            "captures": {
+                "1": { "name": "keyword.control.conditional.thaliak-diagram" },
+                "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" },
+                "3": { "name": "keyword.control.conditional.thaliak-diagram" }
+            }
+        },
         "text-statement": {
-            "match": "^(\\d+)?\\s*(?:([+-])(hint|branch|strategy)|(thumbnail))(:)\\s*((?:(?!//).)*)",
+            "match": "^(\\d+)?\\s*(?:([+-])(hint)|(thumbnail))(:)\\s*((?:(?!//).)*)",
             "captures": {
                 "1": { "name": "constant.numeric.time.thaliak-diagram" },
                 "2": { "name": "entity.name.tag.verb.operator.thaliak-diagram" },

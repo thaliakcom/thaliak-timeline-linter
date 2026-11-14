@@ -38,6 +38,8 @@ export interface DiagramSchema {
         takes?: 'element';
     }>;
     placeholders: Record<string, string>;
+    /** The keywords of `if` sections (`if`, `elif`, `else`, `endif`). Optional, for schemas from before them. */
+    sections?: Record<string, { description: string }>;
     define: {
         description: string;
         gradient: { description: string };
