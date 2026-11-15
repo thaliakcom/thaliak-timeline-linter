@@ -84,7 +84,6 @@
                 { "include": "#hook-key" },
                 { "include": "#enum-hook" },
                 { "include": "#hook" },
-                { "include": "#element-field" },
                 { "include": "#headmarker-field" },
                 {
                     "comment": "A key still being typed, before its colon. Not a string, so that VS Code suggests the fields while it's typed.",
@@ -133,18 +132,6 @@
             },
             "end": "$",
             "patterns": [{ "include": "#arguments" }]
-        },
-        "element-field": {
-            "begin": "(?<![\\w-])(flash|use)\\s*(:)",
-            "beginCaptures": {
-                "1": { "name": "entity.name.tag.field.thaliak-diagram" },
-                "2": { "name": "punctuation.separator.key-value.mapping.thaliak-diagram" }
-            },
-            "end": "$",
-            "patterns": [
-                { "include": "#comment" },
-                { "include": "#id" }
-            ]
         },
         "time": {
             "match": "^\\d+(?=\\s*(?://|$))",

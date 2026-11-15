@@ -285,8 +285,6 @@ export function isStrategyToken(token: DiagramToken, definitions: Definition[]):
 
 /** Where the arguments of a statement's line start: past the timestamp and verb. */
 const LINE_PREFIX = /^\s*(?:\d+\s+)?(?:[+-]?[a-z][a-z-]*:\s*)?/;
-/** The fields whose value names an element. */
-const ELEMENT_FIELDS = new Set(['flash']);
 
 /** A hook statement that starts with a clause instead of a subject (`teleport: to (0, 0)`), which moves the action's caster. */
 export const SUBJECTLESS_HOOK = /^[+-]?[a-z][a-z-]*:\s+(?:to|toward|rotate|over)\b/;
@@ -350,7 +348,7 @@ export function tokensOf(source: string, parsed: ParseResult = parse(source)): D
         tokens.push({ text: definition.id, line, start, end: start + definition.id.length, kind: 'definition' });
 
         for (const field of fieldsOf(definition, lines)) {
-            if (ELEMENT_FIELDS.has(field.key) && field.value !== '' || field.key === 'attached' && definition.kind === 'action' && !/^(?:true|false)$/.test(field.value)) {
+            if (field.key === 'attached' && definition.kind === 'action' && !/^(?:true|false)$/.test(field.value)) {
                 tokens.push({ text: field.value, line: field.line, start: field.valueStart, end: field.valueStart + field.value.length, kind: 'field', field: field.key });
             } else if ((field.key === 'on:enter' || field.key === 'on:exit') && field.value !== '') {
                 // A hook line has no timestamp of its own, and only its columns matter here.

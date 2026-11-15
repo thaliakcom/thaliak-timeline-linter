@@ -107,10 +107,6 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
             yield error('ignored-by-look', firstOf('width')!, `'width' is ignored with 'look: ${look}'; remove it or use 'look: plain'.`);
         }
 
-        if (type != null && (SHAPE_TYPES.includes(type) || type === 'link') && firstOf('color') != null) {
-            yield error('color-in-look', firstOf('color')!, `'color' moved into the look: 'look: plain color ${firstOf('color')!.value}'.`);
-        }
-
         if (type != null && look != null) {
             const list = SHAPE_TYPES.includes(type) ? 'aoes' : type === 'link' ? 'tethers' : type === 'marker' ? 'markers' : undefined;
 
