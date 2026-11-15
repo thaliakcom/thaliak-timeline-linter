@@ -367,6 +367,17 @@ export function hasBalancedBrackets(text: string): boolean {
     return text.split('[').length === text.split(']').length;
 }
 
+/** A `hint` or `thumbnail` statement, also in a hook, whose free text may hold brackets of its own. */
+const TEXT_STATEMENT = /^\s*(?:\d+\s+)?(?:on:(?:enter|exit):\s*)?[+-]?(?:hint|thumbnail):/;
+
+/**
+ * Whether every `[` of the line `text` has its `]`, outside of quotes and of the free text of a `hint` or `thumbnail`,
+ * which the compiler doesn't expand (as `tokenize()` reads them).
+ */
+export function hasBalancedTemplates(text: string): boolean {
+    return TEXT_STATEMENT.test(text) || hasBalancedBrackets(text.replace(/"[^"]*"/g, ''));
+}
+
 /** The IDs a token stands for. A half-typed template stands for itself. */
 export function idsOf(token: string): string[] {
     return hasBalancedBrackets(token) ? expandTemplate(token) : [token];

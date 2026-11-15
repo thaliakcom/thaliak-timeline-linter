@@ -166,6 +166,7 @@ class OutlineView implements vscode.TreeDataProvider<OutlineNode> {
         let match: OutlineNode | undefined;
         let candidates = this.nodes;
 
+        // eslint-disable-next-line no-constant-condition -- ends by a break once no node contains the cursor
         while (true) {
             const next = candidates.find(node => contains(this.client.protocol2CodeConverter.asRange(node.range), cursor));
 

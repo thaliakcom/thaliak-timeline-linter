@@ -1,7 +1,7 @@
 // Diagnostics of `.diagram` files: whatever thaliak's build would report, plus the checks of what `define` blocks draw.
 import { Diagnostic, DiagnosticSeverity, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { baseOf, diagramInputOf, DefinitionField, fieldsOf, hasBalancedBrackets, isDiagramWip, linesOf, Timeline, timelineOf, tokensOf } from './diagram-context';
+import { baseOf, diagramInputOf, DefinitionField, fieldsOf, hasBalancedTemplates, isDiagramWip, linesOf, Timeline, timelineOf, tokensOf } from './diagram-context';
 import { fixableDiagnostics, LinterOptions } from './server';
 import { DiagramField, DiagramSchema, DiagramValueType, fieldsOfKind, typesOfBlock } from './types/diagram-schema';
 import { compileDiagram, readFieldValue } from './utility/diagram-ddl/compile';
@@ -343,7 +343,7 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
 
         // A half-typed `[` would stop the compiler altogether, and with it every other diagnostic.
         const complete = lines.map((text, i) => {
-            if (hasBalancedBrackets(text)) {
+            if (hasBalancedTemplates(text)) {
                 return text;
             }
 
