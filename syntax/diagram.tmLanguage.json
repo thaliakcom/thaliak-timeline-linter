@@ -7,8 +7,6 @@
         { "include": "#define-gradient" },
         { "include": "#define-arena" },
         { "include": "#define-kind" },
-        { "include": "#define-action" },
-        { "include": "#define-strategy" },
         { "include": "#define-coordinate-space" },
         { "include": "#define" },
         { "include": "#section-strategy" },
@@ -50,31 +48,11 @@
             "patterns": [{ "include": "#define-body" }]
         },
         "define-kind": {
-            "begin": "^(define)\\s+(arena|actor|object|puddle|tether)\\s+(\\S+)",
+            "begin": "^(define)\\s+(arena|actor|object|puddle|tether|action|strategy)\\s+(\\S+)",
             "beginCaptures": {
                 "1": { "name": "keyword.other.define.thaliak-diagram" },
                 "2": { "name": "storage.modifier.thaliak-diagram" },
                 "3": { "name": "entity.name.type.$2.thaliak-diagram" }
-            },
-            "end": "^(?=\\S)",
-            "patterns": [{ "include": "#define-body" }]
-        },
-        "define-action": {
-            "begin": "^(define)\\s+(action)\\s+(\\S+)",
-            "beginCaptures": {
-                "1": { "name": "keyword.other.define.thaliak-diagram" },
-                "2": { "name": "storage.modifier.thaliak-diagram" },
-                "3": { "name": "entity.name.type.action.thaliak-diagram" }
-            },
-            "end": "^(?=\\S)",
-            "patterns": [{ "include": "#define-body" }]
-        },
-        "define-strategy": {
-            "begin": "^(define)\\s+(strategy)\\s+(\\S+)",
-            "beginCaptures": {
-                "1": { "name": "keyword.other.define.thaliak-diagram" },
-                "2": { "name": "storage.modifier.thaliak-diagram" },
-                "3": { "name": "entity.name.type.strategy.thaliak-diagram" }
             },
             "end": "^(?=\\S)",
             "patterns": [{ "include": "#define-body" }]
@@ -90,10 +68,12 @@
             }
         },
         "define": {
-            "begin": "^(define)\\s+(\\S+)",
+            "comment": "A kind that isn't one (`define foo bar`) is illegal, like an unknown coordinate space.",
+            "begin": "^(define)\\s+(?:(\\S+)\\s+(?=\\S))?(\\S+)",
             "beginCaptures": {
                 "1": { "name": "keyword.other.define.thaliak-diagram" },
-                "2": { "name": "entity.name.type.thaliak-diagram" }
+                "2": { "name": "invalid.illegal.kind.thaliak-diagram" },
+                "3": { "name": "entity.name.type.thaliak-diagram" }
             },
             "end": "^(?=\\S)",
             "patterns": [{ "include": "#define-body" }]
@@ -113,7 +93,7 @@
                 },
                 {
                     "comment": "A clause of a value, as in `look: plain color #FFF6D5` or `exit: tornado speed 0.5`: a word followed by its value.",
-                    "match": "(?<![\\w#\\]-])[A-Za-z][\\w-]*(?=\\s+(?:-?\\.?\\d|\\(|#|true\\b|false\\b))",
+                    "match": "(?<![\\w#\\]-])[A-Za-z][\\w-]*(?=\\s+(?:-?\\d|\\(|#|true\\b|false\\b))",
                     "name": "variable.parameter.thaliak-diagram"
                 },
                 { "include": "#values" }
@@ -265,7 +245,7 @@
             "patterns": [{ "include": "#arguments" }]
         },
         "bare-statement": {
-            "match": "^(\\d+)?\\s*(?:([+-])([a-z][a-z-]*)|(keyframe|skip|thumbnail|set|depart|arrive))(?=\\s*(?://|$))",
+            "match": "^(\\d+)?\\s*(?:([+-])([a-z][a-z-]*)|(keyframe|skip|thumbnail|set|depart|arrive|teleport|turn|place))(?=\\s*(?://|$))",
             "captures": {
                 "1": { "name": "constant.numeric.time.thaliak-diagram" },
                 "2": { "name": "entity.name.tag.verb.operator.thaliak-diagram" },
@@ -286,8 +266,8 @@
                 { "include": "#comment" },
                 { "include": "#string" },
                 { "include": "#player" },
-                { "match": "(?<![\\w#-])(to|on|at|toward|for|rotate|over|offset|as|hits)(?![\\w#-])", "name": "keyword.operator.expression.thaliak-diagram" },
-                { "match": "(?<![\\w#\\]-])[A-Za-z][\\w-]*(?=\\s+(?:-?\\.?\\d|\"|\\(|\\[|\\{|#|true\\b|false\\b))", "name": "variable.parameter.thaliak-diagram" },
+                { "match": "(?<![\\w#-])(to|on|at|toward|for|rotate|over|offset|size|as|hits)(?![\\w#-])", "name": "keyword.operator.expression.thaliak-diagram" },
+                { "match": "(?<![\\w#\\]-])[A-Za-z][\\w-]*(?=\\s+(?:-?\\d|\"|\\(|\\[|\\{|#|true\\b|false\\b))", "name": "variable.parameter.thaliak-diagram" },
                 { "include": "#placeholder" },
                 { "include": "#scalars" },
                 {
