@@ -19,7 +19,7 @@ const PLAYERS = ['T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2'];
 /** The fields of a `define` block that hold statements. */
 const HOOK_KEYS = new Set(['on:enter', 'on:exit']);
 /** The verbs worth suggesting for a hook statement. */
-const HOOK_VERBS = ['+effect', '-actor', '+actor', '+headmarker', '-headmarker', '+object', '-object', '+puddle', '-puddle', '+status', '-status', 'teleport', 'arrive', 'depart'];
+const HOOK_VERBS = ['+effect', '-actor', '+actor', '+headmarker', '-headmarker', '+object', '-object', '+puddle', '-puddle', '+status', '-status', '+tether', '-tether', '+follow', '-follow', 'teleport', 'arrive', 'depart', 'set', 'turn'];
 /** The verbs that move or turn their subject, which an action's hook may leave out to move the caster. */
 const MOVES = new Set(['teleport', 'arrive', 'depart']);
 
