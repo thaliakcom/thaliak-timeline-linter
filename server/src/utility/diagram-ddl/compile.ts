@@ -590,15 +590,9 @@ function hasTelegraph(action: ActionFacts): boolean {
     return action.hasOmen === true && (action.cast ?? 0) > 0;
 }
 
-/** Returns whether two scopes can both apply under one selection. */
-function compatible(a: Scope, b: Scope): boolean {
-    if (a.strategy != null && b.strategy != null && a.strategy !== b.strategy) return false;
-    return Object.entries(a.branches ?? {}).every(([at, name]) => b.branches?.[Number(at)] == null || b.branches[Number(at)] === name);
-}
-
 /**
  * Labels every element drawn with the boss icon (`actorOf` gives its timeline actor) with that actor's `name` while
- * another boss-icon element is alive in a compatible scope, including copies of the same actor. Elements that `as`
+ * another boss-icon element is alive at the same time, including copies of the same actor. Elements that `as`
  * labels, and actors without a name, keep what they have. The labels are `text` sets at each spawn and each change.
  */
 function addNameLabels(elements: CompiledElement[], actorOf: (base: string) => { name?: string } | undefined) {
@@ -609,15 +603,15 @@ function addNameLabels(elements: CompiledElement[], actorOf: (base: string) => {
 
         if (name == null || element.props.text != null) continue;
 
-        for (const { from, to, ...scope } of element.spawns) {
-            const others = bosses.flatMap(other => other === element ? [] : other.spawns.filter(spawn => compatible(spawn, scope) && spawn.from < to && spawn.to > from));
+        for (const { from, to } of element.spawns) {
+            const others = bosses.flatMap(other => other === element ? [] : other.spawns.filter(spawn => spawn.from < to && spawn.to > from));
             const times = [...new Set([from, ...others.flatMap(spawn => [spawn.from, spawn.to])])].filter(t => t >= from && t < to).sort((a, b) => a - b);
             let shown: boolean | undefined;
 
             for (const t of times) {
                 const crowded = others.some(spawn => t >= spawn.from && t < spawn.to);
 
-                if (crowded !== shown) element.sets.push({ ...scope, t, over: 0, key: 'text', value: crowded ? name : '' });
+                if (crowded !== shown) element.sets.push({ t, over: 0, key: 'text', value: crowded ? name : '' });
 
                 shown = crowded;
             }
@@ -1260,20 +1254,20 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         return element;
     };
 
-    const isLive = (element: CompiledElement, t: number, within: Scope) => element.spawns.some(spawn => t >= spawn.from && t < spawn.to && compatible(spawn, within));
-    /** The elements of the timeline actors `actors` (`omega`, `omega#2`) alive at `at`, in any scope. */
+    const isLive = (element: CompiledElement, t: number) => element.spawns.some(spawn => t >= spawn.from && t < spawn.to);
+    /** The elements of the timeline actors `actors` (`omega`, `omega#2`) alive at `at`. */
     const aliveOf = (actors: string[], at: number): CompiledElement[] =>
         [...elements.values()].filter(e => actors.includes(e.base) && e.spawns.some(spawn => at >= spawn.from && at <= spawn.to));
     /** Who casts a use: every alive element of its action's actors, except the helper's, whose casts show nothing. */
-    const castersOf = (use: Use): { id: string, scope: Scope }[] =>
-        aliveOf(actorsOf(actions[use.action]).filter(actor => input.actors?.[actor]?.id != null), use.at).map(e => ({ id: e.id, scope: {} }));
+    const castersOf = (use: Use): string[] =>
+        aliveOf(actorsOf(actions[use.action]).filter(actor => input.actors?.[actor]?.id != null), use.at).map(e => e.id);
 
     /** Expands a subject into element IDs, resolving `*` against what's alive at `t`. */
-    const expandSubject = (token: string, s: Statement, within: Scope): string[] => expandTemplate(token).flatMap(id => {
+    const expandSubject = (token: string, s: Statement): string[] => expandTemplate(token).flatMap(id => {
         if (!id.includes('*')) return [id];
 
         const pattern = new RegExp(`^${id.replace(/[.+?^${}()|\\/]/g, '\\$&').replace('*', '.*')}$`);
-        const live = [...elements.values()].filter(e => pattern.test(e.id) && isLive(e, s.at, within)).map(e => e.id);
+        const live = [...elements.values()].filter(e => pattern.test(e.id) && isLive(e, s.at)).map(e => e.id);
 
         if (live.length === 0) error(s.line, `"${token}" matches nothing alive at ${s.at}`);
 
@@ -1281,8 +1275,8 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
     });
 
     /** Gets a clause's value for the `index`th of `ids`: one value applies to all, otherwise they pair up in order. */
-    const valueFor = (values: string[], index: number, ids: string[], s: Statement, within: Scope): string | undefined => {
-        const options = values.flatMap(v => v.includes('*') ? expandSubject(v, s, within) : expandTemplate(v));
+    const valueFor = (values: string[], index: number, ids: string[], s: Statement): string | undefined => {
+        const options = values.flatMap(v => v.includes('*') ? expandSubject(v, s) : expandTemplate(v));
 
         if (options.length !== 1 && options.length !== ids.length) {
             error(s.line, `${options.length} values for ${ids.length} subjects`);
@@ -1294,12 +1288,12 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
     const clauseOf = (s: Statement, key: string) => s.clauses.find(c => c.key === key)?.values;
 
     /** The plane XY of a statement's `offset` clause ({@link planeOf}), or `[0, 0]` without one. */
-    const offsetOf = (s: Statement, id: string, index: number, ids: string[], within: Scope): XY => {
+    const offsetOf = (s: Statement, id: string, index: number, ids: string[]): XY => {
         const offset = clauseOf(s, 'offset');
 
         if (offset == null) return [0, 0];
 
-        const value = valueFor(offset, index, ids, s, within)!;
+        const value = valueFor(offset, index, ids, s)!;
         const xy = planeOf(value);
 
         if (xy == null) error(s.line, `"offset ${value}" of "${id}" is a pair, such as (10, 90), cart(10, -5) or polar(10, 90)`);
@@ -1363,11 +1357,10 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
     /** The arena's larger side in yalms, if the fight's arena size is known. */
     const arenaYalms = input.arenaSize == null ? undefined : Math.max(...input.arenaSize);
 
-    const lastDestination = (element: CompiledElement, within: Scope): XY => {
+    const lastDestination = (element: CompiledElement): XY => {
         for (let i = element.poses.length - 1; i >= 0; i--) {
             const pose = element.poses[i]!;
 
-            if (!compatible(pose, within)) continue;
             if (pose.kind === 'fixed') return pose.xy;
             if (pose.kind === 'move' && typeof pose.to !== 'string') return pose.to;
         }
@@ -1375,26 +1368,26 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         return [0, 0];
     };
 
-    const addMotion = (element: CompiledElement, s: Statement, id: string, index: number, ids: string[], within: Scope) => {
+    const addMotion = (element: CompiledElement, s: Statement, id: string, index: number, ids: string[]) => {
         const over = clauseOf(s, 'over');
-        const overMs = over == null ? null : duration(valueFor(over, index, ids, s, within)!);
+        const overMs = over == null ? null : duration(valueFor(over, index, ids, s)!);
         const to = clauseOf(s, 'to');
 
         if (to != null) {
-            const target = positionOf(valueFor(to, index, ids, s, within)!, id, s.line);
+            const target = positionOf(valueFor(to, index, ids, s)!, id, s.line);
             const isPlayer = PLAYERS.includes(id);
 
             if (!isPlayer && overMs == null) error(s.line, `"${id}" isn't a player, so its ${s.verb} needs "over"`);
-            const from = lastDestination(element, within);
+            const from = lastDestination(element);
             // A player runs to an element as far as where that was last placed or sent, and then stays on it as it moves.
-            const spot = typeof target === 'string' ? lastDestination(elements.get(target) ?? element, within) : target;
+            const spot = typeof target === 'string' ? lastDestination(elements.get(target) ?? element) : target;
             const [unitsX, unitsY] = unitsPerYalm(s.at);
             const run = Math.hypot((spot[0] - from[0]) / unitsX, (spot[1] - from[1]) / unitsY) / RUN_SPEED;
             // Speeding up and slowing down costs one ramp, or if it never reaches run speed, as long as the distance takes that way.
             const time = overMs ?? (run >= MOTION_RAMP ? run + MOTION_RAMP : 2 * Math.sqrt(run * MOTION_RAMP));
             let start = s.verb === 'arrive' ? s.at - time : s.at;
             // A placement counts too: the latest pose to start decides the position, so a move starting before one would never show.
-            const previousEnd = element.poses.filter(p => compatible(p, within)).at(-1)?.end ?? -Infinity;
+            const previousEnd = element.poses.at(-1)?.end ?? -Infinity;
 
             if (start < previousEnd) {
                 error(s.line, `${id} needs ${Math.round(time)} ms but its previous move or placement ends at ${Math.round(previousEnd)}, ${Math.round(previousEnd - start)} ms too late`);
@@ -1402,41 +1395,41 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             }
 
             const finish = s.verb === 'arrive' ? Math.max(s.at, start) : start + time;
-            element.poses.push({ ...within, start, end: finish, kind: 'move', to: target, ramp: Math.min(MOTION_RAMP, (finish - start) / 2), line: s.line });
+            element.poses.push({ start, end: finish, kind: 'move', to: target, ramp: Math.min(MOTION_RAMP, (finish - start) / 2), line: s.line });
         }
 
         const rotate = clauseOf(s, 'rotate');
 
         if (rotate != null) {
-            const by = valueFor(rotate, index, ids, s, within)!;
+            const by = valueFor(rotate, index, ids, s)!;
 
             if (overMs == null) error(s.line, `the rotation of "${id}" needs "over"`);
             // An unsigned amount reads like a facing, which is what "toward" is for.
             if (!/^[+-]\d/.test(by)) error(s.line, `"rotate ${by}" turns by ${by}° from where "${id}" faces now; write "rotate +${by}" for that, or "toward ${by}" to face ${by}° (0 is north, 180 is south)`);
 
-            element.turns.push({ ...within, t: s.verb === 'arrive' ? s.at - (overMs ?? 0) : s.at, over: overMs ?? 0, by: Number(by) });
+            element.turns.push({ t: s.verb === 'arrive' ? s.at - (overMs ?? 0) : s.at, over: overMs ?? 0, by: Number(by) });
         }
 
-        addToward(element, s, index, ids, within, overMs ?? 0);
+        addToward(element, s, index, ids, overMs ?? 0);
     };
 
-    const addToward = (element: CompiledElement, s: Statement, index: number, ids: string[], within: Scope, over: number = 0) => {
+    const addToward = (element: CompiledElement, s: Statement, index: number, ids: string[], over: number = 0) => {
         const toward = clauseOf(s, 'toward');
 
         if (toward == null) return;
 
-        const value = literal(valueFor(toward, index, ids, s, within)!);
-        element.turns.push(typeof value === 'number' ? { ...within, t: s.at, over, abs: value } : { ...within, t: s.at, over, look: String(value) });
+        const value = literal(valueFor(toward, index, ids, s)!);
+        element.turns.push(typeof value === 'number' ? { t: s.at, over, abs: value } : { t: s.at, over, look: String(value) });
     };
 
-    const placedCount = (use: Use, within: Scope) => aoes.filter(a => a.action === use.action && a.hit === use.at && compatible(a, within)).length;
+    const placedCount = (use: Use) => aoes.filter(a => a.action === use.action && a.hit === use.at).length;
     const expectedCount = (use: Use) => isRaidwide(actions[use.action]) ? 1 : use.count ?? actions[use.action]?.count ?? 1;
 
     /**
      * Adds one placement of an action at one use. `variant` is the game action ID that `as` draws it as instead, whose
      * shape, size and look this placement takes; its timing stays the action's.
      */
-    const addAoe = (id: string, use: Use, within: Scope, fields: Partial<CompiledAoe>, line: number, variant?: number): CompiledAoe => {
+    const addAoe = (id: string, use: Use, fields: Partial<CompiledAoe>, line: number, variant?: number): CompiledAoe => {
         const action = actions[use.action] ?? {};
         const variantFacts = variant == null ? undefined : input.variants?.[variant];
 
@@ -1471,14 +1464,13 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             look = { look: 'aoe' };
         }
         const unique = `${use.action}-${subIdOf(id) === id ? 'all' : subIdOf(id)}-${use.at}`;
-        const key = scopeKey(within);
         const existing = aoes.filter(a => a.action === use.action && a.id === id && a.hit === use.at);
 
-        if (existing.some(a => scopeKey(a) === key)) error(line, `"${id}" at ${use.at} is placed twice`);
+        if (existing.length > 0) error(line, `"${id}" at ${use.at} is placed twice`);
 
-        const suffix = existing.length > 0 ? `-${key.replace(/[^\w-]/g, '')}` : '';
+        // Keeps a second placement's elements apart from the first's, after its error.
+        const suffix = existing.length > 0 ? `-${existing.length}` : '';
         const aoe: CompiledAoe = {
-            ...within,
             id,
             action: use.action,
             show,
@@ -1531,39 +1523,46 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         }
 
         aoes.push(aoe);
+        statementLines.set(aoe, line);
         return aoe;
     };
 
     /** Each `+follow`, until its `-follow`, the next `+follow` of the same actor, or the end. */
-    const follows: { id: string, from: number, to: number, target: string, chase: boolean, line: number, within: Scope }[] = [];
+    const follows: { id: string, from: number, to: number, target: string, chase: boolean, line: number }[] = [];
     /** Each `turn`: toward something for `over`, held for `hold`, and back over `over` again. */
     const awayTurns: { id: string, at: number, toward: string, over: number, hold: number, line: number }[] = [];
-    const openHints = new Map<string, CompiledDiagram['hints'][number]>();
+    /** The hint shown now, which the next `+hint` or `-hint` ends. */
+    let openHint: CompiledDiagram['hints'][number] | undefined;
     /** The line of each hint's `+hint`, for its errors. */
     const hintLines = new Map<CompiledDiagram['hints'][number], number>();
     /** The line of each status's `+status`, for the error about unknown elements. */
     const statusLines = new Map<CompiledDiagram['statuses'][number], number>();
+    /**
+     * The line of the statement that made each AoE, effect and `at`/`on` pose, and that sized each element (by its
+     * ID), for the errors found once all statements have run. Hooks' lines are 0.
+     */
+    const statementLines = new Map<object | string, number>();
     /** Each `+headmarker`'s spawn, with its element and line, for the error about those that are never removed. */
     const headmarkerSpawns: { id: string, spawn: Spawn, line: number }[] = [];
-    const lastKeyframes = new Map<string, number>();
+    let lastKeyframe = -Infinity;
 
     /** Runs an element's `on:enter` or `on:exit` statements at the time of `s`, which places or removes it. */
-    const runElementHooks = (element: CompiledElement, hooks: 'enterHooks' | 'exitHooks', s: Statement, within: Scope, id: string) => {
+    const runElementHooks = (element: CompiledElement, hooks: 'enterHooks' | 'exitHooks', s: Statement, id: string) => {
         for (const line of (elementDef(element.base, element.id.includes('@'))?.[hooks] ?? []) as string[]) {
-            for (const hooked of parse(`${s.at} ${line}`).statements) run({ ...hooked, line: s.line }, within, id);
+            for (const hooked of parse(`${s.at} ${line}`).statements) run({ ...hooked, line: s.line }, id);
         }
     };
 
     /** Applies one statement. `effectTarget` is the element whose `on:exit` or `on:enter` hook this statement comes from. */
-    const run = (s: Statement, within: Scope, effectTarget?: string, hookUse?: Use): void => {
+    const run = (s: Statement, effectTarget?: string, hookUse?: Use): void => {
         const subjects = () => s.subjects.flatMap(token => {
-            if (token !== CASTER) return expandSubject(token, s, within);
+            if (token !== CASTER) return expandSubject(token, s);
             if (hookUse == null) {
                 error(s.line, `"${CASTER}" only works in an action's hooks`);
                 return [];
             }
 
-            const casters = castersOf(hookUse).map(caster => caster.id);
+            const casters = castersOf(hookUse);
 
             if (casters.length === 0) error(s.line, `"${hookUse.action}" has no caster alive at ${s.at} for its hook's "${s.verb}"`);
 
@@ -1572,13 +1571,12 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
 
         switch (s.verb) {
             case 'keyframe': {
-                const key = scopeKey(within);
-                const gap = s.at - (lastKeyframes.get(key) ?? -Infinity);
+                const gap = s.at - lastKeyframe;
 
                 if (gap >= 0 && gap < MIN_KEYFRAME_GAP) error(s.line, `keyframe at ${s.at} is only ${gap} ms after the previous one`);
 
-                keyframes.push({ ...within, at: s.at });
-                lastKeyframes.set(key, s.at);
+                keyframes.push({ at: s.at });
+                lastKeyframe = s.at;
                 break;
             }
             case 'thumbnail':
@@ -1587,16 +1585,13 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                 thumbnails[s.text] = s.at;
                 break;
             case 'hint': {
-                const key = scopeKey(within);
-                const open = openHints.get(key);
+                if (openHint != null) openHint.to = s.at;
 
-                if (open != null) open.to = s.at;
-
-                openHints.delete(key);
+                openHint = undefined;
 
                 if (s.sign === '+') {
-                    const hint = { ...within, from: s.at, to: Infinity, text: s.text };
-                    openHints.set(key, hint);
+                    const hint = { from: s.at, to: Infinity, text: s.text };
+                    openHint = hint;
                     hintLines.set(hint, s.line);
                     hints.push(hint);
                 }
@@ -1626,7 +1621,9 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                 if (on == null) {
                     error(s.line, `+effect "${name}" has no "on"`);
                 } else {
-                    effects.push({ ...within, at: s.at, target: on, preset, ...(parameters != null ? { parameters } : {}) });
+                    const effect = { at: s.at, target: on, preset, ...(parameters != null ? { parameters } : {}) };
+                    effects.push(effect);
+                    statementLines.set(effect, s.line);
                 }
                 break;
             }
@@ -1635,7 +1632,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
 
                 for (const name of s.subjects) {
                     if (s.sign === '-') {
-                        const open = statuses.filter(x => x.name === name && x.to === Infinity && (on == null || on.includes(x.player)) && compatible(x, within));
+                        const open = statuses.filter(x => x.name === name && x.to === Infinity && (on == null || on.includes(x.player)));
 
                         if (open.length === 0) error(s.line, `no active "${name}" to remove`);
 
@@ -1646,7 +1643,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                         if (on == null) error(s.line, `+status "${name}" has no "on"`);
 
                         for (const player of on ?? []) {
-                            const status = { ...within, player, name, from: s.at, to: Infinity };
+                            const status = { player, name, from: s.at, to: Infinity };
                             statuses.push(status);
                             statusLines.set(status, s.line);
                         }
@@ -1685,7 +1682,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
 
                     if (s.sign === '-') {
                         // Alive, which a puddle with a `duration` may still be.
-                        const open = element.spawns.find(spawn => s.at >= spawn.from && s.at < spawn.to && compatible(spawn, within));
+                        const open = element.spawns.find(spawn => s.at >= spawn.from && s.at < spawn.to);
 
                         if (open == null) {
                             error(s.line, `"${id}" isn't alive at ${s.at}`);
@@ -1693,13 +1690,13 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                             open.to = s.at;
                         }
 
-                        runElementHooks(element, 'exitHooks', s, within, id);
+                        runElementHooks(element, 'exitHooks', s, id);
                         return;
                     }
 
                     // A puddle with a `duration` disappears by itself.
                     const lifetime = s.verb === 'puddle' ? elementDef(base)?.duration as string | number | undefined : undefined;
-                    const spawn = { ...within, from: s.at, to: lifetime == null ? Infinity : s.at + duration(String(lifetime)) };
+                    const spawn = { from: s.at, to: lifetime == null ? Infinity : s.at + duration(String(lifetime)) };
                     element.spawns.push(spawn);
 
                     if (s.verb === 'headmarker') headmarkerSpawns.push({ id, spawn, line: s.line });
@@ -1718,15 +1715,19 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     }
 
                     for (const clause of s.clauses) {
-                        const value = valueFor(clause.values, index, ids, s, within)!;
+                        const value = valueFor(clause.values, index, ids, s)!;
 
                         if (clause.key === 'at') {
                             const raw = positionOf(value, id, s.line);
-                            element.poses.push(Array.isArray(raw)
-                                ? { ...within, start: s.at, end: s.at, kind: 'fixed', xy: raw }
-                                : { ...within, start: s.at, end: s.at, kind: 'snap', target: raw, snapAt: s.at, offset: offsetOf(s, id, index, ids, within) });
+                            const pose: Pose = Array.isArray(raw)
+                                ? { start: s.at, end: s.at, kind: 'fixed', xy: raw }
+                                : { start: s.at, end: s.at, kind: 'snap', target: raw, snapAt: s.at, offset: offsetOf(s, id, index, ids) };
+                            element.poses.push(pose);
+                            statementLines.set(pose, s.line);
                         } else if (clause.key === 'on') {
-                            element.poses.push({ ...within, start: s.at, end: s.at, kind: 'follow', target: value, offset: offsetOf(s, id, index, ids, within) });
+                            const pose: Pose = { start: s.at, end: s.at, kind: 'follow', target: value, offset: offsetOf(s, id, index, ids) };
+                            element.poses.push(pose);
+                            statementLines.set(pose, s.line);
                         } else if (clause.key === 'as') {
                             const text = literal(value);
 
@@ -1740,11 +1741,13 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                             error(s.line, `"size" of headmarker "${id}" takes a number above 0, in plane units`);
                         } else if (clause.key !== 'toward' && clause.key !== 'offset') {
                             element.props[clause.key] = literal(value);
+
+                            if (clause.key === 'size' || clause.key === 'scale') statementLines.set(id, s.line);
                         }
                     }
 
-                    addToward(element, s, index, ids, within);
-                    runElementHooks(element, 'enterHooks', s, within, id);
+                    addToward(element, s, index, ids);
+                    runElementHooks(element, 'enterHooks', s, id);
                 });
                 break;
             }
@@ -1757,7 +1760,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
 
                     if (facts == null) error(s.line, `unknown action "${action}"`);
 
-                    const use = uses.find(u => u.action === action && u.at >= s.at && placedCount(u, within) < expectedCount(u));
+                    const use = uses.find(u => u.action === action && u.at >= s.at && placedCount(u) < expectedCount(u));
 
                     if (use == null) {
                         error(s.line, `no later use of "${action}" for this placement`);
@@ -1788,15 +1791,15 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                         }
                     }
 
-                    if (on != null) fields.on = valueFor(on, index, ids, s, within);
+                    if (on != null) fields.on = valueFor(on, index, ids, s);
 
                     if (at != null) {
-                        fields.at = positionOf(valueFor(at, index, ids, s, within)!, id, s.line);
+                        fields.at = positionOf(valueFor(at, index, ids, s)!, id, s.line);
                     }
 
                     if (toward != null) {
                         // An angle, or an element to aim at as it stands when the telegraph appears.
-                        const value = literal(valueFor(toward, index, ids, s, within)!);
+                        const value = literal(valueFor(toward, index, ids, s)!);
                         fields.toward = typeof value === 'number' ? value : String(value);
                     }
 
@@ -1804,7 +1807,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
 
                     if (rotate != null) {
                         // Turns it from where its actor faces or its `toward` points, so the amount needs a sign, as in a move.
-                        const by = valueFor(rotate, index, ids, s, within)!;
+                        const by = valueFor(rotate, index, ids, s)!;
 
                         if (!/^[+-]\d+(\.\d+)?$/.test(by)) error(s.line, `"rotate ${by}" turns "${id}" by ${by}° from where it would point; write "rotate +${by.replace(/^[+-]/, '')}" or "rotate -${by.replace(/^[+-]/, '')}", or "toward ${by}" to point it at ${by}° (0 is north, 180 is south)`);
                         else fields.rotate = Number(by);
@@ -1818,11 +1821,11 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     }
 
                     const as = clauseOf(s, 'as');
-                    const variant = as == null ? undefined : Number(valueFor(as, index, ids, s, within));
+                    const variant = as == null ? undefined : Number(valueFor(as, index, ids, s));
 
                     if (variant != null && !Number.isInteger(variant)) error(s.line, `"as" on place takes a game action ID`);
 
-                    const aoe = addAoe(id, use, within, fields, s.line, variant);
+                    const aoe = addAoe(id, use, fields, s.line, variant);
 
                     // Action hooks have line 0, and element hooks an effect target.
                     if (s.line > 0 && effectTarget == null) placements.push({ line: s.line, id, at: use.at });
@@ -1834,7 +1837,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             case 'depart':
             case 'arrive': {
                 const ids = subjects();
-                ids.forEach((id, index) => addMotion(ensure(id, s.line), s, id, index, ids, within));
+                ids.forEach((id, index) => addMotion(ensure(id, s.line), s, id, index, ids));
                 break;
             }
             case 'teleport': {
@@ -1854,16 +1857,16 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                 ids.forEach((id, index) => {
                     const element = ensure(id, s.line);
 
-                    if (turnClauses.length > 0) addMotion(element, turn, id, index, ids, within);
+                    if (turnClauses.length > 0) addMotion(element, turn, id, index, ids);
 
                     const poses = element.poses.length;
-                    addMotion(element, move, id, index, ids, within);
+                    addMotion(element, move, id, index, ids);
 
                     // The slide barely speeds up, and slows down only a little, unlike a run.
                     const pose = element.poses[poses];
                     if (pose?.kind === 'move') Object.assign(pose, { ramp: TELEPORT_EASE_IN, rampOut: TELEPORT_EASE_OUT });
 
-                    (element.teleports ??= []).push({ ...within, start, slide, arrive: arrival });
+                    (element.teleports ??= []).push({ start, slide, arrive: arrival });
                 });
                 break;
             }
@@ -1873,15 +1876,15 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                 ids.forEach((id, index) => {
                     const element = ensure(id, s.line);
                     const over = clauseOf(s, 'over');
-                    const overMs = over == null ? 0 : duration(valueFor(over, index, ids, s, within)!);
-                    addToward(element, s, index, ids, within, overMs);
+                    const overMs = over == null ? 0 : duration(valueFor(over, index, ids, s)!);
+                    addToward(element, s, index, ids, overMs);
 
                     for (const clause of s.clauses) {
                         // Filters take several functions, which a clause can't hold, so they stay with the definition.
                         if (clause.key === 'filter') {
                             error(s.line, `"filter" can't be set; give "${id}" a filter in its define block instead`);
                         } else if (clause.key !== 'toward' && clause.key !== 'over') {
-                            element.sets.push({ ...within, t: s.at, over: overMs, key: clause.key, value: literal(valueFor(clause.values, index, ids, s, within)!) });
+                            element.sets.push({ t: s.at, over: overMs, key: clause.key, value: literal(valueFor(clause.values, index, ids, s)!) });
                         }
                     }
                 });
@@ -1890,7 +1893,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             case 'follow':
                 for (const id of subjects()) {
                     ensure(id, s.line);
-                    const open = follows.find(f => f.id === id && f.to === Infinity && compatible(f.within, within));
+                    const open = follows.find(f => f.id === id && f.to === Infinity);
 
                     if (s.sign === '-') {
                         if (open == null) error(s.line, `"${id}" isn't following anything at ${s.at}`);
@@ -1909,7 +1912,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     // A new target replaces the old one, as in a tank swap.
                     if (open != null) open.to = s.at;
 
-                    follows.push({ id, from: s.at, to: Infinity, target: (on ?? toward)!, chase: on != null, line: s.line, within });
+                    follows.push({ id, from: s.at, to: Infinity, target: (on ?? toward)!, chase: on != null, line: s.line });
                 }
 
                 break;
@@ -1925,9 +1928,9 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     awayTurns.push({
                         id,
                         at: s.at,
-                        toward: valueFor(toward, index, ids, s, within)!,
-                        over: over == null ? 0 : duration(valueFor(over, index, ids, s, within)!),
-                        hold: hold == null ? 0 : duration(valueFor(hold, index, ids, s, within)!),
+                        toward: valueFor(toward, index, ids, s)!,
+                        over: over == null ? 0 : duration(valueFor(over, index, ids, s)!),
+                        hold: hold == null ? 0 : duration(valueFor(hold, index, ids, s)!),
                         line: s.line
                     });
                 });
@@ -1957,7 +1960,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         for (const follow of [...follows].sort((a, b) => a.from - b.from)) {
             const element = elements.get(follow.id)!;
             // A follow also ends when its actor is removed.
-            const to = Math.min(follow.to, end, element.spawns.find(spawn => compatible(spawn, follow.within) && spawn.from <= follow.from && follow.from < spawn.to)?.to ?? end);
+            const to = Math.min(follow.to, end, element.spawns.find(spawn => spawn.from <= follow.from && follow.from < spawn.to)?.to ?? end);
             const props: Record<string, unknown> = { ...elementDef(element.base), ...element.props };
             const hitbox = input.hitboxes?.[element.base];
 
@@ -1971,10 +1974,10 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
 
             // Its own moves and turns, such as a `teleport` before a cast, pause the follow, which picks up where they leave it.
             const pauses = [
-                ...element.poses.filter(pose => compatible(pose, follow.within) && pose.start > follow.from && pose.start < to).map((pose): [number, number] => [pose.start, pose.end]),
-                ...element.turns.filter(turn => compatible(turn, follow.within) && turn.t > follow.from && turn.t < to).map((turn): [number, number] => [turn.t, turn.t + turn.over]),
+                ...element.poses.filter(pose => pose.start > follow.from && pose.start < to).map((pose): [number, number] => [pose.start, pose.end]),
+                ...element.turns.filter(turn => turn.t > follow.from && turn.t < to).map((turn): [number, number] => [turn.t, turn.t + turn.over]),
                 // A teleport pauses it as a whole, from its turn to its arrival.
-                ...(element.teleports ?? []).filter(teleport => compatible(teleport, follow.within) && teleport.start > follow.from && teleport.start < to).map((teleport): [number, number] => [teleport.start, teleport.arrive])
+                ...(element.teleports ?? []).filter(teleport => teleport.start > follow.from && teleport.start < to).map((teleport): [number, number] => [teleport.start, teleport.arrive])
             ].sort((a, b) => a[0] - b[0]).reduce<[number, number][]>((merged, [from, until]) => {
                 const last = merged.at(-1);
 
@@ -1990,7 +1993,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             const reach = Number(props.reach ?? DEFAULT_REACH);
             const facing = facingOf(props);
             // From the cast's start to the end of the attack animation that follows it, which instant actions play too.
-            const locks = uses.filter(use => castersOf(use).some(caster => caster.id === follow.id)).flatMap(use => {
+            const locks = uses.filter(use => castersOf(use).includes(follow.id)).flatMap(use => {
                 const cast = actions[use.action]?.cast ?? 0;
                 const lock = actions[use.action]?.animationLock ?? 0;
                 return cast + lock > 0 ? [{ from: use.at - cast, to: use.at + lock, tracks: actionDefs[use.action]?.tracks === true }] : [];
@@ -2020,8 +2023,8 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     const [t, px, py, sampleFront] = kept[i]!;
                     const [lastX, lastY] = [kept[i - 1]![1], kept[i - 1]![2]];
 
-                    if (px !== lastX || py !== lastY) element.poses.push({ ...follow.within, start: from, end: t, kind: 'move', to: [px, py], ramp: 0 });
-                    if (sampleFront !== previousFront) element.turns.push({ ...follow.within, t: from, over: t - from, abs: sampleFront });
+                    if (px !== lastX || py !== lastY) element.poses.push({ start: from, end: t, kind: 'move', to: [px, py], ramp: 0 });
+                    if (sampleFront !== previousFront) element.turns.push({ t: from, over: t - from, abs: sampleFront });
                 }
             };
 
@@ -2099,7 +2102,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
     ].sort((a, b) => a.statement.at - b.statement.at);
 
     for (const { statement, use } of timed) {
-        run(statement, {}, undefined, use);
+        run(statement, undefined, use);
     }
 
     // The viewer needs a definition of the arena to draw it, which the ID-less `define arena` gives if there is one.
@@ -2131,16 +2134,16 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             const actors = raidwide ? alive.slice(0, 1) : alive;
             const names = attachedTo.map(actor => `"${actor}"`).join(' or ');
 
-            if (attachedTo.length === 0) error(0, raidwide ? `raidwide "${use.action}" at ${use.at} has no origin: place it, or give its timeline action an "actor"` : `"${use.action}" is attached, but its timeline action has no "actor"`);
-            else if (actors.length === 0) error(0, raidwide ? `raidwide "${use.action}" at ${use.at} has no origin: none of ${names} is alive then` : `"${use.action}" at ${use.at} is attached to ${names}, but none is alive then`);
+            if (attachedTo.length === 0) error(definitionLine('action', use.action), raidwide ? `raidwide "${use.action}" at ${use.at} has no origin: place it, or give its timeline action an "actor"` : `"${use.action}" is attached, but its timeline action has no "actor"`);
+            else if (actors.length === 0) error(definitionLine('action', use.action), raidwide ? `raidwide "${use.action}" at ${use.at} has no origin: none of ${names} is alive then` : `"${use.action}" at ${use.at} is attached to ${names}, but none is alive then`);
 
-            for (const actor of actors) addAoe(`${use.action}#${subIdOf(actor.id)}`, use, {}, { attachedTo: actor.id }, 0);
+            for (const actor of actors) addAoe(`${use.action}#${subIdOf(actor.id)}`, use, { attachedTo: actor.id }, 0);
 
             continue;
         }
 
         if (raidwide) {
-            if (placed.length === 0) error(0, `raidwide "${use.action}" at ${use.at} has no origin`);
+            if (placed.length === 0) error(definitionLine('action', use.action), `raidwide "${use.action}" at ${use.at} has no origin`);
 
             continue;
         }
@@ -2148,17 +2151,13 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         if (isShell && placed.length === 0) continue;
 
         if (placed.length === 0) {
-            error(0, `"${use.action}" at ${use.at} isn't placed`);
+            error(definitionLine('action', use.action), `"${use.action}" at ${use.at} isn't placed`);
             continue;
         }
 
         const expected = expectedCount(use);
 
-        // Each strategy or branch places the use by itself, on top of what's shared.
-        const scoped = new Set(placed.filter(a => scopeKey(a) !== '|').map(a => scopeKey(a)));
-        const counts = scoped.size === 0 ? [placed.length] : [...scoped].map(key => placed.filter(a => scopeKey(a) === key || scopeKey(a) === '|').length);
-
-        if (counts.some(count => count !== expected)) error(0, `"${use.action}" at ${use.at} has ${counts.join('/')} placements for a count of ${expected}`);
+        if (placed.length !== expected) error(placed.map(a => statementLines.get(a) ?? 0).find(line => line > 0) ?? 0, `"${use.action}" at ${use.at} has ${placed.length} placements for a count of ${expected}`);
     }
 
     for (const aoe of aoes) {
@@ -2180,13 +2179,13 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             const from = aoe.hit - mark.lead;
 
             if (mark.size != null) element.props.size = mark.size;
-            element.spawns.push({ ...scopeOf(aoe), from, to: from + mark.for });
-            element.poses.push({ ...scopeOf(aoe), start: from, end: from, kind: 'follow', target: anchor, offset: [0, 0] });
+            element.spawns.push({ from, to: from + mark.for });
+            element.poses.push({ start: from, end: from, kind: 'follow', target: anchor, offset: [0, 0] });
         }
     }
 
     // A headmarker that stays until the end of the fight is a missing `-headmarker`. Once per statement and
-    // headmarker, however many strategies or branches it's in.
+    // headmarker, however many times hooks run that statement.
     const unremovedHeadmarkers = new Set<string>();
 
     for (const { id, spawn, line } of headmarkerSpawns) {
@@ -2206,7 +2205,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
 
         for (const target of targets) {
             for (const { preset, parameters } of named.length > 0 ? named : [{ preset: aoe.raidwide ? 'sweep' : 'flash', parameters: undefined }]) {
-                effects.push({ ...scopeOf(aoe), at: aoe.hit, target, preset, ...(parameters != null ? { parameters } : {}) });
+                effects.push({ at: aoe.hit, target, preset, ...(parameters != null ? { parameters } : {}) });
             }
         }
     }
@@ -2221,7 +2220,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         const hitbox = input.hitboxes?.[element.base];
 
         if (hitbox != null) {
-            if (element.props.size != null || element.props.scale != null) error(0, `"${element.id}" is sized from the hitbox of its actor, so it can't also have a size or scale`);
+            if (element.props.size != null || element.props.scale != null) error(statementLines.get(element.id) ?? 0, `"${element.id}" is sized from the hitbox of its actor, so it can't also have a size or scale`);
 
             const ring = props.image === BOSS_IMAGE ? BOSS_RING : 1;
             element.props.yalms = [2 * hitbox / ring, 2 * hitbox / ring];
@@ -2239,7 +2238,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             const target = pose.kind === 'follow' || pose.kind === 'snap' ? pose.target : pose.kind === 'move' && typeof pose.to === 'string' ? pose.to : null;
 
             if (target != null && !PLAYERS.includes(target) && !elements.has(target) && !aoes.some(a => a.id === target)) {
-                error(0, `"${element.id}" refers to unknown "${target}"`);
+                error((pose.kind === 'move' ? pose.line : undefined) ?? statementLines.get(pose) ?? 0, `"${element.id}" refers to unknown "${target}"`);
             }
         }
     }
@@ -2253,17 +2252,19 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
     }
 
     for (const aoe of aoes) {
-        if (typeof aoe.at === 'string' && !PLAYERS.includes(aoe.at) && !elements.has(aoe.at)) error(0, `"${aoe.id}" refers to unknown "${aoe.at}"`);
-        if (aoe.on != null && !PLAYERS.includes(aoe.on) && !elements.has(aoe.on)) error(0, `"${aoe.id}" refers to unknown "${aoe.on}"`);
-        if (typeof aoe.toward === 'string' && !PLAYERS.includes(aoe.toward) && !elements.has(aoe.toward)) error(0, `"${aoe.id}" turns toward unknown "${aoe.toward}"`);
+        const line = statementLines.get(aoe) ?? 0;
+
+        if (typeof aoe.at === 'string' && !PLAYERS.includes(aoe.at) && !elements.has(aoe.at)) error(line, `"${aoe.id}" refers to unknown "${aoe.at}"`);
+        if (aoe.on != null && !PLAYERS.includes(aoe.on) && !elements.has(aoe.on)) error(line, `"${aoe.id}" refers to unknown "${aoe.on}"`);
+        if (typeof aoe.toward === 'string' && !PLAYERS.includes(aoe.toward) && !elements.has(aoe.toward)) error(line, `"${aoe.id}" turns toward unknown "${aoe.toward}"`);
 
         for (const hit of aoe.hits ?? []) {
-            if (!elements.has(hit)) error(0, `"${aoe.id}" hits unknown "${hit}"`);
+            if (!elements.has(hit)) error(line, `"${aoe.id}" hits unknown "${hit}"`);
         }
     }
 
     for (const effect of effects) {
-        if (elements.get(effect.target)?.link != null) error(0, `effect "${effect.preset}" can't play on the tether "${effect.target}"`);
+        if (elements.get(effect.target)?.link != null) error(statementLines.get(effect) ?? 0, `effect "${effect.preset}" can't play on the tether "${effect.target}"`);
     }
 
     for (const hint of hints) {
@@ -2286,7 +2287,9 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         if (!ticking.has(colon < 0 ? status.name : status.name.slice(0, colon))) continue;
 
         for (let at = status.from + TICK_INTERVAL; at < status.to; at += TICK_INTERVAL) {
-            ticks.push({ ...scopeOf(status), player: status.player, status: status.name, at, labelId: `${LABEL_BASE}#tick-${ticks.length}` });
+            // Named by what it shows, not by a count: the worlds count differently, and the merged graph keeps one text per ID.
+            const key = `${status.player}-${status.name}`.replace(/[^\w-]/g, '_');
+            ticks.push({ player: status.player, status: status.name, at, labelId: `${LABEL_BASE}#tick-${key}-${at}` });
         }
     }
 
@@ -2300,12 +2303,12 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             const use = uses.find(u => u.strategies?.includes(key) || actions[u.action]?.strategies?.[key] != null);
 
             if (use == null) {
-                error(0, `strategy "${strategy.id}" covers "${key}", but no action that isn't skipped has it`);
+                error(definitionLine('strategy', strategy.id), `strategy "${strategy.id}" covers "${key}", but no action that isn't skipped has it`);
                 continue;
             }
 
             // Only the strategy's own world has its thumbnail, which may be inside its arm.
-            if (thumbnails[key] == null && (world.strategy == null || world.strategy === strategy.id)) error(0, `covered strategy "${key}" has no thumbnail`);
+            if (thumbnails[key] == null && (world.strategy == null || world.strategy === strategy.id)) error(definitionLine('strategy', strategy.id), `covered strategy "${key}" has no thumbnail`);
 
             clips[key] = { from: use.at, to: use.lastChild ?? keyframes.find(k => k.at > use.at)?.at ?? end };
         }
@@ -2350,8 +2353,8 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         if (cast <= 0) continue;
 
         for (const caster of castersOf(use)) {
-            if (!casts.some(c => c.caster === caster.id && c.to === use.at && scopeKey(c) === scopeKey(caster.scope))) {
-                casts.push({ ...caster.scope, caster: caster.id, from: use.at - cast, to: use.at, text: name(use.action) });
+            if (!casts.some(c => c.caster === caster && c.to === use.at)) {
+                casts.push({ caster, from: use.at - cast, to: use.at, text: name(use.action) });
             }
         }
     }

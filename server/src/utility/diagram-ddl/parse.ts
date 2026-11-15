@@ -149,7 +149,7 @@ const DEFINE_KINDS = 'define arena, actor, object, puddle, tether, action, gradi
 const FIELD_LINE = /^((?:on:)?[a-zA-Z][\w-]*):\s*(.*)$/;
 
 /** Removes a `//` comment that isn't inside a string. */
-function stripComment(line: string): string {
+export function stripComment(line: string): string {
     let quoted = false;
 
     for (let i = 0; i < line.length - 1; i++) {

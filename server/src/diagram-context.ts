@@ -10,7 +10,7 @@ import * as yaml from 'yaml';
 import { castTimeOf, getGameAction } from './ironworks';
 import { hitboxRadius, paddedEffectRange } from './tooltip';
 import { ActionFacts, arenaImagesOf, arenasOf, DiagramInput, expandTemplate, RawItem, usesOf, variantIdsOf } from './utility/diagram-ddl/compile';
-import { Definition, parse, ParseResult, Statement, tokenize } from './utility/diagram-ddl/parse';
+import { Definition, parse, ParseResult, Statement, stripComment, tokenize } from './utility/diagram-ddl/parse';
 
 export const DIAGRAM_LANGUAGE = 'thaliak-diagram';
 
@@ -225,18 +225,9 @@ export interface DefinitionField {
     valueStart: number;
 }
 
-/** The lines of `source`, without their `//` comments. Blanks out the comment so that columns stay right. */
+/** The lines of `source`, without their `//` comments, cut as the parser cuts them so that columns stay right. */
 export function linesOf(source: string): string[] {
-    return source.split(/\r?\n/).map(line => {
-        let quoted = false;
-
-        for (let i = 0; i < line.length - 1; i++) {
-            if (line[i] === '"') quoted = !quoted;
-            if (!quoted && line[i] === '/' && line[i + 1] === '/') return line.slice(0, i);
-        }
-
-        return line;
-    });
+    return source.split(/\r?\n/).map(line => stripComment(line));
 }
 
 /** The fields of `definition`, read like the parser reads them. */
