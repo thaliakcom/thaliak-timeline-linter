@@ -86,8 +86,9 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
         };
 
         for (const key of ['enter', 'exit'] as const) {
-            const field = fields.find(x => x.key === key && !/^[+-]/.test(x.value) && x.value !== '');
-            const name = field != null ? typeOf(key === 'exit' ? valueOf(fields.filter(x => x.key === key && !/^[+-]/.test(x.value)), key) : valueOf(fields, key)) : undefined;
+            // Hooks are under `on:enter` and `on:exit`, so these keys hold only the animation.
+            const field = fields.find(x => x.key === key && x.value !== '');
+            const name = field != null ? typeOf(valueOf(fields, key)) : undefined;
             const invalid = name != null ? checkAnimation(key, name, `${key}: ${name}`, field!) : undefined;
 
             if (invalid != null) yield invalid;
