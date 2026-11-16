@@ -118,6 +118,10 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
         const strategies = definedAs('strategy');
         const groups = groupsOf(schema);
         const verbsOfSchema = schema.verbs;
+        /** A verb's clauses: its own, then the element fields it takes as clauses. */
+        const clausesOf = (written: string) => [...verbsOfSchema[written]?.clauses ?? [], ...verbsOfSchema[written]?.props ?? []];
+        /** What a clause of a verb does: a clause's own description, or that of the element field it sets. */
+        const describeClause = (label: string) => schema.clauses[label]?.description ?? schema.define.element.fields[label]?.description;
         /** The verbs that stand on their own, without a colon or arguments. */
         const isBareVerb = (verb: string) => verbsOfSchema[verb] != null && verbsOfSchema[verb]!.arguments == null;
         const keyword = (labels: Iterable<string>, describe?: (label: string) => string | undefined) => items(labels, CompletionItemKind.Keyword, edit, undefined, describe);
@@ -189,7 +193,7 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
                 if (definition.kind === 'action' && SUBJECTLESS_HOOK.test(text)) {
                     args = `$caster ${args}`;
                 } else if (definition.kind === 'action' && args === '' && MOVES.has(verb)) {
-                    return [...argumentsCompletion(), ...keyword(verbsOfSchema[verb]?.clauses ?? [], label => schema?.clauses[label]?.description)];
+                    return [...argumentsCompletion(), ...keyword(clausesOf(verb), describeClause)];
                 }
 
                 return argumentsCompletion();
@@ -283,7 +287,7 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
             const { clause, expectValue } = argumentStateOf(args);
 
             if (!expectValue) {
-                return keyword(verbsOfSchema[`${sign}${verb}`]?.clauses ?? [], label => schema?.clauses[label]?.description);
+                return keyword(clausesOf(`${sign}${verb}`), describeClause);
             }
 
             if (clause != null) {
