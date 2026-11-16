@@ -1,5 +1,5 @@
 import { TYPES_OF_KIND } from '../utility/diagram-ddl/compile';
-import { Definition } from '../utility/diagram-ddl/parse';
+import { Definition, fieldsOfKind as grammarFieldsOfKind, valuesOf as grammarValuesOf } from '../utility/diagram-ddl/parse';
 import { DDL_MARKER_LOOKS, SHAPE_TYPES } from '../utility/diagram-enums';
 
 /** A field of a `define` block in `schemas/diagram.schema.json`. */
@@ -31,11 +31,23 @@ export interface DiagramSchema {
         /** What follows the verb. Without one, it stands alone. */
         arguments?: 'text' | 'subjects';
         clauses?: string[];
+        /** The element fields it takes as clauses, after its own. */
+        props?: string[];
+        /** The clauses it needs. */
+        required?: string[];
+        /** Groups of clauses of which it needs exactly one. */
+        oneOf?: string[][];
+        /** The forms of clauses whose values differ here from the clause's own `form`. */
+        forms?: Record<string, string>;
+        /** Whether its other clauses are the parameters of a preset. */
+        parameters?: boolean;
     }>;
     clauses: Record<string, {
         description: string;
         /** What its value names, if anything. */
         takes?: 'element';
+        /** The form of its value, which the parser checks. */
+        form?: string;
     }>;
     placeholders: Record<string, string>;
     /** The keywords of `if` sections (`if`, `elif`, `else`, `endif`). Optional, for schemas from before them. */
@@ -62,25 +74,14 @@ export interface DiagramSchema {
 export const ELEMENT_KINDS = ['arena', 'actor', 'object', 'puddle', 'tether'] as const;
 /** Every `define` kind, as the parser knows them, except the removed `element`. */
 export const DEFINE_KINDS = [...ELEMENT_KINDS, 'action', 'gradient', 'strategy', 'coordinate-space'] as const;
-/** The element fields that `define action` can't have, since its timeline action decides them (thaliak's `MOVED_KEYS`). */
-const ACTION_TIMELINE_KEYS = new Set(['type', 'size', 'angle', 'look']);
-
-/** The fields a `define` block of `kind` can have. Only an action's has the action fields; the removed `element` has the shared ones. */
+/** The fields a `define` block of `kind` can have, as the parser checks them (its `fieldsOfKind()`). */
 export function fieldsOfKind(schema: DiagramSchema, kind: string): Record<string, DiagramField> {
-    switch (kind) {
-        case 'gradient':
-        case 'coordinate-space': return {};
-        case 'strategy': return schema.define.strategy.fields;
-        case 'action': return Object.fromEntries(Object.entries({ ...schema.define.action.fields, ...schema.define.element.fields }).filter(([key]) => !ACTION_TIMELINE_KEYS.has(key)));
-        default: return { ...schema.define.element.fields, ...(schema.define[kind as typeof ELEMENT_KINDS[number]]?.fields ?? {}) };
-    }
+    return grammarFieldsOfKind(schema, kind) as Record<string, DiagramField>;
 }
 
 /** The values and their meanings that `field` lists itself or through `valuesFrom`. */
 export function valuesOf(schema: DiagramSchema, field: DiagramField): Record<string, string> {
-    const lists = (field.valuesFrom ?? []).map(path => path.split('.').reduce<any>((value, key) => value?.[key], schema) as Record<string, string> | undefined);
-
-    return Object.assign({}, field.values, ...lists);
+    return grammarValuesOf(schema, field);
 }
 
 /** The element fields that only some types have, by those types, as the schema describes them. */
@@ -96,7 +97,7 @@ const FIELDS_OF_TYPES: Record<string, readonly string[]> = {
     color: ['image', 'graphic', 'prism']
 };
 /** The element fields that only some kinds have, by those kinds, as the schema describes them. */
-const FIELDS_OF_KINDS: Record<string, readonly string[]> = { margin: ['arena'], speed: ['actor'], reach: ['actor'] };
+const FIELDS_OF_KINDS: Record<string, readonly string[]> = { speed: ['actor'], reach: ['actor'] };
 
 /**
  * The element types an action's AoE can be drawn as, by its timeline `shape` (the compiler's `drawnShape()`). Where

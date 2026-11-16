@@ -5,9 +5,11 @@ import { planeUnitsPerYalm } from '../diagram-sizing';
 import { BOSS_IMAGE, DEFAULT_ACTOR_GRAPHICS } from '../diagram-defaults';
 import { AnimationDefinition, ANIMATIONS, DDL_MARKER_LOOKS, ParameterDefinition, ParameterKey, PARAMETERS } from '../diagram-enums';
 import { expandMargin } from '../margin';
-import { armsApply, Definition, Diagnostic, parse, ParseResult, Section, signProblem, Statement, tokenize } from './parse';
+import { armsApply, CASTER, DdlGrammar, Definition, Diagnostic, parse, ParseResult, readFieldValue, Section, Statement, withCaster } from './parse';
 import { callPlaceholder, PLAYER_GROUPS, resolveWaymarks } from './placeholders';
 import type { Margin } from '../../types/graphing';
+
+export { readFieldValue } from './parse';
 import { AoeArea, AoePart, ArenaChange, CompiledAoe, CompiledDiagram, CompiledElement, definitionKey, GhostTrack, MOTION_RAMP, Pose, positionAt, rotationAt, Scope, Selection, Spawn, XY } from './seek';
 
 /** Run speed in yalms per ms. */
@@ -40,31 +42,15 @@ const TELEPORT_EASE_OUT = 80;
  * target got far from its front, as after a cast lock. Provisional, until tested against footage.
  */
 const FOLLOW_TURN_SPEED = 360 / 1000;
-/** A whole value that's a fixed-size list of numbers in round brackets, written like a coordinate: `(0.5, 0)`. */
-const ROUND_TUPLE = /^\(\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+\s*\)$/;
-/**
- * The `define` fields whose value is a kind, which is never optional, followed by `key value` clauses:
- * `look: plain color #FFF6D5`. `kind` names what comes first, `example` shows the form, and `clauses` lists the
- * clauses it takes, if not any parameter of its look or animation.
- */
-const CLAUSE_FIELDS: Record<string, { kind: string, example: string, clauses?: readonly string[] }> = {
-    look: { kind: 'type', example: 'look: plain color #FFF6D5' },
-    enter: { kind: 'type', example: 'enter: scale speed 2' },
-    exit: { kind: 'type', example: 'exit: tornado speed 0.5 height 1.5' },
-    stroke: { kind: 'style', example: 'stroke: dashed color #FFB4B4', clauses: ['color'] },
-    extrude: { kind: 'height', example: 'extrude: 1.5 color #000000BB', clauses: ['color'] }
-};
-/** The styles a `stroke` can have. */
-const STROKE_STYLES = ['solid', 'dashed'];
 
 /** The game action IDs that a `.diagram` file's `place` statements draw instead with `as`, whose facts {@link DiagramInput.variants} needs. */
 export function variantIdsOf(source: string): number[] {
     return [...new Set([...source.matchAll(/^\s*(?:\d+\s+)?place:.*$/gm)].flatMap(line => [...line[0].replace(/\/\/.*$/, '').matchAll(/\bas\s+(\d+)\b/g)].map(match => Number(match[1]))))];
 }
 
-/** The images that a `.diagram` file's `define arena` blocks name, whose sizes {@link DiagramInput.arenaImageSizes} needs. */
-export function arenaImagesOf(source: string): string[] {
-    return [...new Set(parse(source).definitions.flatMap(d => d.kind === 'arena' && d.fields.image?.[0] != null ? [d.fields.image[0].trim()] : []))];
+/** The images that a `.diagram` file's `define arena` blocks name, whose sizes {@link DiagramInput.arenaImageSizes} needs. `grammar` is the DDL's. */
+export function arenaImagesOf(source: string, grammar: DdlGrammar): string[] {
+    return [...new Set(parse(source, grammar).definitions.flatMap(d => d.kind === 'arena' && d.fields.image?.[0] != null ? [d.fields.image[0].trim()] : []))];
 }
 
 /**
@@ -86,59 +72,6 @@ function facingOf(definition: Record<string, unknown>): number {
     if (dx === 0 && dy === 0) [dx, dy] = [0.5 - x, 0.5 - y];
 
     return dx === 0 && dy === 0 ? 0 : Math.atan2(dx, -dy) * 180 / Math.PI;
-}
-
-/**
- * Reads the value of the `define` field `key`: `true` or `false`, a number, a fixed-size list of numbers written like a
- * coordinate (`origin: (0.5, 0)`), or else the text as it is. {@link CLAUSE_FIELDS} take their kind and clauses
- * instead. Throws on objects and lists (`{ … }`, `[ … ]`), which aren't part of the DDL.
- */
-export function readFieldValue(key: string, text: string): unknown {
-    const clauseField = CLAUSE_FIELDS[key];
-
-    if (/^[{[]/.test(text)) throw new Error(`objects and lists aren't part of the DDL${clauseField != null ? `: write it as "${clauseField.example}"` : ''}`);
-    if (clauseField != null) return readClauseField(key, text, clauseField);
-    if (text === 'true' || text === 'false') return text === 'true';
-    if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text);
-    if (ROUND_TUPLE.test(text)) return text.slice(1, -1).split(',').map(Number);
-
-    return text;
-}
-
-/**
- * Reads the value of one of the {@link CLAUSE_FIELDS}: its kind, then its clauses, as in `exit: tornado speed 0.5`.
- * A `look`, `enter` or `exit` is its type alone, or `{ type, ...parameters }`; a `stroke` is `{ style, color }`; an
- * `extrude` is `"<height> <color>"`, as the viewer takes it, and needs its color.
- */
-function readClauseField(key: string, text: string, { kind, example, clauses: allowed }: { kind: string, example: string, clauses?: readonly string[] }): unknown {
-    const [first, ...rest] = tokenize(text);
-
-    if (first == null || first.startsWith('#')) throw new Error(`it starts with its ${kind}, which is never optional, as in "${example}"`);
-
-    const clauses: Record<string, number | string> = {};
-
-    for (let i = 0; i < rest.length; i += 2) {
-        const clause = rest[i]!;
-        const value = rest[i + 1];
-
-        if (allowed != null && !allowed.includes(clause)) throw new Error(`only ${allowed.map(name => `"${name}"`).join(', ')} can follow its ${kind}, not "${clause}", as in "${example}"`);
-        if (value == null || value === ',') throw new Error(`"${clause}" has no value, as in "${example}"`);
-        if (clause in clauses) throw new Error(`"${clause}" is given twice`);
-
-        clauses[clause] = /^-?\d+(\.\d+)?$/.test(value) ? Number(value) : value;
-    }
-
-    switch (key) {
-        case 'stroke':
-            if (!STROKE_STYLES.includes(first)) throw new Error(`its style is ${STROKE_STYLES.join(' or ')}, not "${first}", as in "${example}"`);
-            return { style: first, ...clauses };
-        case 'extrude':
-            if (!/^\d+(\.\d+)?$/.test(first)) throw new Error(`its height is a number, not "${first}", as in "${example}"`);
-            if (clauses.color == null) throw new Error(`it needs a color, as in "${example}"`);
-            return `${first} ${clauses.color}`;
-        default:
-            return rest.length === 0 ? first : { type: first, ...clauses };
-    }
 }
 
 /**
@@ -191,8 +124,6 @@ const GHOST_SIZE = 7.5;
  */
 const SHOW_ENEMY_GHOSTS = false;
 const RAIDWIDE_BASE = 'diagram-raidwide';
-/** The subject that an action hook's statement without one gets: the action's caster, as of the use. Not for authors to write. */
-const CASTER = '$caster';
 /** The element that shows an action's name as it hits. */
 const LABEL_BASE = 'diagram-label';
 /** How often a status with a `tick` damages its player, in ms. */
@@ -336,6 +267,8 @@ export interface GhostFile {
 }
 
 export interface DiagramInput {
+    /** The DDL's grammar, `_site/_data/schemas/diagram.schema.json`. */
+    schema: DdlGrammar;
     ghosts?: GhostFile;
     uses: Use[];
     actions: Record<string, ActionFacts>;
@@ -662,7 +595,7 @@ function readHeadmarkerField(value: unknown, headmarkers: ReadonlySet<string>): 
 }
 
 /** Splits `define` blocks into what each one means. Non-simple values keep the viewer's form, parsed as YAML flow. */
-function readDefinitions(definitions: Definition[], actions: Record<string, ActionFacts>, headmarkers: ReadonlySet<string>, error: (line: number, message: string) => void) {
+function readDefinitions(definitions: Definition[], actions: Record<string, ActionFacts>, headmarkers: ReadonlySet<string>, error: (line: number, message: string) => void, syntaxError: (line: number, message: string) => void) {
     const actionDefs: Record<string, Record<string, any>> = {};
     const elementDefs: Record<string, Record<string, any>> = {};
     /** The kind of each element definition, by its ID. */
@@ -698,6 +631,8 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
         }
 
         const values: Record<string, unknown> = {};
+        /** The line of the field `key`, or of the block if it has none. */
+        const lineOf = (key: string) => definition.fieldLines[key]?.[0] ?? definition.line;
 
         for (const [key, lines] of Object.entries(definition.fields)) {
             if (key === 'on:enter' || key === 'on:exit') {
@@ -710,18 +645,6 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
                     if (effect != null && PLANNED_EFFECTS.includes(effect)) error(definition.line, plannedEffectMessage(effect));
                 }
 
-                // Hooks are parsed again where they run, which drops the parser's errors, so their signs are checked here.
-                for (const statement of hooks.flatMap(hook => parse(`0 ${hook}`).statements)) {
-                    const problem = signProblem(statement.sign, statement.verb);
-
-                    if (problem != null) error(definition.line, problem);
-                }
-
-                continue;
-            }
-
-            if (key.startsWith('on:')) {
-                error(definition.line, `"${key}" isn't a hook: on:enter or on:exit`);
                 continue;
             }
 
@@ -731,7 +654,7 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
             if (key === 'margins' && definition.kind === 'arena') {
                 const margins = readArenaMargins(lines.join(' '));
 
-                if (typeof margins === 'string') error(definition.line, `"define arena ${definition.id}": ${margins}`);
+                if (typeof margins === 'string') syntaxError(lineOf(key), `"define arena ${definition.id}": ${margins}`);
                 else values.margins = margins;
 
                 continue;
@@ -740,25 +663,25 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
             try {
                 values[key] = readFieldValue(key, lines.join(' '));
             } catch (e) {
-                error(definition.line, `"${key}" of "${definition.id}" can't be read: ${e instanceof Error ? e.message : e}`);
+                syntaxError(lineOf(key), `"${key}" of "${definition.id}" can't be read: ${e instanceof Error ? e.message : e}`);
             }
         }
 
         if (definition.kind === 'action') {
             if (actions[definition.id] == null) error(definition.line, `"${definition.id}" isn't an action of the timeline`);
-            if ('look' in values) error(definition.line, `"${definition.id}" can't have a "look": AoE looks come from omens.yaml`);
+            if ('look' in values) syntaxError(lineOf('look'), `"${definition.id}" can't have a "look": AoE looks come from omens.yaml`);
 
-            if ('attached' in values && typeof values.attached !== 'boolean' && typeof values.attached !== 'string') error(definition.line, `"attached" of "${definition.id}" is true, false or an actor's key`);
+            if ('attached' in values && typeof values.attached !== 'boolean' && typeof values.attached !== 'string') syntaxError(lineOf('attached'), `"attached" of "${definition.id}" is true, false or an actor's key`);
 
             if ('lead' in values) {
                 const lead = typeof values.lead === 'number' ? values.lead : typeof values.lead === 'string' && /^\d+(\.\d+)?m?s$/.test(values.lead) ? duration(values.lead) : NaN;
                 const facts = actions[definition.id];
 
                 if (!(lead > 0)) {
-                    error(definition.line, `"lead" of "${definition.id}" is a duration above 0, such as "lead: 2s"`);
+                    syntaxError(lineOf('lead'), `"lead" of "${definition.id}" is a duration above 0, such as "lead: 2s"`);
                     delete values.lead;
                 } else if (facts != null && hasTelegraph(facts)) {
-                    error(definition.line, `"${definition.id}" has a telegraph, which its cast times; "lead" is for actions without one`);
+                    error(lineOf('lead'), `"${definition.id}" has a telegraph, which its cast times; "lead" is for actions without one`);
                     delete values.lead;
                 } else {
                     values.lead = lead;
@@ -769,7 +692,7 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
                 const headmarker = readHeadmarkerField(values.headmarker, headmarkers);
 
                 if (typeof headmarker === 'string') {
-                    error(definition.line, `"${definition.id}": ${headmarker}`);
+                    syntaxError(lineOf('headmarker'), `"${definition.id}": ${headmarker}`);
                     delete values.headmarker;
                 } else {
                     values.headmarker = headmarker;
@@ -778,11 +701,11 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
 
             actionDefs[definition.id] = values;
         } else if (definition.kind === 'arena' && definition.id !== 'arena') {
-            if ('type' in values) error(definition.line, `"define arena ${definition.id}" can't have a "type": an arena is an image`);
+            if ('type' in values) syntaxError(lineOf('type'), `"define arena ${definition.id}" can't have a "type": an arena is an image`);
 
             arenaDefs[definition.id] = { line: definition.line, values };
         } else {
-            readElementType(definition, values, error);
+            readElementType(definition, values, syntaxError);
             elementDefs[definition.id] = values;
             elementKinds[definition.id] = definition.kind;
         }
@@ -793,22 +716,24 @@ function readDefinitions(definitions: Definition[], actions: Record<string, Acti
 
 /**
  * Checks a definition's `type` against what its kind allows, fills in the type of kinds that have only one, and turns
- * `type: graphic` into the viewer's `marker`. Also checks what only some kinds take: `duration` (puddles).
+ * `type: graphic` into the viewer's `marker`. Also checks what only some kinds take: `duration` (puddles). Reports
+ * through `syntaxError`, on the line of the field concerned, since these are rules of the grammar.
  */
-function readElementType(definition: Definition, values: Record<string, unknown>, error: (line: number, message: string) => void): void {
+function readElementType(definition: Definition, values: Record<string, unknown>, syntaxError: (line: number, message: string) => void): void {
     const allowed = TYPES_OF_KIND[definition.kind];
     const type = values.type as string | undefined;
     const name = definition.kind === 'arena' ? '"define arena"' : `"${definition.id}"`;
+    const lineOf = (key: string) => definition.fieldLines[key]?.[0] ?? definition.line;
 
-    if ('duration' in values && definition.kind !== 'puddle') error(definition.line, `${name} can't have a "duration": only puddles disappear by themselves`);
+    if ('duration' in values && definition.kind !== 'puddle') syntaxError(lineOf('duration'), `${name} can't have a "duration": only puddles disappear by themselves`);
     if (allowed == null) return;
 
     if (type != null && !allowed.includes(type)) {
-        error(definition.line, `${name} is a ${definition.kind}, whose type is ${allowed.join(' or ')}`);
+        syntaxError(lineOf('type'), `${name} is a ${definition.kind}, whose type is ${allowed.join(' or ')}`);
     } else if (type == null && allowed.length === 1) {
         values.type = allowed[0];
     } else if (type == null && definition.kind !== 'actor') {
-        error(definition.line, `${name} needs a "type": ${allowed.join(', ')}`);
+        syntaxError(definition.line, `${name} needs a "type": ${allowed.join(', ')}`);
     }
 
     if (values.type === 'graphic') {
@@ -816,14 +741,14 @@ function readElementType(definition: Definition, values: Record<string, unknown>
         const lookName = typeof look === 'string' ? look : look?.type;
 
         if (lookName == null || !(DDL_MARKER_LOOKS.graphics as readonly string[]).includes(lookName)) {
-            error(definition.line, `"${definition.id}" needs a graphic "look": ${DDL_MARKER_LOOKS.graphics.join(', ')}`);
+            syntaxError(lineOf('look'), `"${definition.id}" needs a graphic "look": ${DDL_MARKER_LOOKS.graphics.join(', ')}`);
         }
 
         values.type = 'marker';
     }
 
     // A prism has no default depth to draw its side and top with.
-    if (values.type === 'prism' && typeof values.depth !== 'number') error(definition.line, `"${definition.id}" needs a "depth": prisms are boxes`);
+    if (values.type === 'prism' && typeof values.depth !== 'number') syntaxError(lineOf('type'), `"${definition.id}" needs a "depth": prisms are boxes`);
 }
 
 /**
@@ -832,7 +757,7 @@ function readElementType(definition: Definition, values: Record<string, unknown>
  * the timeline use it binds to, for the linter's hints. Hooks' placements aren't in it.
  */
 export function compileDiagram(source: string, input: DiagramInput): CompileResult {
-    const parsed = parse(source);
+    const parsed = parse(source, input.schema);
     const strategyIds = parsed.definitions.filter(definition => definition.kind === 'strategy').map(definition => definition.id);
     const unknown: Diagnostic[] = parsed.sections.flatMap(section => section.arms.flatMap(arm => arm.kind === 'strategy' && !arm.else
         ? arm.names.filter(name => !strategyIds.includes(name)).map(name => ({ line: arm.line, message: `unknown strategy "${name}"` }))
@@ -840,13 +765,15 @@ export function compileDiagram(source: string, input: DiagramInput): CompileResu
     const worlds = worldsOf(parsed.sections, strategyIds);
     const merged = mergeWorlds(worlds, parsed.sections, worlds.map(world => compileWorld(parsed, input, world, strategyIds)));
 
-    return { ...merged, diagnostics: [...parsed.diagnostics, ...unknown, ...merged.diagnostics] };
+    return { ...merged, diagnostics: [...parsed.diagnostics, ...unknown, ...merged.diagnostics], syntax: [...parsed.syntax, ...merged.syntax] };
 }
 
 /** What {@link compileDiagram} returns. */
 export interface CompileResult {
     diagram: CompiledDiagram;
     diagnostics: Diagnostic[];
+    /** Syntax errors, the parser's and the compiler's, which are errors even in a fight whose diagrams are WIP (see `ParseResult.syntax`). */
+    syntax: Diagnostic[];
     placements: { line: number, id: string, at: number }[];
 }
 
@@ -925,7 +852,9 @@ function mergeWorlds(worlds: readonly Selection[], sections: readonly Section[],
     }
 
     const placements = new Map(results.flatMap(result => result.placements.map(placement => [JSON.stringify(placement), placement] as const)));
-    const diagnostics = mergeList(results.map(result => result.diagnostics), scopes, (diagnostic, scope) => Object.keys(scope).length > 0 ? { ...diagnostic, scope } : diagnostic);
+    const scoped = (diagnostic: Diagnostic, scope: Scope) => Object.keys(scope).length > 0 ? { ...diagnostic, scope } : diagnostic;
+    const diagnostics = mergeList(results.map(result => result.diagnostics), scopes, scoped);
+    const syntax = mergeList(results.map(result => result.syntax), scopes, scoped);
 
     return {
         diagram: {
@@ -945,6 +874,7 @@ function mergeWorlds(worlds: readonly Selection[], sections: readonly Section[],
             thumbnails
         },
         diagnostics,
+        syntax,
         placements: [...placements.values()]
     };
 }
@@ -1089,14 +1019,19 @@ function mergeList<T extends object, R = T & Scope>(lists: readonly (readonly T[
 export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Selection, strategyIds: readonly string[]): CompileResult {
     const { actions } = input;
     const diagnostics: Diagnostic[] = [];
+    const syntax: Diagnostic[] = [];
     const placements: { line: number, id: string, at: number }[] = [];
     const error = (line: number, message: string) => {
         diagnostics.push({ line, message });
     };
+    /** Reports a syntax error: a form the grammar doesn't allow, which the parser can't see, such as an unknown effect parameter. */
+    const syntaxError = (line: number, message: string) => {
+        syntax.push({ line, message });
+    };
     /** The headmarker looks this diagram can use, and the tether looks it can use without a `define tether`. */
     const headmarkerLooks = new Set<string>(input.headmarkers == null ? DDL_MARKER_LOOKS.headmarkers : [...Object.values(input.headmarkers), ...UNMAPPED_HEADMARKERS, 'unknown']);
     const tetherLooks = new Set<string>([...Object.values(input.tethers ?? {}), 'unknown']);
-    const { actionDefs, elementDefs, elementKinds, gradients, strategies, arenaDefs } = readDefinitions(parsed.definitions, actions, headmarkerLooks, error);
+    const { actionDefs, elementDefs, elementKinds, gradients, strategies, arenaDefs } = readDefinitions(parsed.definitions, actions, headmarkerLooks, error, syntaxError);
     const definitionLine = (kind: Definition['kind'], id: string) => parsed.definitions.find(d => d.kind === kind && d.id === id)?.line ?? 0;
     // Every arena change carries every key that any arena sets, so that one arena's `filter` doesn't stay on the next.
     const arenaKeys = new Set(Object.values(arenaDefs).flatMap(def => Object.keys(def.values)).filter(key => key !== 'image' && key !== 'margins'));
@@ -1122,11 +1057,6 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         return [{ at: item.at, arena: item.arena, image, props, ...(merged.margins != null ? { margin: merged.margins as Margin } : {}), ...(imageSize != null ? { imageSize } : {}) }];
     });
     const spaces = parsed.definitions.filter(d => d.kind === 'coordinate-space');
-
-    for (const definition of spaces) {
-        if (definition.id !== 'cartesian' && definition.id !== 'polar') error(definition.line, `"define coordinate-space ${definition.id}": the coordinate space is cartesian or polar`);
-        if (Object.keys(definition.fields).length > 0 || definition.body.length > 0) error(definition.line, '"define coordinate-space" takes no fields');
-    }
 
     if (spaces.length > 1) error(spaces[1]!.line, 'a file has only one "define coordinate-space"');
 
@@ -1169,14 +1099,16 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
     // world has the same, and they run to the next statement of the whole file.
     const skips: [number, number][] = [];
     const body: Statement[] = [];
+    // A statement with a syntax error does nothing.
+    const statements = parsed.statements.filter(s => !s.broken);
     // Every world ends at the same time, that of the file's last statement.
-    const lastTime = parsed.statements.reduce((max, s) => Math.max(max, s.at), 0);
+    const lastTime = statements.reduce((max, s) => Math.max(max, s.at), 0);
     // Past the last use, so that a skip to the end also covers it.
     const end = Math.max(lastTime, ...input.uses.map(use => use.at)) + 1;
 
-    parsed.statements.forEach((s, index) => {
+    statements.forEach((s, index) => {
         if (s.verb === 'skip') {
-            skips.push([s.at, parsed.statements[index + 1]?.at ?? end]);
+            skips.push([s.at, statements[index + 1]?.at ?? end]);
             return;
         }
 
@@ -1296,7 +1228,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         const value = valueFor(offset, index, ids, s)!;
         const xy = planeOf(value);
 
-        if (xy == null) error(s.line, `"offset ${value}" of "${id}" is a pair, such as (10, 90), cart(10, -5) or polar(10, 90)`);
+        if (xy == null) syntaxError(s.line, `"offset ${value}" of "${id}" is a pair, such as (10, 90), cart(10, -5) or polar(10, 90)`);
 
         return xy ?? [0, 0];
     };
@@ -1337,18 +1269,16 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
 
         if (kind == null || size == null) return undefined;
 
-        const scale = (visual.scale ?? definition.scale ?? 1) as number | [number, number];
-        const [scaleX, scaleY] = typeof scale === 'number' ? [scale, scale] : scale;
         const origin = (visual.origin ?? definition.origin ?? 0.5) as number | [number, number];
 
         // A donut's size is its inner and outer diameter.
         if (kind === 'donut') {
-            return { kind, size: [size[1] * scaleX, size[1] * scaleY], origin: [0.5, 0.5], inner: size[0] / 2 * scaleX };
+            return { kind, size: [size[1], size[1]], origin: [0.5, 0.5], inner: size[0] / 2 };
         }
 
         return {
             kind,
-            size: [size[0] * scaleX, size[1] * scaleY],
+            size: [size[0], size[1]],
             origin: typeof origin === 'number' ? [origin, origin] : origin,
             ...(kind === 'cone' ? { angle: (visual.angle ?? definition.angle) as number } : {})
         };
@@ -1377,7 +1307,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
             const target = positionOf(valueFor(to, index, ids, s)!, id, s.line);
             const isPlayer = PLAYERS.includes(id);
 
-            if (!isPlayer && overMs == null) error(s.line, `"${id}" isn't a player, so its ${s.verb} needs "over"`);
+            if (!isPlayer && overMs == null) syntaxError(s.line, `"${id}" isn't a player, so its ${s.verb} needs "over"`);
             const from = lastDestination(element);
             // A player runs to an element as far as where that was last placed or sent, and then stays on it as it moves.
             const spot = typeof target === 'string' ? lastDestination(elements.get(target) ?? element) : target;
@@ -1403,9 +1333,9 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         if (rotate != null) {
             const by = valueFor(rotate, index, ids, s)!;
 
-            if (overMs == null) error(s.line, `the rotation of "${id}" needs "over"`);
+            if (overMs == null) syntaxError(s.line, `the rotation of "${id}" needs "over"`);
             // An unsigned amount reads like a facing, which is what "toward" is for.
-            if (!/^[+-]\d/.test(by)) error(s.line, `"rotate ${by}" turns by ${by}° from where "${id}" faces now; write "rotate +${by}" for that, or "toward ${by}" to face ${by}° (0 is north, 180 is south)`);
+            if (!/^[+-]\d/.test(by)) syntaxError(s.line, `"rotate ${by}" turns by ${by}° from where "${id}" faces now; write "rotate +${by}" for that, or "toward ${by}" to face ${by}° (0 is north, 180 is south)`);
 
             element.turns.push({ t: s.verb === 'arrive' ? s.at - (overMs ?? 0) : s.at, over: overMs ?? 0, by: Number(by) });
         }
@@ -1549,7 +1479,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
     /** Runs an element's `on:enter` or `on:exit` statements at the time of `s`, which places or removes it. */
     const runElementHooks = (element: CompiledElement, hooks: 'enterHooks' | 'exitHooks', s: Statement, id: string) => {
         for (const line of (elementDef(element.base, element.id.includes('@'))?.[hooks] ?? []) as string[]) {
-            for (const hooked of parse(`${s.at} ${line}`).statements) run({ ...hooked, line: s.line }, id);
+            for (const hooked of parse(`${s.at} ${line}`, input.schema).statements.filter(hooked => !hooked.broken)) run({ ...hooked, line: s.line }, id);
         }
     };
 
@@ -1607,9 +1537,9 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     break;
                 }
 
-                if (!(RESOLVE_PRESETS as readonly string[]).includes(preset)) error(s.line, `unknown effect "${name}"`);
+                if (!(RESOLVE_PRESETS as readonly string[]).includes(preset)) syntaxError(s.line, `unknown effect "${name}"`);
 
-                const parameters = effectParameters(preset, s, error);
+                const parameters = effectParameters(preset, s, syntaxError);
 
                 if (hookUse != null) {
                     pendingEffects.push({ use: hookUse, preset, ...(parameters != null ? { parameters } : {}) });
@@ -1619,7 +1549,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                 const on = clauseOf(s, 'on')?.[0] ?? effectTarget;
 
                 if (on == null) {
-                    error(s.line, `+effect "${name}" has no "on"`);
+                    syntaxError(s.line, `+effect "${name}" has no "on"`);
                 } else {
                     const effect = { at: s.at, target: on, preset, ...(parameters != null ? { parameters } : {}) };
                     effects.push(effect);
@@ -1640,7 +1570,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                             x.to = s.at;
                         });
                     } else {
-                        if (on == null) error(s.line, `+status "${name}" has no "on"`);
+                        if (on == null) syntaxError(s.line, `+status "${name}" has no "on"`);
 
                         for (const player of on ?? []) {
                             const status = { player, name, from: s.at, to: Infinity };
@@ -1676,7 +1606,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                         error(s.line, `"${base}" is ${kind === 'arena' ? 'the arena' : `defined as a ${kind}`}, so it can't be placed with "${s.sign}${s.verb}"`);
                     }
 
-                    if (s.verb === 'headmarker' && s.sign === '+' && clauseOf(s, 'on') == null) error(s.line, `+headmarker "${id}" needs "on": the actor or player it marks`);
+                    if (s.verb === 'headmarker' && s.sign === '+' && clauseOf(s, 'on') == null) syntaxError(s.line, `+headmarker "${id}" needs "on": the actor or player it marks`);
 
                     const element = ensure(id, s.line);
 
@@ -1706,7 +1636,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                         const [from, to, ...rest] = id.includes('@') ? id.slice(id.indexOf('@') + 1).split('>') : [];
 
                         if (from == null || to == null || from === '' || to === '' || rest.length > 0) {
-                            error(s.line, `tether "${id}" needs the form name@A>B, such as far-tether@T1>R2`);
+                            syntaxError(s.line, `tether "${id}" needs the form name@A>B, such as far-tether@T1>R2`);
                         } else {
                             element.link = { from, to };
                         }
@@ -1738,11 +1668,11 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                             element.props.text = text;
                         } else if (s.verb === 'headmarker' && clause.key === 'size' && !(Number(literal(value)) > 0)) {
                             // A headmarker's size overrides its look's own (its marker class's) and is in plane units.
-                            error(s.line, `"size" of headmarker "${id}" takes a number above 0, in plane units`);
+                            syntaxError(s.line, `"size" of headmarker "${id}" takes a number above 0, in plane units`);
                         } else if (clause.key !== 'toward' && clause.key !== 'offset') {
                             element.props[clause.key] = literal(value);
 
-                            if (clause.key === 'size' || clause.key === 'scale') statementLines.set(id, s.line);
+                            if (clause.key === 'size') statementLines.set(id, s.line);
                         }
                     }
 
@@ -1809,7 +1739,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                         // Turns it from where its actor faces or its `toward` points, so the amount needs a sign, as in a move.
                         const by = valueFor(rotate, index, ids, s)!;
 
-                        if (!/^[+-]\d+(\.\d+)?$/.test(by)) error(s.line, `"rotate ${by}" turns "${id}" by ${by}° from where it would point; write "rotate +${by.replace(/^[+-]/, '')}" or "rotate -${by.replace(/^[+-]/, '')}", or "toward ${by}" to point it at ${by}° (0 is north, 180 is south)`);
+                        if (!/^[+-]\d+(\.\d+)?$/.test(by)) syntaxError(s.line, `"rotate ${by}" turns "${id}" by ${by}° from where it would point; write "rotate +${by.replace(/^[+-]/, '')}" or "rotate -${by.replace(/^[+-]/, '')}", or "toward ${by}" to point it at ${by}° (0 is north, 180 is south)`);
                         else fields.rotate = Number(by);
                     }
 
@@ -1823,7 +1753,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     const as = clauseOf(s, 'as');
                     const variant = as == null ? undefined : Number(valueFor(as, index, ids, s));
 
-                    if (variant != null && !Number.isInteger(variant)) error(s.line, `"as" on place takes a game action ID`);
+                    if (variant != null && !Number.isInteger(variant)) syntaxError(s.line, `"as" on place takes a game action ID`);
 
                     const aoe = addAoe(id, use, fields, s.line, variant);
 
@@ -1851,8 +1781,8 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                 const move: Statement = { ...s, verb: 'arrive', at: arrival, clauses: [...s.clauses.filter(c => c.key === 'to'), { key: 'over', values: [`${TELEPORT_SLIDE}ms`] }] };
                 const ids = subjects();
 
-                if (clauseOf(s, 'to') == null) error(s.line, '"teleport" needs "to"');
-                if (clauseOf(s, 'over') != null) error(s.line, `"teleport" always takes ${TELEPORT_TURN + TELEPORT_SLIDE} ms, so it can't have "over"`);
+                if (clauseOf(s, 'to') == null) syntaxError(s.line, '"teleport" needs "to"');
+                if (clauseOf(s, 'over') != null) syntaxError(s.line, `"teleport" always takes ${TELEPORT_TURN + TELEPORT_SLIDE} ms, so it can't have "over"`);
 
                 ids.forEach((id, index) => {
                     const element = ensure(id, s.line);
@@ -1882,7 +1812,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     for (const clause of s.clauses) {
                         // Filters take several functions, which a clause can't hold, so they stay with the definition.
                         if (clause.key === 'filter') {
-                            error(s.line, `"filter" can't be set; give "${id}" a filter in its define block instead`);
+                            syntaxError(s.line, `"filter" can't be set; give "${id}" a filter in its define block instead`);
                         } else if (clause.key !== 'toward' && clause.key !== 'over') {
                             element.sets.push({ t: s.at, over: overMs, key: clause.key, value: literal(valueFor(clause.values, index, ids, s)!) });
                         }
@@ -1905,7 +1835,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     const [on, toward] = [clauseOf(s, 'on')?.[0], clauseOf(s, 'toward')?.[0]];
 
                     if ((on == null) === (toward == null)) {
-                        error(s.line, '+follow needs either "on" (to chase and turn) or "toward" (to turn only)');
+                        syntaxError(s.line, '+follow needs either "on" (to chase and turn) or "toward" (to turn only)');
                         continue;
                     }
 
@@ -1921,7 +1851,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
                     const [toward, over, hold] = [clauseOf(s, 'toward'), clauseOf(s, 'over'), clauseOf(s, 'for')];
 
                     if (toward == null) {
-                        error(s.line, 'turn needs "toward"');
+                        syntaxError(s.line, 'turn needs "toward"');
                         return;
                     }
 
@@ -2090,7 +2020,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
     // Action hooks become ordinary statements at each use of the action: `on:enter` as its cast starts, `on:exit` at its hit.
     // One that starts with a clause instead of a subject (`teleport: to (0, 0)`) moves the caster.
     const hookStatements = (use: Use, hooks: 'enterHooks' | 'exitHooks', at: number) => ((actionDefs[use.action]?.[hooks] ?? []) as string[])
-        .flatMap(line => parse(`${at} ${line.replace(/^([+-]?[a-z][a-z-]*:)\s+(?=(?:to|toward|rotate|over)\b)/, `$1 ${CASTER} `)}`).statements)
+        .flatMap(line => parse(`${at} ${withCaster(line)}`, input.schema).statements.filter(s => !s.broken))
         .map(statement => ({ statement: { ...statement, line: 0 }, use }));
     const hooked: { statement: Statement, use: Use }[] = uses.flatMap(use => [
         ...hookStatements(use, 'enterHooks', use.at - (actions[use.action]?.cast ?? 0)),
@@ -2220,7 +2150,7 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         const hitbox = input.hitboxes?.[element.base];
 
         if (hitbox != null) {
-            if (element.props.size != null || element.props.scale != null) error(statementLines.get(element.id) ?? 0, `"${element.id}" is sized from the hitbox of its actor, so it can't also have a size or scale`);
+            if (element.props.size != null) error(statementLines.get(element.id) ?? 0, `"${element.id}" is sized from the hitbox of its actor, so it can't also have a size`);
 
             const ring = props.image === BOSS_IMAGE ? BOSS_RING : 1;
             element.props.yalms = [2 * hitbox / ring, 2 * hitbox / ring];
@@ -2387,5 +2317,5 @@ export function compileWorld(parsed: ParseResult, input: DiagramInput, world: Se
         waymarks
     };
 
-    return { diagram, diagnostics, placements };
+    return { diagram, diagnostics, syntax, placements };
 }

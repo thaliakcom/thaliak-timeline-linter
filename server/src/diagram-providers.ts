@@ -10,7 +10,7 @@ import { actionTooltip, getStatusIcon, statusTooltip, type TooltipContext } from
 import { DEFINE_KINDS, DiagramField, DiagramSchema, fieldsOfKind, suggestedFieldsOf, suggestedValuesOf, typesOfBlock, valuesOf } from './types/diagram-schema';
 import { OutlineNode, OutlineParams, StatusIcon } from './types/outline';
 import { UnprocessedRaidData } from './types/raids';
-import { Definition, parse, tokenize } from './utility/diagram-ddl/parse';
+import { DdlGrammar, Definition, parse, tokenize } from './utility/diagram-ddl/parse';
 import { formatTime, getAction, getActor, getArenaValues, getRange, getStatus, getStrategyKeys } from './util';
 import { timelineRenameEdit } from './rename-provider';
 import { placementsOf } from './diagram-linter';
@@ -96,12 +96,16 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri);
 
-        if (textDocument == null) {
+        const options = documentCache.getLinterOptions(settings);
+        const schema = options.diagramSchema;
+
+        // Parsing needs the grammar, which the client sends once it has opened it.
+        if (textDocument == null || schema == null) {
             return [];
         }
 
         const source = textDocument.getText();
-        const parsed = parse(source);
+        const parsed = parse(source, schema);
         const lines = linesOf(source);
         const { line, character } = params.position;
         const before = (lines[line] ?? '').slice(0, character);
@@ -112,10 +116,8 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
         /** The IDs of the definitions of `kinds`. */
         const definedAs = (...kinds: string[]) => parsed.definitions.filter(definition => kinds.includes(definition.kind)).map(definition => definition.id);
         const strategies = definedAs('strategy');
-        const options = documentCache.getLinterOptions(settings);
-        const schema = options.diagramSchema;
         const groups = groupsOf(schema);
-        const verbsOfSchema = schema?.verbs ?? {};
+        const verbsOfSchema = schema.verbs;
         /** The verbs that stand on their own, without a colon or arguments. */
         const isBareVerb = (verb: string) => verbsOfSchema[verb] != null && verbsOfSchema[verb]!.arguments == null;
         const keyword = (labels: Iterable<string>, describe?: (label: string) => string | undefined) => items(labels, CompletionItemKind.Keyword, edit, undefined, describe);
@@ -300,7 +302,7 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
                 }
 
                 return [
-                    ...member(liveIdsOf(tokensOf(source, parsed))),
+                    ...member(liveIdsOf(tokensOf(source, schema, parsed))),
                     ...member(['<id>', ...PLAYERS, ...groups], 'b', label => schema.placeholders[label]),
                     ...spots
                 ];
@@ -338,7 +340,8 @@ export function diagramCompletionProvider(documents: TextDocuments<TextDocument>
                 case 'depart':
                 case 'arrive':
                 case 'set':
-                    return [...member(liveIdsOf(tokensOf(source, parsed))), ...member([...PLAYERS, ...groups], 'b', label => schema?.placeholders[label])];
+                    // A hoisted function, which the early return for a missing schema doesn't narrow.
+                    return [...member(liveIdsOf(tokensOf(source, schema!, parsed))), ...member([...PLAYERS, ...groups], 'b', label => schema?.placeholders[label])];
                 default:
                     return [];
             }
@@ -374,7 +377,7 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
         }
 
         const source = textDocument.getText();
-        const parsed = parse(source);
+        const parsed = parse(source, schema);
         const lines = linesOf(source);
         const { line, character } = params.position;
         const text = lines[line] ?? '';
@@ -434,7 +437,7 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
             return definition?.kind === 'action' && isAction(definition.id) ? hover(await actionTooltip(context, definition.id)) : null;
         }
 
-        const token = tokensOf(source, parsed).find(x => x.line === line && character >= x.start && character <= x.end);
+        const token = tokensOf(source, schema, parsed).find(x => x.line === line && character >= x.start && character <= x.end);
         const block = blockOf(lines, line);
         const definition = block >= 0 ? parsed.definitions.find(x => x.line - 1 === block) : undefined;
 
@@ -518,8 +521,8 @@ export function diagramHoverProvider(documents: TextDocuments<TextDocument>, doc
  * The `duration` of the puddle each `+puddle` spawns, by the 0-based line of the statement (or of the `on:enter` or `on:exit` hook line),
  * for the puddles whose `define puddle` has one. With several subjects on one line, the first with a duration counts.
  */
-function puddleLifetimesOf(source: string): Map<number, string> {
-    const parsed = parse(source);
+function puddleLifetimesOf(source: string, schema: DdlGrammar): Map<number, string> {
+    const parsed = parse(source, schema);
     const lines = linesOf(source);
     const durations = new Map(parsed.definitions.filter(definition => definition.kind === 'puddle').flatMap(definition => {
         const duration = fieldsOf(definition, lines).find(field => field.key === 'duration')?.value;
@@ -528,7 +531,7 @@ function puddleLifetimesOf(source: string): Map<number, string> {
     }));
     const lifetimes = new Map<number, string>();
 
-    for (const token of tokensOf(source, parsed)) {
+    for (const token of tokensOf(source, schema, parsed)) {
         const duration = durations.get(baseOf(token.text));
 
         if (token.kind === 'subject' && token.statement?.verb === 'puddle' && token.statement.sign === '+' && duration != null && !lifetimes.has(token.line)) {
@@ -543,11 +546,12 @@ function puddleLifetimesOf(source: string): Map<number, string> {
 const NEAR_ACTION = 1000;
 
 /** Shows, at the end of each line with a time in a `.diagram` file, the time as `m:ss.mmm` and the timeline actions nearest to it. */
-export function diagramInlayHintProvider(documents: TextDocuments<TextDocument>): (params: InlayHintParams) => InlayHint[] {
+export function diagramInlayHintProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: InlayHintParams) => InlayHint[] {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri);
+        const schema = documentCache.getLinterOptions(settings).diagramSchema;
 
-        if (textDocument == null) {
+        if (textDocument == null || schema == null) {
             return [];
         }
 
@@ -555,7 +559,7 @@ export function diagramInlayHintProvider(documents: TextDocuments<TextDocument>)
         const uses = timeline != null ? usesOfTimeline(timeline) : [];
         const source = textDocument.getText();
         const lines = source.split(/\r?\n/);
-        const lifetimes = puddleLifetimesOf(source);
+        const lifetimes = puddleLifetimesOf(source, schema);
         const hints: InlayHint[] = [];
 
         for (let line = params.range.start.line; line <= params.range.end.line && line < lines.length; line++) {
@@ -595,7 +599,7 @@ export function diagramInlayHintProvider(documents: TextDocuments<TextDocument>)
         const placements = placementsOf(textDocument);
 
         if (placements != null) {
-            const tokens = tokensOf(source).filter(token => token.kind === 'subject' && token.statement?.verb === 'place' && token.line >= params.range.start.line && token.line <= params.range.end.line);
+            const tokens = tokensOf(source, schema).filter(token => token.kind === 'subject' && token.statement?.verb === 'place' && token.line >= params.range.start.line && token.line <= params.range.end.line);
 
             for (const token of tokens) {
                 const ids = idsOf(token.text);
@@ -625,17 +629,18 @@ function linkTo(origin: DiagramToken, textDocument: TextDocument, target: yaml.P
 }
 
 /** Go to Definition in `.diagram` files: statuses and actions go to the timeline, and other IDs to their `define` block. */
-export function diagramDefinitionProvider(documents: TextDocuments<TextDocument>): (params: DefinitionParams) => DefinitionLink[] | null {
+export function diagramDefinitionProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: DefinitionParams) => DefinitionLink[] | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri);
+        const schema = documentCache.getLinterOptions(settings).diagramSchema;
 
-        if (textDocument == null) {
+        if (textDocument == null || schema == null) {
             return null;
         }
 
         const source = textDocument.getText();
-        const parsed = parse(source);
-        const token = tokenAt(tokensOf(source, parsed), params.position);
+        const parsed = parse(source, schema);
+        const token = tokenAt(tokensOf(source, schema, parsed), params.position);
 
         if (token == null) {
             return null;
@@ -680,19 +685,20 @@ export function diagramDefinitionProvider(documents: TextDocuments<TextDocument>
  * Find All References in `.diagram` files. On a `define` block or a bare definition's ID, every element of that
  * definition; on an instance (`boss#eye`), that one. Actions and statuses also list their timeline key.
  */
-export function diagramReferenceProvider(documents: TextDocuments<TextDocument>): (params: ReferenceParams) => Location[] | null {
+export function diagramReferenceProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: ReferenceParams) => Location[] | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri);
+        const schema = documentCache.getLinterOptions(settings).diagramSchema;
 
-        if (textDocument == null) {
+        if (textDocument == null || schema == null) {
             return null;
         }
 
         const uri = textDocument.uri;
         const source = textDocument.getText();
-        const parsed = parse(source);
+        const parsed = parse(source, schema);
         const { definitions } = parsed;
-        const tokens = tokensOf(source, parsed);
+        const tokens = tokensOf(source, schema, parsed);
         const token = tokenAt(tokens, params.position);
 
         if (token == null) {
@@ -706,7 +712,7 @@ export function diagramReferenceProvider(documents: TextDocuments<TextDocument>)
             const status = timeline != null ? getStatus(timeline.document, key) : null;
 
             return [
-                ...occurrencesOf(textDocument, 'status', key).map(range => ({ uri, range })),
+                ...occurrencesOf(textDocument, schema, 'status', key).map(range => ({ uri, range })),
                 ...(status != null ? [{ uri: timeline!.textDocument.uri, range: getRange(timeline!.textDocument, status.key.range!) }] : [])
             ];
         }
@@ -746,11 +752,11 @@ const ELEMENT_KINDS: readonly Definition['kind'][] = ['actor', 'object', 'puddle
  * What a rename at `position` of a `.diagram` file renames: the ID of a `define` block, at the block or where an ID
  * names it, or a `place`'s action. The ID-less `define arena` and `define coordinate-space` have none to rename.
  */
-function renameTargetAt(textDocument: TextDocument, position: Position): { kind: Definition['kind'], id: string, range: Range } | null {
+function renameTargetAt(textDocument: TextDocument, position: Position, schema: DdlGrammar): { kind: Definition['kind'], id: string, range: Range } | null {
     const source = textDocument.getText();
-    const parsed = parse(source);
+    const parsed = parse(source, schema);
     const { definitions } = parsed;
-    const token = tokenAt(tokensOf(source, parsed), position);
+    const token = tokenAt(tokensOf(source, schema, parsed), position);
 
     if (token == null) {
         return null;
@@ -787,11 +793,12 @@ function renameTargetAt(textDocument: TextDocument, position: Position): { kind:
 }
 
 /** Where Rename starts in `.diagram` files: on the ID of a `define` block, or where one is named. */
-export function diagramPrepareRenameProvider(documents: TextDocuments<TextDocument>): (params: PrepareRenameParams) => Range | null {
+export function diagramPrepareRenameProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: PrepareRenameParams) => Range | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri);
+        const schema = documentCache.getLinterOptions(settings).diagramSchema;
 
-        return textDocument == null ? null : renameTargetAt(textDocument, params.position)?.range ?? null;
+        return textDocument == null || schema == null ? null : renameTargetAt(textDocument, params.position, schema)?.range ?? null;
     };
 }
 
@@ -800,12 +807,13 @@ export function diagramPrepareRenameProvider(documents: TextDocuments<TextDocume
  * actor's is the timeline's key, so it changes there too, as a rename in the timeline would; an arena's also changes
  * in the timeline's `<arena>` items.
  */
-export function diagramRenameProvider(documents: TextDocuments<TextDocument>): (params: RenameParams) => WorkspaceEdit | null {
+export function diagramRenameProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: RenameParams) => WorkspaceEdit | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri);
-        const target = textDocument == null ? null : renameTargetAt(textDocument, params.position);
+        const schema = documentCache.getLinterOptions(settings).diagramSchema;
+        const target = textDocument == null || schema == null ? null : renameTargetAt(textDocument, params.position, schema);
 
-        if (textDocument == null || target == null) {
+        if (textDocument == null || schema == null || target == null) {
             return null;
         }
 
@@ -813,12 +821,12 @@ export function diagramRenameProvider(documents: TextDocuments<TextDocument>): (
         const { kind, id } = target;
 
         if ((kind === 'action' || kind === 'actor') && timeline != null) {
-            const edit = timelineRenameEdit(documents, timeline.textDocument, timeline.document, `${kind === 'action' ? 'a' : 'ac'}:${id}`, params.newName);
+            const edit = timelineRenameEdit(documents, timeline.textDocument, timeline.document, `${kind === 'action' ? 'a' : 'ac'}:${id}`, params.newName, schema);
 
             if (edit != null) return edit;
         }
 
-        const ranges = kind === 'action' || kind === 'actor' ? occurrencesOf(textDocument, kind, id) : definitionOccurrencesOf(textDocument, kind, id);
+        const ranges = kind === 'action' || kind === 'actor' ? occurrencesOf(textDocument, schema, kind, id) : definitionOccurrencesOf(textDocument, schema, kind, id);
         const changes: Record<string, TextEdit[]> = { [textDocument.uri]: ranges.map(range => TextEdit.replace(range, params.newName)) };
 
         if (kind === 'arena' && timeline != null) {
@@ -841,8 +849,14 @@ export function diagramStatusIconProvider(documents: TextDocuments<TextDocument>
         }
 
         const timeline = timelineOf(documents, textDocument.uri);
-        const common = documentCache.getLinterOptions(settings).enums.common;
-        const icons = tokensOf(textDocument.getText())
+        const { enums, diagramSchema } = documentCache.getLinterOptions(settings);
+
+        if (diagramSchema == null) {
+            return null;
+        }
+
+        const common = enums.common;
+        const icons = tokensOf(textDocument.getText(), diagramSchema)
             .filter(token => token.statement?.verb === 'status' && token.kind === 'subject')
             .map(async (token): Promise<StatusIcon | null> => {
                 const [, key, stacks] = /^(.*?)(?::(\d+))?$/.exec(token.text)!;
@@ -864,16 +878,17 @@ export function diagramStatusIconProvider(documents: TextDocuments<TextDocument>
 }
 
 /** The timeline tree view of a `.diagram` file: its `define` blocks, then its keyframes with their first hint. */
-export function diagramOutlineProvider(documents: TextDocuments<TextDocument>): (params: OutlineParams) => OutlineNode[] | null {
+export function diagramOutlineProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: OutlineParams) => OutlineNode[] | null {
     return (params) => {
         const textDocument = documents.get(params.uri);
+        const schema = documentCache.getLinterOptions(settings).diagramSchema;
 
-        if (textDocument == null) {
+        if (textDocument == null || schema == null) {
             return null;
         }
 
         const source = textDocument.getText();
-        const parsed = parse(source);
+        const parsed = parse(source, schema);
         const lines = linesOf(source);
         const lineRange = (first: number, last: number): Range => ({ start: { line: first, character: 0 }, end: { line: last, character: Number.MAX_SAFE_INTEGER } });
         const section = (name: string, children: OutlineNode[]): OutlineNode => ({
@@ -934,16 +949,17 @@ const DEFINITION_SYMBOL_KINDS: Record<string, SymbolKind> = {
 };
 
 /** The symbols of a `.diagram` file (Go to Symbol, the outline, breadcrumbs): every `define` block and every timestamp, in file order. */
-export function diagramDocumentSymbolProvider(documents: TextDocuments<TextDocument>): (params: DocumentSymbolParams) => DocumentSymbol[] | null {
+export function diagramDocumentSymbolProvider(documents: TextDocuments<TextDocument>, documentCache: ParserCache, settings: ThaliakTimelineLinterSettings): (params: DocumentSymbolParams) => DocumentSymbol[] | null {
     return (params) => {
         const textDocument = documents.get(params.textDocument.uri);
+        const schema = documentCache.getLinterOptions(settings).diagramSchema;
 
-        if (textDocument == null) {
+        if (textDocument == null || schema == null) {
             return null;
         }
 
         const source = textDocument.getText();
-        const parsed = parse(source);
+        const parsed = parse(source, schema);
         const lines = linesOf(source);
         const lineRange = (first: number, last: number): Range => ({ start: { line: first, character: 0 }, end: { line: last, character: lines[last]!.length } });
         const symbols: DocumentSymbol[] = parsed.definitions.map(definition => {

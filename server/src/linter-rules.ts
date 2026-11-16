@@ -888,7 +888,8 @@ export function* actionsMustBeUsed({ textDocument, document }: LinterInput): Gen
 export function* statusesMustBeUsed({ textDocument, document, diagramStatuses }: LinterInput): Generator<Diagnostic> {
     const statuses = getIfType(document, 'status', yaml.isMap);
 
-    if (statuses == null) {
+    // Until the diagram's statuses are known, a status could be used there.
+    if (statuses == null || diagramStatuses == null) {
         return;
     }
 

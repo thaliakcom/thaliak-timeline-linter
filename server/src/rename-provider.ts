@@ -3,6 +3,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { ParserCache } from './parser-cache';
 import { ThaliakTimelineLinterSettings } from './server';
 import { definitionOccurrencesOf, diagramOf, occurrencesOf } from './diagram-context';
+import type { DdlGrammar } from './utility/diagram-ddl/parse';
 import { findPlaceholders, getActor, getActorValues, getArenaAt, getArenaValues, getIfType, getRange, getStatusValues, getSymbolAt, SymbolRange } from './util';
 import * as yaml from 'yaml';
 
@@ -21,15 +22,16 @@ export function renameProvider(documents: TextDocuments<TextDocument>, documentC
             return null;
         }
 
-        return timelineRenameEdit(documents, textDocument, document, symbol.text, params.newName);
+        return timelineRenameEdit(documents, textDocument, document, symbol.text, params.newName, documentCache.getLinterOptions(settings).diagramSchema);
     };
 }
 
 /**
  * The edits that rename `symbol` of the timeline `textDocument` (`a:<action>`, `s:<status>`, `ac:<actor>` or
  * `ar:<arena>`) to `newName`, in the timeline and in its `.diagram` file. `null` if the timeline doesn't name it.
+ * The `.diagram` file needs `schema`, the DDL's grammar, and is left as it is without it.
  */
-export function timelineRenameEdit(documents: TextDocuments<TextDocument>, textDocument: TextDocument, document: yaml.Document, symbol: string, newName: string): WorkspaceEdit | null {
+export function timelineRenameEdit(documents: TextDocuments<TextDocument>, textDocument: TextDocument, document: yaml.Document, symbol: string, newName: string, schema: DdlGrammar | undefined): WorkspaceEdit | null {
     const edits: TextEdit[] = [];
     const edit: WorkspaceEdit = {
         changes: {
@@ -125,10 +127,10 @@ export function timelineRenameEdit(documents: TextDocuments<TextDocument>, textD
 
     const diagram = diagramOf(documents, textDocument.uri);
 
-    if (diagram != null) {
+    if (diagram != null && schema != null) {
         const key = symbol.slice(symbol.indexOf(':') + 1);
         const kind = symbol.startsWith('a:') ? 'action' : symbol.startsWith('ac:') ? 'actor' : 'status';
-        const ranges = symbol.startsWith('ar:') ? definitionOccurrencesOf(diagram, 'arena', key) : occurrencesOf(diagram, kind, key);
+        const ranges = symbol.startsWith('ar:') ? definitionOccurrencesOf(diagram, schema, 'arena', key) : occurrencesOf(diagram, schema, kind, key);
         const diagramEdits = ranges.map(range => TextEdit.replace(range, newName));
 
         if (diagramEdits.length > 0) {

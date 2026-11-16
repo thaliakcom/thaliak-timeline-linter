@@ -264,7 +264,8 @@ async function validateTextDocument(textDocument: TextDocument): Promise<Diagnos
     const options = documentCache.getLinterOptions(globalSettings);
 
     const diagram = diagramOf(documents, textDocument.uri);
-    const diagramStatuses = diagram != null ? statusKeysOf(diagram) : new Set<string>();
+    // Unknown until the grammar has loaded, which reading the diagram takes.
+    const diagramStatuses = diagram == null ? new Set<string>() : options.diagramSchema != null ? statusKeysOf(diagram, options.diagramSchema) : null;
 
     return [...lintDocument(textDocument, document, options, diagramStatuses), ...await lintGameData(textDocument, document, options)];
 }
@@ -306,16 +307,16 @@ async function timelineCompletionWithoutSchemaEnums(params: CompletionParams): P
 connection.onCompletion(byFileType<CompletionParams, CompletionItem[] | Promise<CompletionItem[]>>(textDocumentUri, diagramCompletionProvider(documents, documentCache, globalSettings), timelineCompletionWithoutSchemaEnums));
 
 connection.onHover(byFileType(textDocumentUri, diagramHoverProvider(documents, documentCache, globalSettings), hoverProvider(documents, documentCache, globalSettings)));
-connection.onDefinition(byFileType(textDocumentUri, diagramDefinitionProvider(documents), definitionProvider(documents, documentCache, globalSettings)));
-connection.onReferences(byFileType(textDocumentUri, diagramReferenceProvider(documents), referenceProvider(documents, documentCache, globalSettings)));
+connection.onDefinition(byFileType(textDocumentUri, diagramDefinitionProvider(documents, documentCache, globalSettings), definitionProvider(documents, documentCache, globalSettings)));
+connection.onReferences(byFileType(textDocumentUri, diagramReferenceProvider(documents, documentCache, globalSettings), referenceProvider(documents, documentCache, globalSettings)));
 // Timelines get theirs from the YAML extension.
-connection.onDocumentSymbol(byFileType(textDocumentUri, diagramDocumentSymbolProvider(documents), () => null));
-connection.onRenameRequest(byFileType(textDocumentUri, diagramRenameProvider(documents), renameProvider(documents, documentCache, globalSettings)));
-connection.onPrepareRename(byFileType(textDocumentUri, diagramPrepareRenameProvider(documents), prepareRenameProvider(documents, documentCache, globalSettings)));
+connection.onDocumentSymbol(byFileType(textDocumentUri, diagramDocumentSymbolProvider(documents, documentCache, globalSettings), () => null));
+connection.onRenameRequest(byFileType(textDocumentUri, diagramRenameProvider(documents, documentCache, globalSettings), renameProvider(documents, documentCache, globalSettings)));
+connection.onPrepareRename(byFileType(textDocumentUri, diagramPrepareRenameProvider(documents, documentCache, globalSettings), prepareRenameProvider(documents, documentCache, globalSettings)));
 connection.onCodeAction(codeActionProvider(documents, documentCache, globalSettings));
 connection.onDocumentColor(documentColorProvider(documents, documentCache, globalSettings));
 connection.onColorPresentation(colorPresentationProvider(documents, documentCache, globalSettings));
-const inlayHints = byFileType(textDocumentUri, diagramInlayHintProvider(documents), inlayHintProvider(documents, documentCache, globalSettings));
+const inlayHints = byFileType(textDocumentUri, diagramInlayHintProvider(documents, documentCache, globalSettings), inlayHintProvider(documents, documentCache, globalSettings));
 const statusIconsOnly = byFileType(outlineUri, diagramStatusIconProvider(documents, documentCache, globalSettings), statusIconProvider(documents, documentCache, globalSettings));
 const shapeIcons = byFileType(outlineUri, diagramShapeIconProvider(documents, documentCache, globalSettings), shapeIconProvider(documents, documentCache, globalSettings));
 // `.diagram` files have no `i:` placeholders.
@@ -336,7 +337,7 @@ const statusIcons = async (params: OutlineParams): Promise<StatusIcon[] | null> 
 };
 
 connection.languages.inlayHint.on(async params => [...inlayHints(params), ...iconSpacers(await statusIcons({ uri: params.textDocument.uri }), params.range)]);
-connection.onRequest('thaliak/outline', byFileType<OutlineParams, Promise<OutlineNode[] | null>>(outlineUri, async params => diagramOutlineProvider(documents)(params), outlineProvider(documents, documentCache, globalSettings)));
+connection.onRequest('thaliak/outline', byFileType<OutlineParams, Promise<OutlineNode[] | null>>(outlineUri, async params => diagramOutlineProvider(documents, documentCache, globalSettings)(params), outlineProvider(documents, documentCache, globalSettings)));
 connection.onRequest('thaliak/statusIcons', statusIcons);
 connection.onRequest('thaliak/tooltip', tooltipProvider(documents, documentCache, globalSettings));
 

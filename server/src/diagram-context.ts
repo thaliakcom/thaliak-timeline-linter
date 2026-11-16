@@ -10,7 +10,7 @@ import * as yaml from 'yaml';
 import { castTimeOf, getGameAction } from './ironworks';
 import { hitboxRadius, paddedEffectRange } from './tooltip';
 import { ActionFacts, arenaImagesOf, arenasOf, DiagramInput, expandTemplate, RawItem, usesOf, variantIdsOf } from './utility/diagram-ddl/compile';
-import { Definition, parse, ParseResult, Statement, stripComment, tokenize } from './utility/diagram-ddl/parse';
+import { DdlGrammar, Definition, parse, ParseResult, Statement, stripComment, tokenize } from './utility/diagram-ddl/parse';
 
 export const DIAGRAM_LANGUAGE = 'thaliak-diagram';
 
@@ -123,7 +123,7 @@ function arenaImageSize(diagramUri: string, image: string): [number, number] | n
  * actions get a size of 1 and a cast type that draws their shape, so that all they lose is the telegraph's timing rather
  * than getting a false size error. `source` is the `.diagram` file's text, whose `place ... as <ID>` need game data too.
  */
-export async function diagramInputOf(timeline: Timeline, diagramUri: string, source: string): Promise<{ input: DiagramInput, problems: string[] }> {
+export async function diagramInputOf(timeline: Timeline, diagramUri: string, source: string, schema: DdlGrammar): Promise<{ input: DiagramInput, problems: string[] }> {
     const { js } = timeline;
     const rawActions = (js.actions ?? {}) as Record<string, ActionFacts>;
     const rawItems = (js.timeline ?? []) as RawItem[];
@@ -186,7 +186,7 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string, sou
     const arenas = arenasOf(rawItems);
     const arenaImageSizes: Record<string, [number, number]> = {};
 
-    for (const image of arenaImagesOf(source)) {
+    for (const image of arenaImagesOf(source, schema)) {
         const size = arenaImageSize(diagramUri, image);
 
         if (size != null) {
@@ -200,6 +200,7 @@ export async function diagramInputOf(timeline: Timeline, diagramUri: string, sou
 
     return {
         input: {
+            schema,
             uses: usesOf(rawItems, rawActions),
             actions,
             arenas,
@@ -318,8 +319,8 @@ function* statementTokens(statement: Statement, raw: string, line: number, subje
     }
 }
 
-/** Every word of the file that can refer to something, in file order. */
-export function tokensOf(source: string, parsed: ParseResult = parse(source)): DiagramToken[] {
+/** Every word of the file that can refer to something, in file order. `schema` is the DDL's grammar. */
+export function tokensOf(source: string, schema: DdlGrammar, parsed: ParseResult = parse(source, schema)): DiagramToken[] {
     const lines = linesOf(source);
     const tokens: DiagramToken[] = [];
 
@@ -352,7 +353,7 @@ export function tokensOf(source: string, parsed: ParseResult = parse(source)): D
                 tokens.push({ text: field.value, line: field.line, start: field.valueStart, end: field.valueStart + field.value.length, kind: 'field', field: field.key });
             } else if ((field.key === 'on:enter' || field.key === 'on:exit') && field.value !== '') {
                 // A hook line has no timestamp of its own, and only its columns matter here.
-                for (const hook of parse(`0 ${field.value}`).statements) {
+                for (const hook of parse(`0 ${field.value}`, schema).statements) {
                     tokens.push(...statementTokens(hook, lines[field.line]!, field.line, SUBJECTLESS_HOOK.test(field.value)));
                 }
             }
@@ -365,17 +366,6 @@ export function tokensOf(source: string, parsed: ParseResult = parse(source)): D
 /** Whether every `[` of `text` has its `]`. The compiler can't expand a template that's missing one. */
 export function hasBalancedBrackets(text: string): boolean {
     return text.split('[').length === text.split(']').length;
-}
-
-/** A `hint` or `thumbnail` statement, also in a hook, whose free text may hold brackets of its own. */
-const TEXT_STATEMENT = /^\s*(?:\d+\s+)?(?:on:(?:enter|exit):\s*)?[+-]?(?:hint|thumbnail):/;
-
-/**
- * Whether every `[` of the line `text` has its `]`, outside of quotes and of the free text of a `hint` or `thumbnail`,
- * which the compiler doesn't expand (as `tokenize()` reads them).
- */
-export function hasBalancedTemplates(text: string): boolean {
-    return TEXT_STATEMENT.test(text) || hasBalancedBrackets(text.replace(/"[^"]*"/g, ''));
 }
 
 /** The IDs a token stands for. A half-typed template stands for itself. */
@@ -405,9 +395,9 @@ export function liveIdsOf(tokens: DiagramToken[]): Set<string> {
     return ids;
 }
 
-/** The keys of the status effects that the `.diagram` file `textDocument` names. */
-export function statusKeysOf(textDocument: TextDocument): Set<string> {
-    return new Set(tokensOf(textDocument.getText())
+/** The keys of the status effects that the `.diagram` file `textDocument` names. `schema` is the DDL's grammar. */
+export function statusKeysOf(textDocument: TextDocument, schema: DdlGrammar): Set<string> {
+    return new Set(tokensOf(textDocument.getText(), schema)
         .filter(token => token.statement?.verb === 'status' && token.kind === 'subject')
         .map(token => token.text.replace(/:\d+$/, '')));
 }
@@ -470,10 +460,10 @@ export function idColumnsIn(token: DiagramToken, id: string): number[] {
  * `url(#<id>)`; for a strategy, each `if strategy` or `elif strategy` that names it. An arena's are only its block's: the timeline's `<arena>` items name
  * it. Actions and timeline actors are the timeline's keys, which {@link occurrencesOf} finds.
  */
-export function definitionOccurrencesOf(textDocument: TextDocument, kind: Definition['kind'], id: string): Range[] {
+export function definitionOccurrencesOf(textDocument: TextDocument, schema: DdlGrammar, kind: Definition['kind'], id: string): Range[] {
     const source = textDocument.getText();
-    const parsed = parse(source);
-    const tokens = tokensOf(source, parsed);
+    const parsed = parse(source, schema);
+    const tokens = tokensOf(source, schema, parsed);
     const definition = parsed.definitions.find(x => x.kind === kind && x.id === id);
     const at = (line: number, character: number): Range => ({ start: { line, character }, end: { line, character: character + id.length } });
     const ranges: Range[] = [];
@@ -499,10 +489,10 @@ export function definitionOccurrencesOf(textDocument: TextDocument, kind: Defini
 }
 
 /** Where the `.diagram` file `textDocument` names the action, status effect or timeline actor `key`: only the key itself, without a sub-ID. */
-export function occurrencesOf(textDocument: TextDocument, kind: 'action' | 'status' | 'actor', key: string): Range[] {
+export function occurrencesOf(textDocument: TextDocument, schema: DdlGrammar, kind: 'action' | 'status' | 'actor', key: string): Range[] {
     const source = textDocument.getText();
-    const parsed = parse(source);
-    const ranges: Range[] = tokensOf(source, parsed)
+    const parsed = parse(source, schema);
+    const ranges: Range[] = tokensOf(source, schema, parsed)
         .filter(token => namesAs(token, kind, key, parsed.definitions))
         .map(token => ({ start: { line: token.line, character: token.start }, end: { line: token.line, character: token.start + key.length } }));
 

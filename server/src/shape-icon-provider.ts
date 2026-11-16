@@ -92,8 +92,13 @@ export function diagramShapeIconProvider(documents: TextDocuments<TextDocument>,
 
         const timeline = timelineOf(documents, textDocument.uri);
         const raid = (timeline?.js ?? null) as UnprocessedRaidData | null;
-        const enums = documentCache.getLinterOptions(settings).enums;
-        const icons = tokensOf(textDocument.getText())
+        const { enums, diagramSchema } = documentCache.getLinterOptions(settings);
+
+        if (diagramSchema == null) {
+            return null;
+        }
+
+        const icons = tokensOf(textDocument.getText(), diagramSchema)
             .filter(token => token.statement?.verb === 'place' && token.kind === 'subject')
             .map(async (token): Promise<StatusIcon | null> => {
                 const action = raid?.actions?.[baseOf(token.text)];

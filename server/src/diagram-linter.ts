@@ -1,11 +1,11 @@
 // Diagnostics of `.diagram` files: whatever thaliak's build would report, plus the checks of what `define` blocks draw.
 import { Diagnostic, DiagnosticSeverity, TextDocuments, TextEdit } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { baseOf, diagramInputOf, DefinitionField, fieldsOf, hasBalancedTemplates, isDiagramWip, linesOf, Timeline, timelineOf, tokensOf } from './diagram-context';
+import { baseOf, diagramInputOf, DefinitionField, fieldsOf, isDiagramWip, linesOf, Timeline, timelineOf, tokensOf } from './diagram-context';
 import { fixableDiagnostics, LinterOptions } from './server';
-import { DiagramField, DiagramSchema, DiagramValueType, fieldsOfKind, typesOfBlock } from './types/diagram-schema';
+import { DiagramSchema, typesOfBlock } from './types/diagram-schema';
 import { compileDiagram, readFieldValue } from './utility/diagram-ddl/compile';
-import { Definition, parse, ParseResult, scopeNote, Statement } from './utility/diagram-ddl/parse';
+import { DdlGrammar, Definition, parse, ParseResult, scopeNote, Statement } from './utility/diagram-ddl/parse';
 
 /** The element IDs that mean something by themselves, and so can't be defined. */
 const RESERVED_ELEMENTS = new Set(['players', 'DPS', 'tanks', 'healers', 'supports', 'T1', 'T2', 'H1', 'H2', 'M1', 'M2', 'R1', 'R2', 'cast', 'hint', 'marker-a', 'marker-1', 'marker-b', 'marker-2', 'marker-c', 'marker-3', 'marker-d', 'marker-4']);
@@ -39,15 +39,10 @@ function typeOf(value: unknown): string | undefined {
  * except for those that need game data or an arena image's size. An action's block draws a built-in shape, which its
  * timeline action's `shape` in `timeline` narrows down.
  */
-function* validateDefinitions(textDocument: TextDocument, definitions: Definition[], lines: string[], options: LinterOptions, timeline: Timeline | null): Generator<Diagnostic> {
-    const schema = options.diagramSchema;
-    const looks = schema != null ? { aoes: Object.keys(schema.looks.aoes), tethers: Object.keys(schema.looks.tethers), markers: Object.keys(schema.looks.markers) } : undefined;
-    const animations = schema?.animations.elements;
+function* validateDefinitions(textDocument: TextDocument, definitions: Definition[], lines: string[], schema: DiagramSchema, timeline: Timeline | null): Generator<Diagnostic> {
+    const looks = { aoes: Object.keys(schema.looks.aoes), tethers: Object.keys(schema.looks.tethers), markers: Object.keys(schema.looks.markers) };
+    const animations = schema.animations.elements;
     const blocks = definitions.filter(definition => definition.kind !== 'gradient' && definition.kind !== 'strategy').map(definition => ({ definition, fields: fieldsOf(definition, lines) }));
-
-    if (schema != null) {
-        yield* validateFields(definitions, lines, schema);
-    }
 
     /** The element type a block draws, as the viewer has it: `graphic` is a marker, and tethers and the arena have theirs implied. */
     const typeOfBlock = (definition: Definition, fields: DefinitionField[]) => {
@@ -125,65 +120,12 @@ function* validateDefinitions(textDocument: TextDocument, definitions: Definitio
             yield error('marker-image', firstOf('image')!, `${image} is a built-in drawing; use 'type: graphic' with 'look: ${marker}', or a headmarker.`);
         }
 
-        if (firstOf('margin') != null && definition.kind !== 'arena') {
-            yield error('invalid-margin', firstOf('margin')!, `Only the arena can have a margin.`);
+        if (firstOf('margins') != null && definition.kind !== 'arena') {
+            yield error('invalid-margin', firstOf('margins')!, `Only an arena can have margins.`);
         }
     }
 
     yield* validateFieldOrder(textDocument, blocks);
-}
-
-/**
- * The name of a value's type, as the schema names it, from {@link readFieldValue}: a list of numbers is a point, which
- * is written like a coordinate, and a value with clauses (`look: plain color #FFF6D5`) is written as a string.
- */
-function valueTypeOf(value: unknown): DiagramValueType {
-    if (Array.isArray(value)) return 'point';
-
-    return value === null ? 'null' : typeof value === 'object' ? 'string' : typeof value as DiagramValueType;
-}
-
-/** Warns about the fields of `define` blocks that `schema` doesn't know, and values that aren't what it says. */
-function* validateFields(definitions: Definition[], lines: string[], schema: DiagramSchema): Generator<Diagnostic> {
-    for (const definition of definitions) {
-        if (definition.kind === 'gradient') {
-            continue;
-        }
-
-        const known: Record<string, DiagramField> = fieldsOfKind(schema, definition.kind);
-        const fields = fieldsOf(definition, lines);
-
-        for (const key of new Set(fields.map(field => field.key))) {
-            const first = fields.find(field => field.key === key)!;
-            const spec = known[key];
-            const warn = (code: string, message: string) => diagnostic(DiagnosticSeverity.Warning, code, message, first.line, first.start);
-
-            if (spec == null) {
-                yield warn('unknown-field', `'${key}' isn't a field of ${definition.kind} definitions.`);
-                continue;
-            }
-
-            // Hooks hold statements, which aren't values.
-            if (key === 'on:enter' || key === 'on:exit') {
-                continue;
-            }
-
-            const own = fields.filter(field => field.key === key && !/^[+-]/.test(field.value));
-
-            if (own.length === 0 || own.every(field => field.value === '')) {
-                continue;
-            }
-
-            const value = valueOf(own, key);
-            const types = [spec.type].flat();
-
-            if (value !== undefined && !types.includes(valueTypeOf(value))) {
-                yield warn('invalid-field-type', `'${key}' takes ${types.join(' or ')}, not ${valueTypeOf(value)}.`);
-            } else if (spec.values != null && typeof value === 'string' && spec.values[value] == null) {
-                yield warn('invalid-field-value', `'${value}' isn't one of the values of '${key}': '${Object.keys(spec.values).join('\', \'')}'`);
-            }
-        }
-    }
 }
 
 /** The text edits that move `field`, with its further lines, to right before `target`, which must come before it. */
@@ -282,11 +224,11 @@ function* validateFieldOrder(textDocument: TextDocument, blocks: { definition: D
  * Warns about every `unknown` headmarker and tether: thaliak-cli writes them for a game headmarker or tether that no look
  * is mapped to yet, with the game's name in a comment, which `enums/headmarkers.yaml` or `enums/tethers.yaml` should map.
  */
-function* validateUnknowns(source: string, parsed: ParseResult, lines: string[]): Generator<Diagnostic> {
+function* validateUnknowns(source: string, schema: DdlGrammar, parsed: ParseResult, lines: string[]): Generator<Diagnostic> {
     const warn = (line: number, start: number, end: number, what: 'headmarker' | 'tether') => diagnostic(DiagnosticSeverity.Warning, `unknown-${what}`,
         `This ${what} has no look yet. Map its game ${what === 'headmarker' ? 'icon (Lockon IconName' : 'file (Channeling File'}, often in a comment here) to a look in enums/${what}s.yaml, and use that look instead of 'unknown'.`, line, start, end);
 
-    for (const token of tokensOf(source, parsed)) {
+    for (const token of tokensOf(source, schema, parsed)) {
         const verb = token.statement?.verb;
 
         if (token.kind === 'subject' && token.statement?.sign === '+' && (verb === 'headmarker' || verb === 'tether') && /^unknown(?:[#@]|$)/.test(token.text)) {
@@ -314,49 +256,51 @@ export function placementsOf(textDocument: TextDocument): Placement[] | undefine
     return last?.version === textDocument.version ? last.placements : undefined;
 }
 
-/** Everything wrong with the `.diagram` file `textDocument`. Errors of a fight with `wip: [diagrams]` are warnings, as thaliak's build doesn't report them. */
+/**
+ * Everything wrong with the `.diagram` file `textDocument`. Errors of a fight with `wip: [diagrams]` are warnings, as
+ * thaliak's build doesn't report them, but syntax errors are always errors, as they fail the build. Nothing until the
+ * client has sent the grammar, `schemas/diagram.schema.json`, which parsing needs.
+ */
 export async function lintDiagram(textDocument: TextDocument, documents: TextDocuments<TextDocument>, options: LinterOptions): Promise<Diagnostic[]> {
+    const schema = options.diagramSchema;
+
+    if (schema == null) {
+        return [];
+    }
+
     const source = textDocument.getText();
-    const parsed = parse(source);
+    const parsed = parse(source, schema);
     const lines = linesOf(source);
     const timeline = timelineOf(documents, textDocument.uri);
     const severity = timeline != null && isDiagramWip(timeline) ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error;
     const found: Diagnostic[] = [];
-    /** A diagnostic of the compiler, at the line's text. Line 0 is the whole file. */
-    const report = (line: number, message: string) => {
+    /** A diagnostic of the compiler, at the line's text, with `severity`. Line 0 is the whole file. */
+    const report = (line: number, message: string, as: DiagnosticSeverity = severity) => {
         const text = lines[Math.max(line - 1, 0)] ?? '';
 
-        found.push(diagnostic(severity, 'diagrams', message, Math.max(line - 1, 0), text.length - text.trimStart().length, text.trimEnd().length));
+        found.push(diagnostic(as, 'diagrams', message, Math.max(line - 1, 0), text.length - text.trimStart().length, text.trimEnd().length));
     };
 
     lastPlacements.delete(textDocument.uri);
 
     if (timeline == null) {
         parsed.diagnostics.forEach(({ line, message }) => report(line, message));
+        parsed.syntax.forEach(({ line, message }) => report(line, message, DiagnosticSeverity.Error));
     } else {
-        const { input, problems } = await diagramInputOf(timeline, textDocument.uri, source);
+        const { input, problems } = await diagramInputOf(timeline, textDocument.uri, source, schema);
         input.omens = options.enums.omens?.yaml;
         input.headmarkers = options.enums.headmarkers?.yaml;
         input.tethers = options.enums.tethers?.yaml;
 
         problems.forEach(message => found.push(diagnostic(DiagnosticSeverity.Warning, 'diagrams', message, 0)));
 
-        // A half-typed `[` would stop the compiler altogether, and with it every other diagnostic.
-        const complete = lines.map((text, i) => {
-            if (hasBalancedTemplates(text)) {
-                return text;
-            }
-
-            report(i + 1, `A "[" or "]" is missing its other half.`);
-            return '';
-        }).join('\n');
-
         try {
-            const { diagram, diagnostics, placements } = compileDiagram(complete, input);
+            const { diagram, diagnostics, syntax, placements } = compileDiagram(source, input);
             const strategyName = (id: string) => diagram.strategies.find(strategy => strategy.id === id)?.name ?? id;
 
             // One that comes up under some strategies or branch options only says which.
             diagnostics.forEach(diagnostic => report(diagnostic.line, `${diagnostic.message}${scopeNote(diagnostic, strategyName)}`));
+            syntax.forEach(diagnostic => report(diagnostic.line, `${diagnostic.message}${scopeNote(diagnostic, strategyName)}`, DiagnosticSeverity.Error));
             lastPlacements.set(textDocument.uri, { version: textDocument.version, placements });
         } catch (e) {
             // Half-typed lines can break what the compiler assumes the parser has checked.
@@ -364,7 +308,7 @@ export async function lintDiagram(textDocument: TextDocument, documents: TextDoc
         }
     }
 
-    found.push(...validateDefinitions(textDocument, parsed.definitions, lines, options, timeline),...validateAlignment(parsed.statements, lines), ...validateUnknowns(source, parsed, lines));
+    found.push(...validateDefinitions(textDocument, parsed.definitions, lines, schema, timeline), ...validateAlignment(parsed.statements, lines), ...validateUnknowns(source, schema, parsed, lines));
     fixableDiagnostics.set(textDocument.uri, found.filter(item => item.data?.textEdits != null));
 
     return found;

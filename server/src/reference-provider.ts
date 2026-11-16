@@ -78,8 +78,10 @@ export default function referenceProvider(documents: TextDocuments<TextDocument>
         const locations: Location[] = [];
         const diagram = diagramOf(documents, textDocument.uri);
         const addDiagramOccurrences = (kind: 'action' | 'status' | 'actor', key: string) => {
-            if (diagram != null) {
-                locations.push(...occurrencesOf(diagram, kind, key).map(range => ({ uri: diagram.uri, range })));
+            const schema = documentCache.getLinterOptions(settings).diagramSchema;
+
+            if (diagram != null && schema != null) {
+                locations.push(...occurrencesOf(diagram, schema, kind, key).map(range => ({ uri: diagram.uri, range })));
             }
         };
 
